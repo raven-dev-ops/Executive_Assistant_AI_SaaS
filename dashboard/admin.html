@@ -825,6 +825,9 @@
       const backendBase = DEFAULT_BACKEND_BASE;
       let adminKey = localStorage.getItem("admin_api_key") || "";
       let adminTheme = localStorage.getItem("admin_theme") || "light";
+      let tenantCache = [];
+      let usageCache = [];
+      let usageSort = { key: "appointments_last_30_days", dir: "desc" };
       
       if (adminTheme === "dark") {
         document.body.classList.add("dark");
@@ -951,14 +954,40 @@
       // Placeholder load functions (simplified for demo)
       async function loadTenants() {
         const el = document.getElementById("tenants-content");
+        const select = document.getElementById("notifications-tenant-select");
         if (!el) return;
-        el.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3z"/></svg><p>No tenants configured yet</p><small>Use the Quick Actions to seed demo tenants</small></div>';
+        el.innerHTML = '<div class="loading">Loading tenants</div>';
+        try {
+          const data = await fetchJson("/v1/admin/businesses");
+          tenantCache = Array.isArray(data) ? data : [];
+          renderTenants(tenantCache);
+          if (select) {
+            select.innerHTML = '<option value="">Select tenant...</option>';
+            tenantCache.forEach((t) => {
+              select.insertAdjacentHTML(
+                "beforeend",
+                `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name || t.id)}</option>`
+              );
+            });
+          }
+        } catch (err) {
+          console.error("loadTenants failed", err);
+          el.innerHTML = '<div class="empty-state"><p>Unable to load tenants</p><small>' + escapeHtml(err.message || err) + "</small></div>";
+        }
       }
 
       async function loadUsage() {
         const el = document.getElementById("usage-content");
         if (!el) return;
-        el.innerHTML = '<div class="empty-state"><p>No usage data available</p></div>';
+        el.innerHTML = '<div class="loading">Loading usage data</div>';
+        try {
+          const data = await fetchJson("/v1/admin/businesses/usage");
+          usageCache = Array.isArray(data) ? data : [];
+          renderUsageTable();
+        } catch (err) {
+          console.error("loadUsage failed", err);
+          el.innerHTML = '<div class="empty-state"><p>Unable to load usage data</p><small>' + escapeHtml(err.message || err) + "</small></div>";
+        }
       }
 
       async function loadTwilioHealth() {
@@ -1118,6 +1147,144 @@
       loadGcpStorageHealth();
       loadGovernance();
       loadAudit();
+
+      // Helpers
+      function formatNumber(value) {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return "0";
+        return Number(value).toLocaleString();
+      }
+
+      function renderTenants(source) {
+        const el = document.getElementById("tenants-content");
+        const search = (document.getElementById("tenant-search")?.value || "").toLowerCase().trim();
+        if (!el) return;
+        const filtered = (source || []).filter((t) => {
+          const haystack = `${t.id || ""} ${t.name || ""}`.toLowerCase();
+          return !search || haystack.includes(search);
+        });
+        if (!filtered.length) {
+          el.innerHTML = '<div class="empty-state"><p>No tenants match that search</p></div>';
+          return;
+        }
+        const rows = filtered
+          .map((t) => {
+            const statusClass = String(t.status || "ACTIVE").toUpperCase() === "ACTIVE" ? "status-active" : "status-suspended";
+            const statusLabel = escapeHtml((t.status || "ACTIVE").toUpperCase());
+            return `
+              <tr>
+                <td><strong>${escapeHtml(t.name || t.id)}</strong><br/><small class="muted">${escapeHtml(t.id)}</small></td>
+                <td><span class="status-tag ${statusClass}">${statusLabel}</span></td>
+                <td>${escapeHtml(t.vertical || "n/a")}</td>
+                <td>${escapeHtml(t.owner_email || "—")}</td>
+                <td>${escapeHtml(t.owner_phone || "—")}</td>
+              </tr>
+            `;
+          })
+          .join("");
+        el.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th>Status</th>
+                <th>Vertical</th>
+                <th>Owner Email</th>
+                <th>Owner Phone</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      function renderUsageTable() {
+        const el = document.getElementById("usage-content");
+        if (!el) return;
+        if (!usageCache.length) {
+          el.innerHTML = '<div class="empty-state"><p>No usage data available</p></div>';
+          return;
+        }
+        const sorted = [...usageCache].sort((a, b) => {
+          const aVal = a[usageSort.key] ?? 0;
+          const bVal = b[usageSort.key] ?? 0;
+          if (aVal === bVal) return 0;
+          return usageSort.dir === "asc" ? aVal - bVal : bVal - aVal;
+        });
+        const rows = sorted
+          .map((u) => {
+            const statusClass = String(u.status || "ACTIVE").toUpperCase() === "ACTIVE" ? "status-active" : "status-suspended";
+            const statusLabel = escapeHtml((u.status || "ACTIVE").toUpperCase());
+            const alertFlag = (u.twilio_voice_errors || 0) > 0 || (u.twilio_sms_errors || 0) > 0;
+            const muted = (u.appointments_last_30_days || 0) === 0 ? ' style="opacity:0.7;"' : "";
+            return `
+              <tr${muted}>
+                <td>
+                  <strong>${escapeHtml(u.name || u.id)}</strong><br/>
+                  <small class="muted">${escapeHtml(u.id)}</small>
+                </td>
+                <td><span class="status-tag ${statusClass}">${statusLabel}</span></td>
+                <td>${formatNumber(u.appointments_last_30_days)} (30d)<br/><small class="muted">${formatNumber(u.appointments_last_7_days)} in 7d</small></td>
+                <td>${formatNumber(u.emergencies_last_30_days)}<br/><small class="muted">${formatNumber(u.emergencies_last_7_days)} in 7d</small></td>
+                <td>${formatNumber(u.sms_owner_messages)} owner<br/><small class="muted">${formatNumber(u.sms_customer_messages)} customer</small></td>
+                <td>${formatNumber(u.total_customers)} customers<br/><small class="muted">${formatNumber(u.total_conversations)} convos</small></td>
+                <td>${formatNumber(u.pending_reschedules)} reschedules<br/><small class="muted">${formatNumber(u.flagged_conversations)} flagged</small></td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        el.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th data-sort="name" class="sortable">Tenant</th>
+                <th data-sort="status" class="sortable">Status</th>
+                <th data-sort="appointments_last_30_days" class="sortable">Appointments</th>
+                <th data-sort="emergencies_last_30_days" class="sortable">Emergencies</th>
+                <th data-sort="sms_total_messages" class="sortable">SMS</th>
+                <th data-sort="total_customers" class="sortable">Customers</th>
+                <th data-sort="pending_reschedules" class="sortable">Operational</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+
+        el.querySelectorAll("th.sortable").forEach((th) => {
+          th.style.cursor = "pointer";
+          th.addEventListener("click", () => {
+            const key = th.getAttribute("data-sort") || "appointments_last_30_days";
+            if (usageSort.key === key) {
+              usageSort.dir = usageSort.dir === "asc" ? "desc" : "asc";
+            } else {
+              usageSort = { key, dir: "desc" };
+            }
+            renderUsageTable();
+          });
+        });
+      }
+
+      // Filters and buttons wiring
+      document.getElementById("tenant-search")?.addEventListener("input", () => renderTenants(tenantCache));
+      document.getElementById("download-usage-csv")?.addEventListener("click", async () => {
+        try {
+          const res = await fetch(backendBase + "/v1/admin/businesses/usage.csv", {
+            headers: adminHeaders(),
+          });
+          if (!res.ok) throw new Error("Download failed: " + res.status);
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "tenant_usage.csv";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert("Unable to download usage CSV: " + (err.message || err));
+        }
+      });
     </script>
   </body>
 </html>

@@ -97,6 +97,8 @@ async def inbound_call(
         audio = await conversation.speech_service.synthesize(
             result.reply_text, voice=voice
         )
+        reply_text = result.reply_text
+        new_state = result.new_state
     except Exception:
         metrics.voice_session_errors += 1
         per_err = metrics.voice_sessions_by_business.setdefault(
@@ -110,14 +112,20 @@ async def inbound_call(
                 "business_id": business_id,
             },
         )
-        raise
+        # Fail-safe so callers hear something instead of silence/timeouts.
+        reply_text = (
+            "We're having trouble right now. We'll call you back or you can leave a "
+            "voicemail with your name and address."
+        )
+        audio = "audio://placeholder"
+        new_state = {"stage": "ERROR", "status": "FAILED"}
 
-    conversations_repo.append_message(conv.id, role="assistant", text=result.reply_text)
+    conversations_repo.append_message(conv.id, role="assistant", text=reply_text)
 
     return InboundCallResponse(
         session_id=session.id,
-        reply_text=result.reply_text,
-        session_state=result.new_state,
+        reply_text=reply_text,
+        session_state=new_state,
         audio=audio,
     )
 
@@ -157,6 +165,8 @@ async def call_audio(payload: CallAudioRequest) -> CallAudioResponse:
         audio = await conversation.speech_service.synthesize(
             result.reply_text, voice=voice
         )
+        reply_text = result.reply_text
+        new_state = result.new_state
     except Exception:
         metrics.voice_session_errors += 1
         logger.exception(
@@ -165,16 +175,21 @@ async def call_audio(payload: CallAudioRequest) -> CallAudioResponse:
                 "session_id": payload.session_id,
             },
         )
-        raise
+        reply_text = (
+            "Sorry, something went wrong on our end. "
+            "We'll send a confirmation by text shortly."
+        )
+        audio = "audio://placeholder"
+        new_state = {"stage": "ERROR", "status": "FAILED"}
 
     if conv:
         conversations_repo.append_message(
-            conv.id, role="assistant", text=result.reply_text
+            conv.id, role="assistant", text=reply_text
         )
 
     return CallAudioResponse(
-        reply_text=result.reply_text,
-        session_state=result.new_state,
+        reply_text=reply_text,
+        session_state=new_state,
         audio=audio,
     )
 
