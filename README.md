@@ -167,6 +167,7 @@ Service Components
 - `backend/app/services/sms.py`: SMS abstraction (stub vs. Twilio) plus owner/customer notification helpers.
 - `backend/app/routers/telephony.py` and `backend/app/routers/twilio_integration.py`: HTTP adapters for voice/SMS webhooks.
 - `backend/app/routers/owner.py` and `backend/app/routers/crm.py`: owner dashboard and CRM APIs backed by repositories in `backend/app/repositories.py`.
+- Mapping & geo: owner dashboards can render a service map using `/v1/owner/geo/markers`; set `GOOGLE_MAPS_API_KEY` to enable server-side geocoding, otherwise the map gracefully shows “no geocoded appointments.”
 
 
 Owner Dashboard
