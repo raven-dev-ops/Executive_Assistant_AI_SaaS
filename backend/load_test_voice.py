@@ -151,7 +151,9 @@ async def run_load_test(
     concurrency: int,
     mode: str,
 ) -> None:
-    connector_limits = httpx.Limits(max_connections=concurrency * 2, max_keepalive_connections=concurrency * 2)
+    connector_limits = httpx.Limits(
+        max_connections=concurrency * 2, max_keepalive_connections=concurrency * 2
+    )
     async with httpx.AsyncClient(limits=connector_limits) as client:
         sem = asyncio.Semaphore(concurrency)
         timings: list[float] = []
@@ -162,9 +164,13 @@ async def run_load_test(
             async with sem:
                 try:
                     if mode == "telephony":
-                        elapsed = await run_single_session_telephony(client, backend_base, api_key, business_id)
+                        elapsed = await run_single_session_telephony(
+                            client, backend_base, api_key, business_id
+                        )
                     else:
-                        elapsed = await run_single_session_voice(client, backend_base, api_key, business_id)
+                        elapsed = await run_single_session_voice(
+                            client, backend_base, api_key, business_id
+                        )
                     timings.append(elapsed)
                 except Exception as exc:  # noqa: BLE001
                     errors += 1

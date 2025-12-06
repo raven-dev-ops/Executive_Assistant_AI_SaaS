@@ -174,12 +174,18 @@ in-process:
 
 For a production deployment behind multiple processes or instances, a shared store is recommended:
 
-- Introduce an abstraction (e.g. `SessionStore` protocol) with in-memory and Redis/DB-backed
-  implementations.
-- Move CallSid→session and `(business_id, From)`→conversation mappings into that shared store,
-  with explicit TTLs and cleanup policies.
-- Keep all Twilio entry points and `/v1/voice/session/*` flows routing through that abstraction so
-  scaling the backend horizontally does not break ongoing calls or SMS threads.
+- The backend already uses a `SessionStore` protocol with two implementations:
+  - `InMemorySessionStore` (default) when `SESSION_STORE_BACKEND=memory`.
+  - `RedisSessionStore` when `SESSION_STORE_BACKEND=redis` and `REDIS_URL` points at a reachable
+    Redis instance (default `redis://localhost:6379/0`).
+- When `SESSION_STORE_BACKEND=redis` is set but the Redis client library is missing or the
+  connection fails, the backend logs a warning and falls back to `InMemorySessionStore`. This
+  keeps requests serving but does not provide cross-process/session sharing, so production clusters
+  should ensure a healthy Redis deployment.
+- For full multi-instance resilience, move CallSid→session and `(business_id, From)`→conversation
+  mappings into the shared store as well, with explicit TTLs and cleanup policies, and keep all
+  Twilio entry points and `/v1/voice/session/*` flows routing through that abstraction so scaling
+  the backend horizontally does not break ongoing calls or SMS threads.
 
 
 Local Development Profiles

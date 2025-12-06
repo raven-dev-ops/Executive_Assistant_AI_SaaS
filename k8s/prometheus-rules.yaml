@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-telephony-backend-rules
+  labels:
+    app: ai-telephony-backend
+spec:
+  groups:
+    - name: ai-telephony-backend
+      rules:
+        - alert: HighTwilioVoiceErrorRate
+          expr: (ai_telephony_twilio_voice_errors / clamp_min(ai_telephony_twilio_voice_requests, 1)) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High Twilio voice error rate"
+            description: "Twilio voice webhook errors exceed 5% of requests for 5 minutes."
+
+        - alert: HighVoiceSessionErrorRate
+          expr: (ai_telephony_voice_session_errors / clamp_min(ai_telephony_voice_session_requests, 1)) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High voice session error rate"
+            description: "Voice session API errors exceed 5% of requests for 5 minutes."
+

@@ -14,16 +14,20 @@ def _utcnow() -> datetime:
 
 if SQLALCHEMY_AVAILABLE:
 
-    class Business(Base):  # type: ignore[misc]
+    class BusinessDB(Base):  # type: ignore[misc]
         __tablename__ = "businesses"
 
         id = Column(String, primary_key=True, index=True)  # type: ignore[call-arg]
         name = Column(String, nullable=False)  # type: ignore[call-arg]
+        owner_name = Column(String, nullable=True)  # type: ignore[call-arg]
+        owner_email = Column(String, nullable=True)  # type: ignore[call-arg]
+        owner_profile_image_url = Column(String, nullable=True)  # type: ignore[call-arg]
         vertical = Column(String, nullable=True)  # type: ignore[call-arg]
         api_key = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
         calendar_id = Column(String, nullable=True)  # type: ignore[call-arg]
         status = Column(String, default="ACTIVE", nullable=False)  # type: ignore[call-arg]
         owner_phone = Column(String, nullable=True)  # type: ignore[call-arg]
+        zip_code = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
         emergency_keywords = Column(String, nullable=True)  # type: ignore[call-arg]
         default_reminder_hours = Column(Integer, nullable=True)  # type: ignore[call-arg]
         service_duration_config = Column(String, nullable=True)  # type: ignore[call-arg]
@@ -37,11 +41,20 @@ if SQLALCHEMY_AVAILABLE:
         reserve_mornings_for_emergencies = Column(Boolean, default=False, nullable=False)  # type: ignore[call-arg]
         travel_buffer_minutes = Column(Integer, nullable=True)  # type: ignore[call-arg]
         twilio_missed_statuses = Column(String, nullable=True)  # type: ignore[call-arg]
+        median_household_income = Column(Integer, nullable=True)  # type: ignore[call-arg]
         retention_enabled = Column(Boolean, default=True, nullable=False)  # type: ignore[call-arg]
         retention_sms_template = Column(String, nullable=True)  # type: ignore[call-arg]
+        service_tier = Column(String, nullable=True)  # type: ignore[call-arg]
+        tts_voice = Column(String, nullable=True)  # type: ignore[call-arg]
+        terms_accepted_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        privacy_accepted_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        integration_linkedin_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        integration_gmail_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        integration_gcalendar_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        integration_openai_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        integration_twilio_status = Column(String, nullable=True)  # type: ignore[call-arg]
         created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
         widget_token = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
-
 
     class CustomerDB(Base):  # type: ignore[misc]
         __tablename__ = "customers"
@@ -55,7 +68,6 @@ if SQLALCHEMY_AVAILABLE:
         created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
         sms_opt_out = Column(Boolean, default=False, nullable=False)  # type: ignore[call-arg]
         tags = Column(String, nullable=True)  # type: ignore[call-arg]
-
 
     class AppointmentDB(Base):  # type: ignore[misc]
         __tablename__ = "appointments"
@@ -80,7 +92,6 @@ if SQLALCHEMY_AVAILABLE:
         tags = Column(String, nullable=True)  # type: ignore[call-arg]
         technician_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
 
-
     class TechnicianDB(Base):  # type: ignore[misc]
         __tablename__ = "technicians"
 
@@ -90,7 +101,6 @@ if SQLALCHEMY_AVAILABLE:
         color = Column(String, nullable=True)  # type: ignore[call-arg]
         is_active = Column(Boolean, default=True, nullable=False)  # type: ignore[call-arg]
         created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
-
 
     class ConversationDB(Base):  # type: ignore[misc]
         __tablename__ = "conversations"
@@ -102,7 +112,6 @@ if SQLALCHEMY_AVAILABLE:
         business_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
         created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
 
-
     class ConversationMessageDB(Base):  # type: ignore[misc]
         __tablename__ = "conversation_messages"
 
@@ -111,7 +120,6 @@ if SQLALCHEMY_AVAILABLE:
         role = Column(String, nullable=False)  # type: ignore[call-arg]
         text = Column(String, nullable=False)  # type: ignore[call-arg]
         timestamp = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
-
 
     class AuditEventDB(Base):  # type: ignore[misc]
         __tablename__ = "audit_events"
@@ -126,9 +134,12 @@ if SQLALCHEMY_AVAILABLE:
 
 else:
 
-    class Business:  # pragma: no cover - placeholder when SQLAlchemy missing
+    class BusinessDB:  # pragma: no cover - placeholder when SQLAlchemy missing
         id: str
         name: str
+        owner_name: str | None
+        owner_email: str | None
+        owner_profile_image_url: str | None
         vertical: str | None
         api_key: str | None
         calendar_id: str | None
@@ -151,6 +162,15 @@ else:
         twilio_missed_statuses: str | None
         retention_enabled: bool
         retention_sms_template: str | None
+        service_tier: str | None
+        tts_voice: str | None
+        terms_accepted_at: datetime | None
+        privacy_accepted_at: datetime | None
+        integration_linkedin_status: str | None
+        integration_gmail_status: str | None
+        integration_gcalendar_status: str | None
+        integration_openai_status: str | None
+        integration_twilio_status: str | None
 
     class CustomerDB:  # pragma: no cover - placeholder
         id: str

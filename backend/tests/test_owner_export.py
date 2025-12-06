@@ -108,7 +108,7 @@ def test_owner_export_conversations_csv_last_30_days():
     )
 
     # Create a conversation linked to this customer and business.
-    conv = conversations_repo.create(
+    conversations_repo.create(
         channel="phone",
         customer_id=customer_id,
         business_id="default_business",
@@ -220,3 +220,91 @@ def test_owner_export_conversion_funnel_csv():
     assert web_row[2] == "0"
     assert float(web_row[3]) == 0.0
     assert float(web_row[4]) == 0.0
+
+
+def test_owner_export_pipeline_csv_reflects_job_stages_and_values():
+    appointments_repo._by_id.clear()
+    appointments_repo._by_customer.clear()
+    appointments_repo._by_business.clear()
+    customers_repo._by_id.clear()
+    customers_repo._by_phone.clear()
+    customers_repo._by_business.clear()
+
+    cust_resp = client.post(
+        "/v1/crm/customers",
+        json={"name": "Pipeline Export", "phone": "555-6666"},
+    )
+    customer_id = cust_resp.json()["id"]
+
+    now = datetime.now(UTC)
+
+    # Quote/lead-stage appointment.
+    start_quote = now - timedelta(days=5)
+    end_quote = start_quote + timedelta(hours=1)
+    client.post(
+        "/v1/crm/appointments",
+        json={
+            "customer_id": customer_id,
+            "start_time": start_quote.isoformat(),
+            "end_time": end_quote.isoformat(),
+            "service_type": "tankless_water_heater",
+            "is_emergency": False,
+            "description": "Quote appointment",
+            "lead_source": "web:landing-page",
+            "estimated_value": 500.0,
+            "job_stage": "Quote Sent",
+            "quoted_value": 550.0,
+            "quote_status": "PRESENTED",
+        },
+    )
+
+    # Booked job in a different stage, to ensure both rows appear.
+    start_booked = now - timedelta(days=3)
+    end_booked = start_booked + timedelta(hours=2)
+    client.post(
+        "/v1/crm/appointments",
+        json={
+            "customer_id": customer_id,
+            "start_time": start_booked.isoformat(),
+            "end_time": end_booked.isoformat(),
+            "service_type": "tankless_water_heater",
+            "is_emergency": True,
+            "description": "Booked emergency job",
+            "lead_source": "phone:referral",
+            "estimated_value": 800.0,
+            "job_stage": "Booked",
+            "quoted_value": 0.0,
+            "quote_status": "ACCEPTED",
+        },
+    )
+
+    resp = client.get("/v1/owner/export/pipeline.csv", params={"days": 30})
+    assert resp.status_code == 200
+    assert resp.headers.get("content-type", "").startswith("text/csv")
+
+    text = resp.text
+    lines = [line for line in text.splitlines() if line.strip()]
+    # Header plus two data rows.
+    assert len(lines) == 3
+    header = lines[0].split(",")
+    assert header == [
+        "start_time",
+        "job_stage",
+        "lead_source",
+        "estimated_value",
+        "quoted_value",
+        "quote_status",
+        "service_type",
+        "is_emergency",
+    ]
+
+    rows = [line.split(",") for line in lines[1:]]
+    stages = {row[1] for row in rows}
+    assert "Quote Sent" in stages
+    assert "Booked" in stages
+    # Ensure lead_source and emergency flag are being exported.
+    lead_sources = {row[2] for row in rows}
+    assert "web:landing-page" in lead_sources
+    assert "phone:referral" in lead_sources
+    emergency_flags = {row[7] for row in rows}
+    assert "true" in emergency_flags

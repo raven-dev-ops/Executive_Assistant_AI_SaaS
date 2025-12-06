@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
-from typing import Generator, Optional
+from typing import Generator
 
 try:
     from sqlalchemy import create_engine
@@ -19,7 +20,9 @@ except Exception:  # pragma: no cover - optional dependency
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
 if SQLALCHEMY_AVAILABLE:
-    connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    connect_args = (
+        {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    )
     engine = create_engine(DATABASE_URL, connect_args=connect_args)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
@@ -28,14 +31,18 @@ else:
     SessionLocal = None
 
     class _BaseStub:
-        metadata = type("Meta", (), {"create_all": staticmethod(lambda bind=None: None)})
+        metadata = type(
+            "Meta", (), {"create_all": staticmethod(lambda bind=None: None)}
+        )
 
     Base = _BaseStub  # type: ignore[assignment]
 
 
 def get_db() -> Generator["Session", None, None]:
     if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
-        raise RuntimeError("Database support is not available (SQLAlchemy not installed).")
+        raise RuntimeError(
+            "Database support is not available (SQLAlchemy not installed)."
+        )
     db = SessionLocal()
     try:
         yield db
@@ -48,9 +55,7 @@ def init_db() -> None:
         # Skip DB initialization when SQLAlchemy is unavailable (e.g., minimal test environments).
         return
     # Importing here avoids circular imports at module load time.
-    from sqlalchemy import text  # type: ignore
-
-    from .db_models import Business  # noqa: F401
+    from .db_models import BusinessDB  # noqa: F401
     from .config import get_settings
 
     Base.metadata.create_all(bind=engine)
@@ -75,18 +80,74 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN retention_sms_template TEXT"
                     )
+                if "zip_code" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN zip_code VARCHAR(255) NULL"
+                    )
+                if "median_household_income" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN median_household_income INTEGER NULL"
+                    )
+                if "owner_name" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN owner_name VARCHAR(255) NULL"
+                    )
+                if "owner_email" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN owner_email VARCHAR(255) NULL"
+                    )
+                if "owner_profile_image_url" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN owner_profile_image_url VARCHAR(1024) NULL"
+                    )
+                if "service_tier" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN service_tier VARCHAR(64) NULL"
+                    )
+                if "tts_voice" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN tts_voice VARCHAR(64) NULL"
+                    )
+                if "terms_accepted_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN terms_accepted_at TIMESTAMP NULL"
+                    )
+                if "privacy_accepted_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN privacy_accepted_at TIMESTAMP NULL"
+                    )
+                if "integration_linkedin_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_linkedin_status VARCHAR(32) NULL"
+                    )
+                if "integration_gmail_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_gmail_status VARCHAR(32) NULL"
+                    )
+                if "integration_gcalendar_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_gcalendar_status VARCHAR(32) NULL"
+                    )
+                if "integration_openai_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_openai_status VARCHAR(32) NULL"
+                    )
+                if "integration_twilio_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_twilio_status VARCHAR(32) NULL"
+                    )
                 conn.commit()
     except Exception:
         # Schema drift should not prevent the app from starting; any issues
         # will surface when the new fields are actually used.
-        pass
+        logging.getLogger(__name__).exception("db_schema_migration_failed")
 
     # Ensure a default business row exists for single-tenant operation.
     session = SessionLocal()
     try:
         settings = get_settings()
         default_calendar_id = settings.calendar.calendar_id
-        if not session.get(Business, "default_business"):
+        if not session.get(BusinessDB, "default_business"):
             default_api_key = os.getenv("DEFAULT_BUSINESS_API_KEY")
             default_widget_token = os.getenv("DEFAULT_BUSINESS_WIDGET_TOKEN")
             if not default_widget_token:
@@ -94,7 +155,7 @@ def init_db() -> None:
 
                 default_widget_token = secrets.token_hex(16)
             session.add(
-                Business(
+                BusinessDB(
                     id="default_business",
                     name="Default Business",
                     api_key=default_api_key,

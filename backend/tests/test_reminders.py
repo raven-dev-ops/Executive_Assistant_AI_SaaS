@@ -55,12 +55,8 @@ def test_send_upcoming_reminders_skips_opted_out_customers():
     sms_service._sent.clear()  # type: ignore[attr-defined]
 
     # Create two customers: one opted out, one opted in.
-    customer_opt_out = customers_repo.upsert(
-        name="Opted Out", phone="+15550002223"
-    )
-    customer_opt_in = customers_repo.upsert(
-        name="Opted In", phone="+15550002224"
-    )
+    customer_opt_out = customers_repo.upsert(name="Opted Out", phone="+15550002223")
+    customer_opt_in = customers_repo.upsert(name="Opted In", phone="+15550002224")
 
     # Mark the first customer as opted out of SMS.
     customers_repo.set_sms_opt_out(

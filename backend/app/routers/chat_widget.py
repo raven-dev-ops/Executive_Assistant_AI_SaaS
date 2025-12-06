@@ -7,7 +7,7 @@ from ..deps import ensure_business_active
 from ..repositories import conversations_repo, customers_repo
 from ..services.conversation import ConversationManager
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 
 
 router = APIRouter()
@@ -49,7 +49,7 @@ async def widget_business(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "name", None):
@@ -97,7 +97,9 @@ async def start_chat(
 
 
 @router.post("/{conversation_id}/message", response_model=ChatMessageResponse)
-async def chat_message(conversation_id: str, payload: ChatMessageRequest) -> ChatMessageResponse:
+async def chat_message(
+    conversation_id: str, payload: ChatMessageRequest
+) -> ChatMessageResponse:
     conv = conversations_repo.get(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -111,5 +113,9 @@ async def chat_message(conversation_id: str, payload: ChatMessageRequest) -> Cha
     )
     conversations_repo.append_message(conversation_id, role="user", text=payload.text)
     result = await manager.handle_input(session, payload.text)
-    conversations_repo.append_message(conversation_id, role="assistant", text=result.reply_text)
-    return ChatMessageResponse(conversation_id=conversation_id, reply_text=result.reply_text)
+    conversations_repo.append_message(
+        conversation_id, role="assistant", text=result.reply_text
+    )
+    return ChatMessageResponse(
+        conversation_id=conversation_id, reply_text=result.reply_text
+    )

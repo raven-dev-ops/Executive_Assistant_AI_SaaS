@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..deps import ensure_business_active
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..metrics import BusinessSmsMetrics, metrics
 from ..repositories import appointments_repo, customers_repo
 from ..services.sms import sms_service
@@ -39,7 +39,8 @@ async def send_retention_campaign(
     # Gather appointments for this tenant and compute last-visit per customer,
     # along with simple service/tag context so campaigns can target segments.
     appts = [
-        a for a in appointments_repo.list_for_business(business_id)
+        a
+        for a in appointments_repo.list_for_business(business_id)
         if getattr(a, "customer_id", None)
     ]
 
@@ -75,7 +76,7 @@ async def send_retention_campaign(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "name", None):
@@ -96,7 +97,11 @@ async def send_retention_campaign(
             continue
 
         customer = customers_repo.get(customer_id)
-        if not customer or not customer.phone or getattr(customer, "sms_opt_out", False):
+        if (
+            not customer
+            or not customer.phone
+            or getattr(customer, "sms_opt_out", False)
+        ):
             continue
 
         days_ago = (now - last_visit).days
@@ -127,4 +132,3 @@ async def send_retention_campaign(
         sent += 1
 
     return {"retention_messages_sent": sent}
-

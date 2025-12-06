@@ -38,7 +38,17 @@ jobs:
         run: |
           black --check .
 
+      - name: Run bandit (security scan)
+        working-directory: backend
+        run: |
+          bandit -q -r app -x tests
+
+      - name: Run mypy on core modules
+        working-directory: backend
+        run: |
+          mypy app/config.py app/business_config.py app/services/sessions.py app/deps.py
+
       - name: Run backend tests
         working-directory: backend
         run: |
-          pytest
+          pytest --cov=app --cov-report=term-missing --cov-fail-under=62

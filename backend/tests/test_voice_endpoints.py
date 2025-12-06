@@ -12,7 +12,9 @@ client = TestClient(app)
 
 def test_voice_session_lifecycle():
     # Start a session.
-    start_resp = client.post("/v1/voice/session/start", json={"caller_phone": "555-2222"})
+    start_resp = client.post(
+        "/v1/voice/session/start", json={"caller_phone": "555-2222"}
+    )
     assert start_resp.status_code == 200
     session_id = start_resp.json()["session_id"]
     assert session_id
@@ -37,7 +39,9 @@ def test_voice_session_metrics_increment():
     metrics.voice_session_errors = 0
     metrics.voice_sessions_by_business.clear()
 
-    start_resp = client.post("/v1/voice/session/start", json={"caller_phone": "555-3333"})
+    start_resp = client.post(
+        "/v1/voice/session/start", json={"caller_phone": "555-3333"}
+    )
     assert start_resp.status_code == 200
     session_id = start_resp.json()["session_id"]
 
@@ -65,7 +69,9 @@ def test_voice_session_error_increments_metrics(monkeypatch):
         conversation.conversation_manager, "handle_input", failing_handle_input
     )
 
-    start_resp = client.post("/v1/voice/session/start", json={"caller_phone": "555-4444"})
+    start_resp = client.post(
+        "/v1/voice/session/start", json={"caller_phone": "555-4444"}
+    )
     assert start_resp.status_code == 200
     session_id = start_resp.json()["session_id"]
 

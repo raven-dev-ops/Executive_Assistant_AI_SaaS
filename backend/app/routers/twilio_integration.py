@@ -8,11 +8,11 @@ from html import escape
 import logging
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, status
-from typing import Dict
+from typing import Dict, TYPE_CHECKING
 
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..deps import DEFAULT_BUSINESS_ID
 from ..metrics import BusinessSmsMetrics, BusinessTwilioMetrics, metrics
 from ..repositories import conversations_repo, customers_repo, appointments_repo
@@ -23,11 +23,17 @@ from ..business_config import get_calendar_id_for_business, get_language_for_bus
 from ..services.twilio_state import twilio_state_store
 from . import owner as owner_routes
 
+if TYPE_CHECKING:
+    from ..models import Appointment
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-async def _maybe_verify_twilio_signature(request: Request, form_params: Dict[str, str]) -> None:
+
+async def _maybe_verify_twilio_signature(
+    request: Request, form_params: Dict[str, str]
+) -> None:
     """Optionally verify the Twilio signature on inbound webhooks.
 
     If VERIFY_TWILIO_SIGNATURES=true and TWILIO_AUTH_TOKEN is set in the
@@ -93,7 +99,7 @@ def _get_business_name(business_id: str | None) -> str:
         return default_name
     session_db = SessionLocal()
     try:
-        row = session_db.get(Business, business_id)
+        row = session_db.get(BusinessDB, business_id)
     finally:
         session_db.close()
     if row is not None and getattr(row, "name", None):
@@ -122,7 +128,7 @@ def _twilio_say_language_attr(language_code: str) -> str:
 def _find_next_appointment_for_phone(
     phone: str,
     business_id: str,
-) -> "Appointment | None":
+) -> Appointment | None:
     """Return the next upcoming appointment for this phone/business, if any.
 
     This is intentionally conservative: we only look for the earliest future
@@ -196,9 +202,7 @@ def _owner_summary_for_selection(
             appointments = list(schedule.appointments or [])
             if not appointments:
                 if business_name:
-                    return (
-                        f"Mañana no tienes citas programadas para {business_name}."
-                    )
+                    return f"Mañana no tienes citas programadas para {business_name}."
                 return "Mañana no tienes citas programadas."
             count = len(appointments)
             first = appointments[0]
@@ -218,18 +222,14 @@ def _owner_summary_for_selection(
         total, emergency = _owner_emergency_counts_last_days(business_id, days=7)
         if language_code == "es":
             if total == 0:
-                return (
-                    "En los últimos siete días no tienes citas en el calendario."
-                )
+                return "En los últimos siete días no tienes citas en el calendario."
             return (
                 f"En los últimos siete días tienes {total} cita"
                 f"{'s' if total != 1 else ''}, de las cuales {emergency} "
                 "están marcadas como trabajos de emergencia."
             )
         if total == 0:
-            return (
-                "In the last seven days, you have no appointments on the calendar."
-            )
+            return "In the last seven days, you have no appointments on the calendar."
         return (
             f"In the last seven days, you have {total} appointments, "
             f"of which {emergency} are flagged as emergency jobs."
@@ -242,9 +242,7 @@ def _owner_summary_for_selection(
         total_value = pipeline.total_estimated_value or 0.0
         if language_code == "es":
             if not stages:
-                return (
-                    "Actualmente no tienes citas con etapas de trabajo registradas en tu pipeline."
-                )
+                return "Actualmente no tienes citas con etapas de trabajo registradas en tu pipeline."
             top_stage = stages[0]
             return (
                 "Tu pipeline de los últimos treinta días tiene un valor "
@@ -253,9 +251,7 @@ def _owner_summary_for_selection(
                 f"{top_stage.count} trabajos."
             )
         if not stages:
-            return (
-                "You currently have no appointments with job stages recorded in your pipeline."
-            )
+            return "You currently have no appointments with job stages recorded in your pipeline."
         top_stage = stages[0]
         return (
             f"Your pipeline over the last thirty days has an estimated total value of "
@@ -299,7 +295,7 @@ async def twilio_voice(
     # the Twilio webhook URL with a `?business_id=...` query parameter per
     # tenant; otherwise we fall back to the default single-tenant ID.
     business_id = business_id_param or DEFAULT_BUSINESS_ID
-    business_row: Business | None = None
+    business_row: BusinessDB | None = None
 
     logger.info(
         "twilio_voice_webhook",
@@ -327,10 +323,13 @@ async def twilio_voice(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            business_row = session_db.get(Business, business_id)
+            business_row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
-        if business_row is not None and getattr(business_row, "status", "ACTIVE") != "ACTIVE":
+        if (
+            business_row is not None
+            and getattr(business_row, "status", "ACTIVE") != "ACTIVE"
+        ):
             logger.warning(
                 "twilio_voice_business_suspended",
                 extra={"business_id": business_id, "call_sid": CallSid},
@@ -380,7 +379,6 @@ async def twilio_voice(
                 session = sessions.session_store.get(link.session_id)
                 # Detect calls that dropped before the assistant finished intake.
                 if session is not None:
-                    stage = getattr(session, "stage", "") or ""
                     status_val = (getattr(session, "status", "") or "").upper()
                     if status_val not in {"SCHEDULED", "PENDING_FOLLOWUP", "COMPLETED"}:
                         is_partial_lead = True
@@ -396,9 +394,7 @@ async def twilio_voice(
                 phone = From or ""
                 if phone:
                     now = datetime.now(UTC)
-                    queue = _metrics.callbacks_by_business.setdefault(
-                        business_id, {}
-                    )
+                    queue = _metrics.callbacks_by_business.setdefault(business_id, {})
                     existing = queue.get(phone)
                     lead_source = getattr(session, "lead_source", None)
                     if existing is None:
@@ -437,9 +433,7 @@ async def twilio_voice(
                             customer = customers_repo.get_by_phone(
                                 phone, business_id=business_id
                             )
-                        if not customer or not getattr(
-                            customer, "sms_opt_out", False
-                        ):
+                        if not customer or not getattr(customer, "sms_opt_out", False):
                             language_code = _get_language_for_business(business_id)
                             business_name = conversation.DEFAULT_BUSINESS_NAME
                             if business_row is not None and getattr(
@@ -524,7 +518,7 @@ async def twilio_voice(
   </Response>
   """.strip()
         return Response(content=twiml, media_type="text/xml")
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         # Track Twilio voice errors globally and per tenant.
         metrics.twilio_voice_errors += 1
         per_tenant = metrics.twilio_by_business.setdefault(
@@ -613,7 +607,7 @@ async def twilio_owner_voice(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None:
@@ -705,15 +699,13 @@ async def twilio_owner_voice(
                         language_code=language_code,
                         business_name=business_name,
                     )
-                    await sms_service.notify_owner(summary_text, business_id=business_id)
+                    await sms_service.notify_owner(
+                        summary_text, business_id=business_id
+                    )
                     if language_code == "es":
-                        ack = (
-                            "De acuerdo, te he enviado este resumen por mensaje de texto. Adiós."
-                        )
+                        ack = "De acuerdo, te he enviado este resumen por mensaje de texto. Adiós."
                     else:
-                        ack = (
-                            "Okay, I've sent this summary to you by text message. Goodbye."
-                        )
+                        ack = "Okay, I've sent this summary to you by text message. Goodbye."
                     safe_ack = escape(ack)
                     twiml = f"""
 <Response>
@@ -793,9 +785,7 @@ async def twilio_owner_voice(
                 f"&step=post&selection={selection}"
             )
         else:
-            gather_action = (
-                f"/twilio/owner-voice?step=post&selection={selection}"
-            )
+            gather_action = f"/twilio/owner-voice?step=post&selection={selection}"
         if language_code == "es":
             followup_prompt = (
                 "Para escuchar otro resumen, marca 1. "
@@ -884,7 +874,7 @@ async def twilio_sms(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "status", "ACTIVE") != "ACTIVE":
@@ -974,7 +964,9 @@ async def twilio_sms(
                     # Mark the appointment as confirmed without changing the calendar.
                     current_stage = getattr(appt, "job_stage", None)
                     new_stage = current_stage or "Booked"
-                    appointments_repo.update(appt.id, status="CONFIRMED", job_stage=new_stage)
+                    appointments_repo.update(
+                        appt.id, status="CONFIRMED", job_stage=new_stage
+                    )
                     per_sms = metrics.sms_by_business.setdefault(
                         business_id, BusinessSmsMetrics()
                     )
@@ -997,7 +989,9 @@ async def twilio_sms(
                         )
                     current_stage = getattr(appt, "job_stage", None)
                     new_stage = current_stage or "Cancelled"
-                    appointments_repo.update(appt.id, status="CANCELLED", job_stage=new_stage)
+                    appointments_repo.update(
+                        appt.id, status="CANCELLED", job_stage=new_stage
+                    )
                     per_sms = metrics.sms_by_business.setdefault(
                         business_id, BusinessSmsMetrics()
                     )
@@ -1046,7 +1040,9 @@ async def twilio_sms(
                 # Mark appointment as pending reschedule but do not change calendar automatically.
                 current_stage = getattr(appt, "job_stage", None)
                 new_stage = current_stage or "Pending Reschedule"
-                appointments_repo.update(appt.id, status="PENDING_RESCHEDULE", job_stage=new_stage)
+                appointments_repo.update(
+                    appt.id, status="PENDING_RESCHEDULE", job_stage=new_stage
+                )
                 per_sms = metrics.sms_by_business.setdefault(
                     business_id, BusinessSmsMetrics()
                 )
@@ -1127,7 +1123,7 @@ async def twilio_sms(
 </Response>
 """.strip()
         return Response(content=twiml, media_type="text/xml")
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         logger.exception(
             "twilio_sms_unhandled_error",
             extra={

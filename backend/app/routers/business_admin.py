@@ -14,7 +14,7 @@ from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import (
     AppointmentDB,
     AuditEventDB,
-    Business,
+    BusinessDB,
     ConversationDB,
     ConversationMessageDB,
     TechnicianDB,
@@ -22,6 +22,7 @@ from ..db_models import (
 from ..deps import require_admin_auth
 from ..metrics import metrics
 from ..repositories import appointments_repo, conversations_repo, customers_repo
+from ..services.gcp_storage import get_gcs_health
 
 
 router = APIRouter(dependencies=[Depends(require_admin_auth)])
@@ -35,6 +36,9 @@ class BusinessCreateRequest(BaseModel):
 
 class BusinessUpdateRequest(BaseModel):
     name: str | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_profile_image_url: str | None = None
     calendar_id: str | None = None
     status: str | None = None
     vertical: str | None = None
@@ -54,17 +58,24 @@ class BusinessUpdateRequest(BaseModel):
     twilio_missed_statuses: str | None = None
     retention_enabled: bool | None = None
     retention_sms_template: str | None = None
+    service_tier: str | None = None
+    tts_voice: str | None = None
 
 
 class BusinessResponse(BaseModel):
     id: str
     name: str
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_profile_image_url: str | None = None
     vertical: str | None = None
     api_key: str | None = None
     widget_token: str | None = None
     calendar_id: str | None = None
     status: str
     owner_phone: str | None = None
+    zip_code: str | None = None
+    median_household_income: int | None = None
     emergency_keywords: str | None = None
     default_reminder_hours: int | None = None
     service_duration_config: str | None = None
@@ -81,6 +92,8 @@ class BusinessResponse(BaseModel):
     twilio_missed_statuses: str | None = None
     retention_enabled: bool | None = None
     retention_sms_template: str | None = None
+    service_tier: str | None = None
+    tts_voice: str | None = None
 
 
 class BusinessUsageResponse(BusinessResponse):
@@ -127,6 +140,15 @@ class TwilioHealthResponse(BaseModel):
     twilio_sms_requests: int
     twilio_sms_errors: int
     per_business: list[TwilioBusinessHealth]
+
+
+class GcpStorageHealthResponse(BaseModel):
+    configured: bool
+    project_id: str | None
+    bucket_name: str | None
+    library_available: bool
+    can_connect: bool
+    error: str | None = None
 
 
 class AdminEnvironmentResponse(BaseModel):
@@ -209,17 +231,22 @@ def _get_db_session():
     return SessionLocal()
 
 
-def _business_to_response(row: Business) -> BusinessResponse:
+def _business_to_response(row: BusinessDB) -> BusinessResponse:
     created_at = getattr(row, "created_at", datetime.now(UTC)).replace(tzinfo=UTC)
     return BusinessResponse(
         id=row.id,
         name=row.name,
+        owner_name=getattr(row, "owner_name", None),
+        owner_email=getattr(row, "owner_email", None),
+        owner_profile_image_url=getattr(row, "owner_profile_image_url", None),
         vertical=getattr(row, "vertical", None),
         api_key=row.api_key,
         widget_token=getattr(row, "widget_token", None),
         calendar_id=getattr(row, "calendar_id", None),
         status=getattr(row, "status", "ACTIVE"),
         owner_phone=getattr(row, "owner_phone", None),
+        zip_code=getattr(row, "zip_code", None),
+        median_household_income=getattr(row, "median_household_income", None),
         emergency_keywords=getattr(row, "emergency_keywords", None),
         default_reminder_hours=getattr(row, "default_reminder_hours", None),
         service_duration_config=getattr(row, "service_duration_config", None),
@@ -238,6 +265,8 @@ def _business_to_response(row: Business) -> BusinessResponse:
         twilio_missed_statuses=getattr(row, "twilio_missed_statuses", None),
         retention_enabled=getattr(row, "retention_enabled", None),
         retention_sms_template=getattr(row, "retention_sms_template", None),
+        service_tier=getattr(row, "service_tier", None),
+        tts_voice=getattr(row, "tts_voice", None),
     )
 
 
@@ -257,18 +286,20 @@ def _technician_to_response(row: TechnicianDB) -> TechnicianResponse:
 def list_businesses() -> list[BusinessResponse]:
     session = _get_db_session()
     try:
-        rows = session.query(Business).all()
+        rows = session.query(BusinessDB).all()
         return [_business_to_response(b) for b in rows]
     finally:
         session.close()
 
 
-@router.post("/businesses", response_model=BusinessResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/businesses", response_model=BusinessResponse, status_code=status.HTTP_201_CREATED
+)
 def create_business(payload: BusinessCreateRequest) -> BusinessResponse:
     business_id = payload.id or secrets.token_hex(8)
     session = _get_db_session()
     try:
-        if session.get(Business, business_id):
+        if session.get(BusinessDB, business_id):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Business with this ID already exists",
@@ -278,7 +309,7 @@ def create_business(payload: BusinessCreateRequest) -> BusinessResponse:
         now = datetime.now(UTC)
         settings = get_settings()
         calendar_id = payload.calendar_id or settings.calendar.calendar_id
-        row = Business(  # type: ignore[arg-type]
+        row = BusinessDB(  # type: ignore[arg-type]
             id=business_id,
             name=payload.name,
             vertical=getattr(settings, "default_vertical", "plumbing"),
@@ -313,11 +344,13 @@ def create_business(payload: BusinessCreateRequest) -> BusinessResponse:
 
 
 @router.patch("/businesses/{business_id}", response_model=BusinessResponse)
-def update_business(business_id: str, payload: BusinessUpdateRequest) -> BusinessResponse:
+def update_business(
+    business_id: str, payload: BusinessUpdateRequest
+) -> BusinessResponse:
     """Update mutable fields for a business (name, calendar_id)."""
     session = _get_db_session()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -325,6 +358,12 @@ def update_business(business_id: str, payload: BusinessUpdateRequest) -> Busines
             )
         if payload.name is not None:
             row.name = payload.name
+        if payload.owner_name is not None:
+            row.owner_name = payload.owner_name
+        if payload.owner_email is not None:
+            row.owner_email = payload.owner_email
+        if payload.owner_profile_image_url is not None:
+            row.owner_profile_image_url = payload.owner_profile_image_url
         if payload.vertical is not None:
             row.vertical = payload.vertical
         if payload.calendar_id is not None:
@@ -354,7 +393,9 @@ def update_business(business_id: str, payload: BusinessUpdateRequest) -> Busines
         if payload.max_jobs_per_day is not None:
             row.max_jobs_per_day = payload.max_jobs_per_day
         if payload.reserve_mornings_for_emergencies is not None:
-            row.reserve_mornings_for_emergencies = payload.reserve_mornings_for_emergencies
+            row.reserve_mornings_for_emergencies = (
+                payload.reserve_mornings_for_emergencies
+            )
         if payload.travel_buffer_minutes is not None:
             row.travel_buffer_minutes = payload.travel_buffer_minutes
         if payload.twilio_missed_statuses is not None:
@@ -363,6 +404,10 @@ def update_business(business_id: str, payload: BusinessUpdateRequest) -> Busines
             row.retention_enabled = payload.retention_enabled
         if payload.retention_sms_template is not None:
             row.retention_sms_template = payload.retention_sms_template
+        if payload.service_tier is not None:
+            row.service_tier = payload.service_tier
+        if payload.tts_voice is not None:
+            row.tts_voice = payload.tts_voice
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -375,9 +420,11 @@ def update_business(business_id: str, payload: BusinessUpdateRequest) -> Busines
 def rotate_api_key(business_id: str) -> BusinessResponse:
     session = _get_db_session()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Business not found"
+            )
         row.api_key = secrets.token_hex(16)
         session.add(row)
         session.commit()
@@ -387,13 +434,17 @@ def rotate_api_key(business_id: str) -> BusinessResponse:
         session.close()
 
 
-@router.post("/businesses/{business_id}/rotate-widget-token", response_model=BusinessResponse)
+@router.post(
+    "/businesses/{business_id}/rotate-widget-token", response_model=BusinessResponse
+)
 def rotate_widget_token(business_id: str) -> BusinessResponse:
     session = _get_db_session()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Business not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Business not found"
+            )
         row.widget_token = secrets.token_hex(16)
         session.add(row)
         session.commit()
@@ -428,12 +479,12 @@ def seed_demo_tenants() -> TenantDemoResponse:
         for suffix in ("alpha", "beta"):
             business_id = f"demo_{suffix}"
             name = f"Demo Tenant {suffix.title()}"
-            row = session.get(Business, business_id)
+            row = session.get(BusinessDB, business_id)
             if row is None:
                 api_key = secrets.token_hex(16)
                 widget_token = secrets.token_hex(16)
                 now = datetime.now(UTC)
-                row = Business(  # type: ignore[arg-type]
+                row = BusinessDB(  # type: ignore[arg-type]
                     id=business_id,
                     name=name,
                     api_key=api_key,
@@ -452,10 +503,10 @@ def seed_demo_tenants() -> TenantDemoResponse:
                     language_code=get_settings().default_language_code,
                     max_jobs_per_day=None,
                     reserve_mornings_for_emergencies=False,
-                      travel_buffer_minutes=None,
-                      twilio_missed_statuses=None,
-                      created_at=now,
-                  )
+                    travel_buffer_minutes=None,
+                    twilio_missed_statuses=None,
+                    created_at=now,
+                )
                 session.add(row)
                 session.commit()
                 session.refresh(row)
@@ -509,16 +560,20 @@ def seed_demo_tenants() -> TenantDemoResponse:
     return TenantDemoResponse(businesses=tenants)
 
 
-def _build_business_usage(business_id: str, row: Business) -> BusinessUsageResponse:
+def _build_business_usage(business_id: str, row: BusinessDB) -> BusinessUsageResponse:
     """Aggregate simple per-tenant usage stats from repositories."""
     customers = customers_repo.list_for_business(business_id)
     appointments = appointments_repo.list_for_business(business_id)
     conversations = conversations_repo.list_for_business(business_id)
 
     total_customers = len(customers)
-    sms_opt_out_customers = sum(1 for c in customers if getattr(c, "sms_opt_out", False))
+    sms_opt_out_customers = sum(
+        1 for c in customers if getattr(c, "sms_opt_out", False)
+    )
     total_appointments = len(appointments)
-    emergency_appointments = sum(1 for a in appointments if getattr(a, "is_emergency", False))
+    emergency_appointments = sum(
+        1 for a in appointments if getattr(a, "is_emergency", False)
+    )
 
     total_conversations = len(conversations)
     flagged_conversations = 0
@@ -610,7 +665,7 @@ def get_business_usage(business_id: str) -> BusinessUsageResponse:
     """Return per-tenant usage stats (customers, appointments, emergencies)."""
     session = _get_db_session()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -626,7 +681,7 @@ def list_business_usage() -> list[BusinessUsageResponse]:
     """List usage stats for all known tenants."""
     session = _get_db_session()
     try:
-        rows = session.query(Business).all()
+        rows = session.query(BusinessDB).all()
         return [_build_business_usage(b.id, b) for b in rows]
     finally:
         session.close()
@@ -663,7 +718,7 @@ def create_business_technician(
     """Create a technician for the specified business."""
     session = _get_db_session()
     try:
-        business = session.get(Business, business_id)
+        business = session.get(BusinessDB, business_id)
         if business is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -763,6 +818,26 @@ def twilio_health() -> TwilioHealthResponse:
     )
 
 
+@router.get("/gcp/storage-health", response_model=GcpStorageHealthResponse)
+def gcp_storage_health() -> GcpStorageHealthResponse:
+    """Return a lightweight health view for Google Cloud Storage.
+
+    This focuses on the bucket used for hosting dashboards or related assets,
+    as configured via GCP_PROJECT_ID and GCS_DASHBOARD_BUCKET. When the
+    google-cloud-storage library or credentials are unavailable, the endpoint
+    returns a non-fatal error string instead of raising.
+    """
+    health = get_gcs_health()
+    return GcpStorageHealthResponse(
+        configured=health.configured,
+        project_id=health.project_id,
+        bucket_name=health.bucket_name,
+        library_available=health.library_available,
+        can_connect=health.can_connect,
+        error=health.error,
+    )
+
+
 @router.post("/retention/prune", response_model=RetentionPruneResponse)
 def prune_retention() -> RetentionPruneResponse:
     """Prune old appointments and conversations based on per-tenant retention.
@@ -777,7 +852,7 @@ def prune_retention() -> RetentionPruneResponse:
         conversations_deleted = 0
         messages_deleted = 0
 
-        businesses = session.query(Business).all()
+        businesses = session.query(BusinessDB).all()
         for row in businesses:
             appt_ret = getattr(row, "appointment_retention_days", None)
             if appt_ret is not None and appt_ret > 0:
@@ -836,7 +911,7 @@ def download_business_usage_csv() -> Response:
     """
     session = _get_db_session()
     try:
-        rows = session.query(Business).all()
+        rows = session.query(BusinessDB).all()
         usages = [_build_business_usage(b.id, b) for b in rows]
     finally:
         session.close()
@@ -923,7 +998,7 @@ def get_governance_summary() -> GovernanceSummaryResponse:
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
-            rows = session.query(Business).order_by(Business.id.asc()).all()
+            rows = session.query(BusinessDB).order_by(BusinessDB.id.asc()).all()
             business_count = len(rows)
             multi_tenant = business_count > 1
             for row in rows:

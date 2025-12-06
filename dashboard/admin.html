@@ -645,6 +645,22 @@
           <button id="refresh-twilio" type="button" style="width: 100%; margin-top: 1rem;">Refresh</button>
         </div>
 
+        <!-- GCP Storage Health -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon success">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 6l9-4 9 4v6c0 5.25-3.5 10-9 11-5.5-1-9-5.75-9-11V6zm9 2L6.74 6.52 5.5 7.09 12 10l6.5-2.91-1.24-.57L12 8zm0 3.5L6 9v3.5c0 3.87 2.69 7.19 6 7.93 3.31-.74 6-4.06 6-7.93V9l-6 2.5z"/>
+              </svg>
+            </div>
+            <h2>GCP Storage Health</h2>
+          </div>
+          <div id="gcp-storage-content">
+            <div class="loading">Loading</div>
+          </div>
+          <button id="refresh-gcp-storage" type="button" style="width: 100%; margin-top: 1rem;">Refresh</button>
+        </div>
+
         <!-- Governance -->
         <div class="card">
           <div class="card-header">
@@ -948,18 +964,93 @@
       async function loadTwilioHealth() {
         const el = document.getElementById("twilio-content");
         if (!el) return;
-        el.innerHTML = `
-          <div class="info-grid">
-            <div class="info-item">
-              <div class="info-label">Voice Requests</div>
-              <div class="info-value">0</div>
+        try {
+          const data = await fetchJson("/v1/admin/twilio/health");
+          const cfg = data.config || {};
+          const voice = data.twilio_voice_requests ?? 0;
+          const sms = data.twilio_sms_requests ?? 0;
+          const voiceErrors = data.twilio_voice_errors ?? 0;
+          const smsErrors = data.twilio_sms_errors ?? 0;
+
+          el.innerHTML = `
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-label">Provider</div>
+                <div class="info-value">${cfg.provider || "stub"}</div>
+                <div class="info-sub">From: ${cfg.from_number_set ? "set" : "not set"}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Voice Requests</div>
+                <div class="info-value">${voice}</div>
+                <div class="info-sub">Errors: ${voiceErrors}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">SMS Requests</div>
+                <div class="info-value">${sms}</div>
+                <div class="info-sub">Errors: ${smsErrors}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Verify Signatures</div>
+                <div class="info-value">${cfg.verify_signatures ? "Enabled" : "Disabled"}</div>
+              </div>
             </div>
-            <div class="info-item">
-              <div class="info-label">SMS Requests</div>
-              <div class="info-value">0</div>
+          `;
+        } catch (err) {
+          console.error("Error loading Twilio health", err);
+          el.innerHTML = '<div class="empty-state"><p>Unable to load Twilio health.</p></div>';
+        }
+      }
+
+      async function loadGcpStorageHealth() {
+        const el = document.getElementById("gcp-storage-content");
+        if (!el) return;
+        try {
+          const data = await fetchJson("/v1/admin/gcp/storage-health");
+          const configured = !!data.configured;
+          const bucket = data.bucket_name || "(not set)";
+          const project = data.project_id || "(not set)";
+          const libraryAvailable = !!data.library_available;
+          const canConnect = !!data.can_connect;
+          const error = data.error || "";
+
+          const statusLabel = !configured
+            ? "Not Configured"
+            : !libraryAvailable
+              ? "Client Library Missing"
+              : canConnect
+                ? "Healthy"
+                : "Degraded";
+
+          const statusClass = canConnect
+            ? "status-badge success"
+            : configured
+              ? "status-badge warning"
+              : "status-badge muted";
+
+          el.innerHTML = `
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-label">Project ID</div>
+                <div class="info-value">${project}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Dashboard Bucket</div>
+                <div class="info-value">${bucket}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Status</div>
+                <div class="${statusClass}">${statusLabel}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Details</div>
+                <div class="info-value">${error || "OK"}</div>
+              </div>
             </div>
-          </div>
-        `;
+          `;
+        } catch (err) {
+          console.error("Error loading GCP storage health", err);
+          el.innerHTML = '<div class="empty-state"><p>Unable to load GCP storage health.</p></div>';
+        }
       }
 
       async function loadGovernance() {
@@ -989,6 +1080,7 @@
       document.getElementById("refresh-tenants")?.addEventListener("click", loadTenants);
       document.getElementById("refresh-usage")?.addEventListener("click", loadUsage);
       document.getElementById("refresh-twilio")?.addEventListener("click", loadTwilioHealth);
+      document.getElementById("refresh-gcp-storage")?.addEventListener("click", loadGcpStorageHealth);
       document.getElementById("refresh-governance")?.addEventListener("click", loadGovernance);
       document.getElementById("refresh-audit")?.addEventListener("click", loadAudit);
 
@@ -1023,6 +1115,7 @@
       loadTenants();
       loadUsage();
       loadTwilioHealth();
+      loadGcpStorageHealth();
       loadGovernance();
       loadAudit();
     </script>

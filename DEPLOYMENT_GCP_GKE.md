@@ -213,7 +213,10 @@ kubectl get svc ai-telephony-backend
 Use the external IP to test the backend:
 
 ```bash
-curl http://EXTERNAL_IP/healthz
+curl http://EXTERNAL_IP/healthz        # basic liveness
+curl http://EXTERNAL_IP/readyz         # readiness with DB check
+curl http://EXTERNAL_IP/metrics        # JSON metrics
+curl http://EXTERNAL_IP/metrics/prometheus
 curl http://EXTERNAL_IP/docs
 ```
 
@@ -257,13 +260,17 @@ For full details on dashboard flows and API usage, see `DASHBOARD.md`, `API_REFE
 ----------------------------
 
 - **Health and metrics**:
-  - The backend exposes `/healthz` and `/metrics` as JSON.
-  - Prometheus-style metrics are available at `/metrics/prometheus`.
+  - The backend exposes `/healthz` for liveness and `/readyz` for readiness (including a basic DB
+    connectivity check when a real database is configured).
+  - JSON metrics are available at `/metrics`; Prometheus-style metrics at `/metrics/prometheus`.
   - You can temporarily port-forward for local inspection:
 
     ```bash
     kubectl port-forward svc/ai-telephony-backend 8000:80
+    curl http://localhost:8000/healthz
+    curl http://localhost:8000/readyz
     curl http://localhost:8000/metrics
+    curl http://localhost:8000/metrics/prometheus
     ```
 
 - **Autoscaling**:

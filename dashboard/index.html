@@ -427,6 +427,345 @@
         height: 16px;
         fill: white;
       }
+
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
+        gap: 0.35rem;
+      }
+
+      .calendar-day {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 0.35rem 0.25rem;
+        border-radius: 8px;
+        border: none;
+        background: #edf2f7;
+        color: #1f2933;
+        font-size: 0.7rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .calendar-day:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.15);
+      }
+
+      .calendar-day-date {
+        font-weight: 600;
+        margin-bottom: 0.05rem;
+      }
+
+      .calendar-day-total {
+        font-size: 0.7rem;
+        opacity: 0.8;
+      }
+
+      .calendar-day-emergency {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      .calendar-day-maintenance {
+        background: #ecfdf5;
+        color: #047857;
+      }
+
+      .calendar-day-routine {
+        background: #e0f2fe;
+        color: #0369a1;
+      }
+
+      .calendar-day-new-client {
+        background: #eef2ff;
+        color: #4338ca;
+      }
+
+      body.dark .calendar-day {
+        background: #1f2937;
+        color: #e5e7eb;
+      }
+
+      body.dark .calendar-day-emergency {
+        background: rgba(248, 113, 113, 0.25);
+        color: #fecaca;
+      }
+
+      body.dark .calendar-day-maintenance {
+        background: rgba(16, 185, 129, 0.25);
+        color: #a7f3d0;
+      }
+
+      body.dark .calendar-day-routine {
+        background: rgba(59, 130, 246, 0.25);
+        color: #bfdbfe;
+      }
+
+      body.dark .calendar-day-new-client {
+        background: rgba(129, 140, 248, 0.25);
+        color: #c7d2fe;
+      }
+
+      .calendar-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        font-size: 0.75rem;
+        color: #64748b;
+      }
+
+      .calendar-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .calendar-legend-swatch {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+
+      .modal {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 1.5rem;
+        max-width: 620px;
+        width: 100%;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+
+      .modal-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #111827;
+      }
+
+      .modal-body {
+        max-height: 60vh;
+        overflow-y: auto;
+        font-size: 0.875rem;
+        color: #374151;
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1rem;
+      }
+
+      body.dark .modal {
+        background: #1f2937;
+        color: #e5e7eb;
+      }
+
+      body.dark .modal-title {
+        color: #f9fafb;
+      }
+
+      body.dark .modal-body {
+        color: #d1d5db;
+      }
+
+      .assistant-root {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 60;
+      }
+
+      .assistant-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.6rem 0.9rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        border: none;
+        color: #f9fafb;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.4);
+      }
+
+      .assistant-toggle-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .assistant-toggle-icon svg {
+        width: 13px;
+        height: 13px;
+        fill: currentColor;
+      }
+
+      .assistant-panel {
+        position: absolute;
+        bottom: 3.25rem;
+        right: 0;
+        width: 360px;
+        max-height: 520px;
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.4);
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .assistant-header {
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+      }
+
+      .assistant-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #111827;
+      }
+
+      .assistant-subtitle {
+        font-size: 0.7rem;
+        color: #6b7280;
+      }
+
+      .assistant-close {
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        padding: 0.25rem;
+        cursor: pointer;
+      }
+
+      .assistant-messages {
+        padding: 0.75rem 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        overflow-y: auto;
+        flex: 1 1 auto;
+      }
+
+      .assistant-message {
+        font-size: 0.8rem;
+        line-height: 1.4;
+        border-radius: 10px;
+        padding: 0.5rem 0.7rem;
+        max-width: 100%;
+      }
+
+      .assistant-message-user {
+        align-self: flex-end;
+        background: #e0e7ff;
+        color: #111827;
+      }
+
+      .assistant-message-assistant {
+        align-self: flex-start;
+        background: #f3f4f6;
+        color: #111827;
+      }
+
+      .assistant-message-system {
+        align-self: center;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.75rem;
+      }
+
+      .assistant-form {
+        border-top: 1px solid #e5e7eb;
+        padding: 0.6rem 0.8rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+
+      .assistant-form textarea {
+        resize: none;
+        min-height: 56px;
+        max-height: 120px;
+      }
+
+      .assistant-form-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        font-size: 0.7rem;
+      }
+
+      .assistant-status {
+        color: #6b7280;
+      }
+
+      body.dark .assistant-panel {
+        background: #111827;
+        border: 1px solid #374151;
+      }
+
+      body.dark .assistant-header {
+        border-bottom-color: #374151;
+      }
+
+      body.dark .assistant-title {
+        color: #e5e7eb;
+      }
+
+      body.dark .assistant-subtitle {
+        color: #9ca3af;
+      }
+
+      body.dark .assistant-message-assistant {
+        background: #1f2937;
+        color: #e5e7eb;
+      }
+
+      body.dark .assistant-message-user {
+        background: rgba(79, 70, 229, 0.4);
+        color: #e5e7eb;
+      }
+
+      body.dark .assistant-message-system {
+        background: rgba(59, 130, 246, 0.3);
+        color: #bfdbfe;
+      }
+
+      body.dark .assistant-form {
+        border-top-color: #374151;
+      }
     </style>
   </head>
   <body>
@@ -481,7 +820,10 @@
             <input id="owner-token-input" type="password" placeholder="Enter your owner dashboard token" />
           </label>
         </div>
-        <small id="owner-auth-status" class="muted"></small>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
+          <small id="owner-auth-status" class="muted"></small>
+          <span id="owner-plan-label" class="pill" style="display: none;">Plan: Starter</span>
+        </div>
       </div>
 
       <!-- Quick Stats -->
@@ -549,22 +891,85 @@
           <button id="refresh-emergencies" type="button" style="margin-top: 1rem; width: 100%;">Refresh</button>
         </div>
 
-        <!-- Analytics -->
-        <div class="card" style="grid-column: span 2;">
-          <div class="card-header">
-            <div class="card-icon">
-              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <!-- Analytics -->
+          <div class="card" style="grid-column: span 2;">
+            <div class="card-header">
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
               </svg>
             </div>
             <h2>Analytics Overview</h2>
           </div>
-          <div id="analytics-content">
+            <div id="analytics-content">
+              <div class="loading">Loading</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+              <button id="refresh-analytics" type="button" style="flex: 1;">Refresh</button>
+              <button id="download-service-mix" type="button" style="flex: 1;">Download CSV</button>
+            </div>
+          </div>
+
+          <!-- 90-Day Calendar (Tags) -->
+          <div class="card" style="grid-column: span 2;" data-min-tier="100">
+            <div class="card-header">
+              <div class="card-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M7 10h5v5H7zM3 4h18v2H3zm16 4H5c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2z"/>
+                </svg>
+              </div>
+              <h2>90-Day Calendar (Tags)</h2>
+            </div>
+            <div id="calendar-90d-content">
+              <div class="loading">Loading</div>
+            </div>
+            <div class="calendar-legend">
+              <div class="calendar-legend-item">
+                <span class="calendar-legend-swatch" style="background:#fee2e2;"></span>
+                <span>Emergency</span>
+              </div>
+              <div class="calendar-legend-item">
+                <span class="calendar-legend-swatch" style="background:#ecfdf5;"></span>
+                <span>Maintenance</span>
+              </div>
+              <div class="calendar-legend-item">
+                <span class="calendar-legend-swatch" style="background:#e0f2fe;"></span>
+                <span>Routine</span>
+              </div>
+              <div class="calendar-legend-item">
+                <span class="calendar-legend-swatch" style="background:#eef2ff;"></span>
+                <span>New client</span>
+              </div>
+            </div>
+          </div>
+  
+          <!-- Market by ZIP (Wealth & Value) -->
+          <div class="card" style="grid-column: span 2;" data-min-tier="100">
+            <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L4 5v6c0 5.52 3.84 10.74 9 12 5.16-1.26 9-6.48 9-12V5l-8-3zm0 2.18L18.16 7 12 9.82 5.84 7 12 4.18zM5 9l7 3 7-3v3c0 4.07-2.75 8.12-7 9.44C7.75 20.12 5 16.07 5 12V9z"/>
+              </svg>
+            </div>
+            <h2>Market by ZIP (Wealth & Value)</h2>
+          </div>
+          <div id="zip-wealth-content">
             <div class="loading">Loading</div>
           </div>
-          <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-            <button id="refresh-analytics" type="button" style="flex: 1;">Refresh</button>
-            <button id="download-service-mix" type="button" style="flex: 1;">Download CSV</button>
+        </div>
+
+        <!-- Service Metrics (Price & Time) -->
+        <div class="card" style="grid-column: span 2;" data-min-tier="100">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 17h2v-7H3v7zm4 0h2V7H7v10zm4 0h2v-4h-2v4zm4 0h2V3h-2v14zM3 19h18v2H3z"/>
+              </svg>
+            </div>
+            <h2>Service Metrics (Price & Time)</h2>
+          </div>
+          <div id="service-metrics-content">
+            <div class="loading">Loading</div>
           </div>
         </div>
 
@@ -590,11 +995,72 @@
       </div>
     </div>
 
+    <!-- Calendar report modal -->
+    <div id="calendar-report-modal" class="modal-backdrop" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="calendar-modal-title">
+        <div class="modal-header">
+          <div>
+            <div id="calendar-modal-title" class="modal-title">Schedule report</div>
+            <div style="font-size: 0.75rem; color: #6b7280;">90-day calendar tags summarized for the selected day.</div>
+          </div>
+          <button id="calendar-modal-close" type="button" class="assistant-close" aria-label="Close schedule report">&times;</button>
+        </div>
+        <div id="calendar-modal-body" class="modal-body">
+          <div class="loading">Preparing report...</div>
+        </div>
+        <div class="modal-footer">
+          <button id="calendar-modal-download" type="button">Download PDF</button>
+          <button id="calendar-modal-dismiss" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Owner assistant bubble -->
+    <div id="owner-assistant-root" class="assistant-root">
+      <button id="owner-assistant-toggle" type="button" class="assistant-toggle">
+        <span class="assistant-toggle-icon">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 4h16v10H5.17L4 15.17V4zm0-2c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2H4zm4 9h8v2H8v-2zm0-3h8v2H8V8z"/>
+          </svg>
+        </span>
+        <span>Ask the dashboard</span>
+      </button>
+      <div id="owner-assistant-panel" class="assistant-panel" aria-hidden="true">
+        <div class="assistant-header">
+          <div>
+            <div class="assistant-title">AI Owner Assistant</div>
+            <div class="assistant-subtitle">Ask about metrics, data, policies, or support.</div>
+          </div>
+          <button id="owner-assistant-close" type="button" class="assistant-close" aria-label="Close assistant">&times;</button>
+        </div>
+        <div id="owner-assistant-messages" class="assistant-messages">
+          <div class="assistant-message assistant-message-system">
+            Ask me about today's jobs, emergency volume, service metrics, your customers, or privacy and security policies.
+          </div>
+        </div>
+        <form id="owner-assistant-form" class="assistant-form">
+          <textarea
+            id="owner-assistant-input"
+            rows="2"
+            placeholder="Ask a question about this dashboard, your metrics, data, policies, or support..."
+          ></textarea>
+          <div class="assistant-form-actions">
+            <span id="owner-assistant-status" class="assistant-status"></span>
+            <button id="owner-assistant-send" type="submit">Ask</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <script type="module">
       const DEFAULT_BACKEND_BASE = "http://localhost:8000";
       const backendBase = DEFAULT_BACKEND_BASE;
       let apiKey = localStorage.getItem("owner_api_key") || "";
       let ownerToken = localStorage.getItem("owner_owner_token") || "";
+      let calendar90dData = null;
+      let ownerAssistantOpen = false;
+      let ownerAssistantBusy = false;
+      let ownerServiceTier = null;
 
       function updateConnectionStatus(state) {
         const el = document.getElementById("connection-status");
@@ -666,6 +1132,35 @@
         const hours = Math.floor(minutes / 60);
         const rem = minutes % 60;
         return rem ? `${hours}h ${rem}m` : `${hours}h`;
+      }
+
+      function formatCurrency(value) {
+        if (value === null || value === undefined || isNaN(value)) {
+          return "0";
+        }
+        const num = Number(value);
+        return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      }
+
+      function tierCodeToLabel(tier) {
+        if (!tier) return "Unselected";
+        if (tier === "20") return "Starter ($20/mo)";
+        if (tier === "100") return "Growth ($100/mo)";
+        if (tier === "200") return "Scale ($200/mo)";
+        return tier;
+      }
+
+      function tierCodeToNumber(tier) {
+        if (!tier) return 0;
+        const n = Number(tier);
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function featureEnabledForTier(requiredTierCode) {
+        const required = tierCodeToNumber(requiredTierCode);
+        const actual = tierCodeToNumber(ownerServiceTier);
+        if (!required || !actual) return true;
+        return actual >= required;
       }
 
       async function loadOwnerKpis() {
@@ -912,6 +1407,318 @@
         }
       }
 
+        async function loadZipWealth() {
+          const el = document.getElementById("zip-wealth-content");
+          if (!el) return;
+          if (!featureEnabledForTier("100")) {
+            el.innerHTML = '<div class="empty-state">Upgrade to the Growth plan ($100/mo) to unlock market-by-ZIP analytics.</div>';
+            return;
+          }
+          el.innerHTML = '<div class="loading">Loading</div>';
+        try {
+          const data = await fetchJson("/v1/owner/neighborhoods?days=365");
+          const items = Array.isArray(data?.items) ? data.items : [];
+          if (!items.length) {
+            el.innerHTML = '<div class="empty-state">No ZIP-level data available yet</div>';
+            return;
+          }
+          const rows = items
+            .filter(item => typeof item.label === "string" && item.label.length > 0)
+            .map(item => {
+              const zip = String(item.label);
+              const value = Number(item.estimated_value_total || 0);
+              const income = item.median_household_income;
+              let band = "Unknown";
+              let color = "#e2e8f0";
+              if (typeof income === "number") {
+                if (income < 50000) {
+                  band = "< $50k";
+                  color = "#bfdbfe";
+                } else if (income < 80000) {
+                  band = "$50k - $80k";
+                  color = "#fed7aa";
+                } else {
+                  band = "≥ $80k";
+                  color = "#bbf7d0";
+                }
+              }
+              return { zip, value, income, band, color, appointments: item.appointments || 0 };
+            })
+            .sort((a, b) => b.value - a.value);
+
+          el.innerHTML = `
+            <div class="kpi-grid">
+              ${rows.map(row => `
+                <div class="metric-row" style="background: ${row.color}; border-radius: 12px; padding: 0.75rem 0.9rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                      <div style="font-weight: 600;">ZIP ${escapeHtml(row.zip)}</div>
+                      <div style="font-size: 0.75rem; color: #475569;">
+                        Jobs: ${row.appointments} · Value: $${formatCurrency(row.value)}
+                      </div>
+                    </div>
+                    <div style="text-align: right;">
+                      <div style="font-size: 0.8rem; font-weight: 600;">
+                        ${row.income ? "$" + formatCurrency(row.income) : "No income data"}
+                      </div>
+                      <div style="font-size: 0.75rem; color: #475569;">${row.band}</div>
+                    </div>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          `;
+        } catch (err) {
+          console.error("Error loading ZIP wealth data", err);
+          el.innerHTML = '<div class="empty-state">Unable to load ZIP/wealth data</div>';
+        }
+      }
+
+        async function loadServiceMetrics() {
+          const el = document.getElementById("service-metrics-content");
+          if (!el) return;
+          if (!featureEnabledForTier("100")) {
+            el.innerHTML = '<div class="empty-state">Upgrade to the Growth plan ($100/mo) to unlock detailed service metrics.</div>';
+            return;
+          }
+          el.innerHTML = '<div class="loading">Loading</div>';
+        try {
+          const data = await fetchJson("/v1/owner/service-metrics?days=90");
+          const items = Array.isArray(data?.items) ? data.items : [];
+          if (!items.length) {
+            el.innerHTML = '<div class="empty-state">No service metrics available yet</div>';
+            return;
+          }
+          const rows = items.map(item => {
+            const svc = item.service_type || "(unspecified)";
+            const jobs = item.appointments || 0;
+            const totalValue = item.estimated_value_total || 0;
+            const avgValue = item.estimated_value_average || 0;
+            const minDur = item.scheduled_minutes_min;
+            const maxDur = item.scheduled_minutes_max;
+            const avgDur = item.scheduled_minutes_average;
+            return {
+              svc,
+              jobs,
+              totalValue,
+              avgValue,
+              minDur,
+              maxDur,
+              avgDur,
+            };
+          }).sort((a, b) => b.totalValue - a.totalValue);
+
+          el.innerHTML = `
+            <div class="kpi-grid">
+              ${rows.map(row => `
+                <div class="metric-row">
+                  <div>
+                    <div style="font-weight: 600;">${escapeHtml(row.svc)}</div>
+                    <div style="font-size: 0.75rem; color: #64748b;">
+                      Jobs: ${row.jobs} · Avg Price: $${formatCurrency(row.avgValue)}
+                    </div>
+                  </div>
+                  <div style="text-align: right; font-size: 0.75rem; color: #475569;">
+                    <div>Avg Time: ${formatMinutes(row.avgDur)}</div>
+                    <div>Range: ${formatMinutes(row.minDur)} – ${formatMinutes(row.maxDur)}</div>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          `;
+        } catch (err) {
+            console.error("Error loading service metrics", err);
+            el.innerHTML = '<div class="empty-state">Unable to load service metrics</div>';
+          }
+        }
+
+        async function loadCalendar90d() {
+          const container = document.getElementById("calendar-90d-content");
+          if (!container) return;
+          if (!featureEnabledForTier("100")) {
+            container.innerHTML = '<div class="empty-state">Upgrade to the Growth plan ($100/mo) to unlock the 90-day calendar.</div>';
+            return;
+          }
+          container.innerHTML = '<div class="loading">Loading</div>';
+
+          try {
+            const data = await fetchJson("/v1/owner/calendar/90d");
+            calendar90dData = data;
+            const days = Array.isArray(data?.days) ? data.days : [];
+            if (!days.length) {
+              container.innerHTML = '<div class="empty-state">No appointments in the next 90 days</div>';
+              return;
+            }
+
+            const gridHtml = `
+              <div class="calendar-grid">
+                ${days.map(day => {
+                  const date = day.date;
+                  const total = day.total_appointments || 0;
+                  const tags = day.tag_counts || {};
+                  const emergency = tags.emergency || tags["emergency"] || 0;
+                  const maintenance = tags.maintenance || tags["maintenance"] || 0;
+                  const newClients = tags.new_client || tags["new_client"] || 0;
+                  const routine = tags.routine || tags["routine"] || 0;
+                  const classes = ["calendar-day"];
+                  if (emergency > 0) classes.push("calendar-day-emergency");
+                  else if (newClients > 0) classes.push("calendar-day-new-client");
+                  else if (maintenance > 0) classes.push("calendar-day-maintenance");
+                  else if (routine > 0) classes.push("calendar-day-routine");
+                  const label = typeof date === "string" ? date.slice(5) : "";
+                  const title = total === 1 ? "1 job" : `${total} jobs`;
+                  return `
+                    <button
+                      type="button"
+                      class="${classes.join(" ")}"
+                      data-calendar-date="${escapeHtml(date)}"
+                      title="${escapeHtml(title)}"
+                    >
+                      <div class="calendar-day-date">${escapeHtml(label)}</div>
+                      <div class="calendar-day-total">${escapeHtml(total)}</div>
+                    </button>
+                  `;
+                }).join("")}
+              </div>
+            `;
+            container.innerHTML = gridHtml;
+
+            const buttons = container.querySelectorAll("[data-calendar-date]");
+            buttons.forEach((btn) => {
+              btn.addEventListener("click", () => {
+                const dateStr = btn.getAttribute("data-calendar-date");
+                if (dateStr) {
+                  openCalendarModal(dateStr);
+                }
+              });
+            });
+          } catch (err) {
+            console.error("Error loading 90-day calendar", err);
+            container.innerHTML = '<div class="empty-state">Unable to load 90-day calendar</div>';
+          }
+        }
+
+        function openCalendarModal(dateStr) {
+          const modal = document.getElementById("calendar-report-modal");
+          const body = document.getElementById("calendar-modal-body");
+          const titleEl = document.getElementById("calendar-modal-title");
+          if (!modal || !body || !titleEl || !calendar90dData) return;
+
+          const days = Array.isArray(calendar90dData.days) ? calendar90dData.days : [];
+          const day = days.find((d) => d.date === dateStr);
+
+          titleEl.textContent = `Schedule report for ${dateStr}`;
+
+          if (!day) {
+            body.innerHTML = '<div class="empty-state">No appointments scheduled for this day</div>';
+          } else {
+            const tags = day.tag_counts || {};
+            const services = day.service_type_counts || {};
+            const total = day.total_appointments || 0;
+            const newCustomers = day.new_customers || 0;
+            const estTotal = day.estimated_value_total || 0;
+            const estAvg = day.estimated_value_average;
+
+            const tagRows = Object.keys(tags)
+              .sort()
+              .map((tag) => {
+                const count = tags[tag] ?? 0;
+                return `
+                  <tr>
+                    <td style="padding: 0.1rem 0.5rem;">${escapeHtml(tag)}</td>
+                    <td style="padding: 0.1rem 0.5rem; text-align: right;">${escapeHtml(count)}</td>
+                  </tr>
+                `;
+              })
+              .join("");
+
+            const svcRows = Object.keys(services)
+              .sort()
+              .map((svc) => {
+                const count = services[svc] ?? 0;
+                return `
+                  <tr>
+                    <td style="padding: 0.1rem 0.5rem;">${escapeHtml(svc)}</td>
+                    <td style="padding: 0.1rem 0.5rem; text-align: right;">${escapeHtml(count)}</td>
+                  </tr>
+                `;
+              })
+              .join("");
+
+            const overviewLine = (() => {
+              const base = `Total jobs: ${escapeHtml(total)} | New customers: ${escapeHtml(newCustomers)} | Estimated value: $${formatCurrency(estTotal)}`;
+              if (estAvg !== null && estAvg !== undefined && !isNaN(estAvg)) {
+                return `${base} (avg $${formatCurrency(estAvg)})`;
+              }
+              return base;
+            })();
+
+            body.innerHTML = `
+              <div style="margin-bottom: 0.75rem;">
+                <div style="font-weight: 600; margin-bottom: 0.25rem;">Overview</div>
+                <div style="font-size: 0.8rem; color: #4b5563;">
+                  ${overviewLine}
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
+                <div>
+                  <div style="font-weight: 600; font-size: 0.8rem; margin-bottom: 0.25rem;">By tag</div>
+                  ${
+                    tagRows
+                      ? `<table style="width: 100%; font-size: 0.8rem;">${tagRows}</table>`
+                      : '<div class="empty-state" style="padding: 0.5rem 0; font-size: 0.8rem;">No tag data</div>'
+                  }
+                </div>
+                <div>
+                  <div style="font-weight: 600; font-size: 0.8rem; margin-bottom: 0.25rem;">By service type</div>
+                  ${
+                    svcRows
+                      ? `<table style="width: 100%; font-size: 0.8rem;">${svcRows}</table>`
+                      : '<div class="empty-state" style="padding: 0.5rem 0; font-size: 0.8rem;">No service-type data</div>'
+                  }
+                </div>
+              </div>
+            `;
+          }
+
+          modal.dataset.date = dateStr;
+          modal.style.display = "flex";
+          modal.setAttribute("aria-hidden", "false");
+        }
+
+        function closeCalendarModal() {
+          const modal = document.getElementById("calendar-report-modal");
+          if (!modal) return;
+          modal.style.display = "none";
+          modal.setAttribute("aria-hidden", "true");
+          delete modal.dataset.date;
+        }
+
+        function initCalendarModal() {
+          const closeButton = document.getElementById("calendar-modal-close");
+          const dismissButton = document.getElementById("calendar-modal-dismiss");
+          const downloadButton = document.getElementById("calendar-modal-download");
+          const modal = document.getElementById("calendar-report-modal");
+
+          closeButton?.addEventListener("click", closeCalendarModal);
+          dismissButton?.addEventListener("click", closeCalendarModal);
+
+          if (modal) {
+            modal.addEventListener("click", (evt) => {
+              if (evt.target === modal) {
+                closeCalendarModal();
+              }
+            });
+          }
+
+          downloadButton?.addEventListener("click", () => {
+            if (!modal) return;
+            const dateStr = modal.dataset.date;
+            if (!dateStr) return;
+            const url = `${backendBase}/v1/owner/calendar/report.pdf?day=${encodeURIComponent(dateStr)}`;
+            window.open(url, "_blank");
+          });
+        }
       async function loadConversations() {
         const listEl = document.getElementById("conversations-list");
         const detailEl = document.getElementById("conversation-detail");
@@ -969,6 +1776,130 @@
         } catch (err) {
           listEl.innerHTML = '<div class="empty-state">Unable to load conversations</div>';
           if (detailEl) detailEl.innerHTML = "";
+        }
+      }
+
+      function appendAssistantMessage(role, text) {
+        const container = document.getElementById("owner-assistant-messages");
+        if (!container) return;
+        const div = document.createElement("div");
+        div.className = "assistant-message";
+        if (role === "user") {
+          div.classList.add("assistant-message-user");
+        } else if (role === "assistant") {
+          div.classList.add("assistant-message-assistant");
+        } else {
+          div.classList.add("assistant-message-system");
+        }
+        div.textContent = text;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      async function askOwnerAssistant(question) {
+        const statusEl = document.getElementById("owner-assistant-status");
+        if (!question || !question.trim()) return null;
+        if (ownerAssistantBusy) return null;
+        if (!featureEnabledForTier("100")) {
+          if (statusEl) {
+            statusEl.textContent = "The owner assistant is a Growth/Scale feature; responses may be limited in Starter.";
+          }
+        }
+        ownerAssistantBusy = true;
+        if (statusEl) statusEl.textContent = "Thinking...";
+
+        try {
+          const res = await fetch(`${backendBase}/v1/owner/assistant/query`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({ question }),
+          });
+          if (!res.ok) {
+            const msg = `Error ${res.status}`;
+            if (statusEl) statusEl.textContent = msg;
+            return null;
+          }
+          const data = await res.json();
+          if (statusEl) statusEl.textContent = "";
+          return data;
+        } catch (err) {
+          console.error("Error calling owner assistant", err);
+          if (statusEl) statusEl.textContent = "Unable to reach assistant";
+          return null;
+        } finally {
+          ownerAssistantBusy = false;
+        }
+      }
+
+      function initOwnerAssistant() {
+        const toggle = document.getElementById("owner-assistant-toggle");
+        const panel = document.getElementById("owner-assistant-panel");
+        const closeBtn = document.getElementById("owner-assistant-close");
+        const form = document.getElementById("owner-assistant-form");
+        const input = document.getElementById("owner-assistant-input");
+
+        if (!toggle || !panel || !form || !input) {
+          return;
+        }
+
+        // If the tenant is on Starter tier, keep the UI visible but
+        // remind them this assistant is a Growth feature when they open it.
+        const isGrowthOrHigher = featureEnabledForTier("100");
+
+        function setOpen(open) {
+          ownerAssistantOpen = open;
+          panel.style.display = open ? "flex" : "none";
+          panel.setAttribute("aria-hidden", open ? "false" : "true");
+          if (open) {
+            input.focus();
+          }
+        }
+
+        toggle.addEventListener("click", () => {
+          if (!isGrowthOrHigher) {
+            const status = document.getElementById("owner-assistant-status");
+            if (status) {
+              status.textContent = "The owner assistant is optimized for Growth and Scale plans; you can still try it in this proof of concept.";
+              status.className = "assistant-status";
+            }
+          }
+          setOpen(!ownerAssistantOpen);
+        });
+
+        closeBtn?.addEventListener("click", () => {
+          setOpen(false);
+        });
+
+        form.addEventListener("submit", async (evt) => {
+          evt.preventDefault();
+          const question = (input.value || "").trim();
+          if (!question) return;
+          appendAssistantMessage("user", question);
+          input.value = "";
+          const data = await askOwnerAssistant(question);
+          const answer =
+            data && typeof data.answer === "string"
+              ? data.answer
+              : "I was not able to generate an answer. Please try again.";
+          appendAssistantMessage("assistant", answer);
+        });
+      }
+
+      async function loadOwnerOnboardingProfile() {
+        try {
+          const data = await fetchJson("/v1/owner/onboarding/profile");
+          ownerServiceTier = data && typeof data.service_tier === "string" ? data.service_tier : null;
+          const labelEl = document.getElementById("owner-plan-label");
+          if (labelEl) {
+            const label = tierCodeToLabel(ownerServiceTier);
+            labelEl.textContent = `Plan: ${label}`;
+            labelEl.style.display = "inline-flex";
+          }
+        } catch (err) {
+          // On failure, keep tier unset and let features load as default.
         }
       }
 
@@ -1059,6 +1990,9 @@
           loadSchedule();
           loadEmergencyJobs();
           loadAnalytics();
+          loadZipWealth();
+          loadCalendar90d();
+          loadServiceMetrics();
           loadConversations();
         });
       }
@@ -1068,11 +2002,17 @@
         initAuth();
         initThemeToggle();
         initButtons();
+        initCalendarModal();
+        initOwnerAssistant();
+        loadOwnerOnboardingProfile();
         loadOwnerKpis();
         loadTodaySummary();
         loadSchedule();
         loadEmergencyJobs();
         loadAnalytics();
+        loadZipWealth();
+        loadCalendar90d();
+        loadServiceMetrics();
         loadConversations();
       });
     </script>

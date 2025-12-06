@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-from typing import Optional
 
 import httpx
 
@@ -59,7 +58,7 @@ class SpeechService:
         text = data.get("text")
         return text or ""
 
-    async def synthesize(self, text: str) -> str:
+    async def synthesize(self, text: str, voice: str | None = None) -> str:
         # Stub behaviour.
         if self._settings.provider != "openai" or not self._settings.openai_api_key:
             return "audio://placeholder"
@@ -72,7 +71,7 @@ class SpeechService:
         }
         payload = {
             "model": self._settings.openai_tts_model,
-            "voice": self._settings.openai_tts_voice,
+            "voice": voice or self._settings.openai_tts_voice,
             "input": text,
         }
         try:

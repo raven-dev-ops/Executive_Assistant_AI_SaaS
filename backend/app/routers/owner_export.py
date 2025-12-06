@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, Query, Response
 
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..deps import ensure_business_active, require_owner_dashboard_auth
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 
@@ -82,7 +82,7 @@ def export_tenant_full_json(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
-            row = session.get(Business, business_id)
+            row = session.get(BusinessDB, business_id)
         finally:
             session.close()
         if row is not None:
@@ -142,7 +142,9 @@ def export_conversations_csv(
         if customer_id:
             appts = appointments_repo.list_for_customer(customer_id)
             appts = [
-                a for a in appts if getattr(a, "business_id", business_id) == business_id
+                a
+                for a in appts
+                if getattr(a, "business_id", business_id) == business_id
             ]
             appts.sort(key=lambda a: a.start_time, reverse=True)
             if appts:
@@ -221,7 +223,9 @@ def export_pipeline_csv(
             continue
         if start_time < window or start_time > now:
             continue
-        stage = (getattr(appt, "job_stage", None) or "Unspecified").strip() or "Unspecified"
+        stage = (
+            getattr(appt, "job_stage", None) or "Unspecified"
+        ).strip() or "Unspecified"
         lead_source = (getattr(appt, "lead_source", None) or "").strip()
         est_value = getattr(appt, "estimated_value", None)
         quoted_value = getattr(appt, "quoted_value", None)
@@ -261,9 +265,7 @@ def export_pipeline_csv(
     return Response(
         content=csv_bytes,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=pipeline_{days}d.csv"
-        },
+        headers={"Content-Disposition": f"attachment; filename=pipeline_{days}d.csv"},
     )
 
 
@@ -347,9 +349,7 @@ def export_conversion_funnel_csv(
         booked = per_channel_booked.get(channel, 0)
         conversion_rate = float(booked) / float(leads) if leads > 0 else 0.0
         avg_minutes = (
-            per_channel_minutes.get(channel, 0.0) / float(booked)
-            if booked > 0
-            else 0.0
+            per_channel_minutes.get(channel, 0.0) / float(booked) if booked > 0 else 0.0
         )
         writer.writerow(
             {

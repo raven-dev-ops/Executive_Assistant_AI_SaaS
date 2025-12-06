@@ -9,9 +9,9 @@ import os
 from ..config import get_settings
 
 try:  # Optional Redis dependency
-    import redis  # type: ignore[import]
+    import redis
 except Exception:  # pragma: no cover - redis is optional
-    redis = None  # type: ignore[assignment]
+    redis = None
 
 
 @dataclass
@@ -43,14 +43,11 @@ class SessionStore(Protocol):
         caller_phone: str | None = None,
         business_id: str = "default_business",
         lead_source: str | None = None,
-    ) -> CallSession:
-        ...
+    ) -> CallSession: ...
 
-    def get(self, session_id: str) -> CallSession | None:
-        ...
+    def get(self, session_id: str) -> CallSession | None: ...
 
-    def end(self, session_id: str) -> None:
-        ...
+    def end(self, session_id: str) -> None: ...
 
 
 class InMemorySessionStore:
@@ -94,7 +91,12 @@ class RedisSessionStore:
     will fall back to the in-memory store.
     """
 
-    def __init__(self, client: "redis.Redis", key_prefix: str = "call_session", ttl_seconds: int = 3600) -> None:
+    def __init__(
+        self,
+        client: "redis.Redis",
+        key_prefix: str = "call_session",
+        ttl_seconds: int = 3600,
+    ) -> None:
         self._client = client
         self._key_prefix = key_prefix
         self._ttl_seconds = ttl_seconds
@@ -176,11 +178,15 @@ class RedisSessionStore:
             "updated_at": session.updated_at.isoformat(),
         }
         try:
-            self._client.setex(self._key(session.id), self._ttl_seconds, json.dumps(payload))
+            self._client.setex(
+                self._key(session.id), self._ttl_seconds, json.dumps(payload)
+            )
         except Exception:
             # Redis failures should not bring down request handling; callers
             # must be prepared for missing sessions.
-            logging.getLogger(__name__).warning("redis_session_store_persist_failed", exc_info=True)
+            logging.getLogger(__name__).warning(
+                "redis_session_store_persist_failed", exc_info=True
+            )
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:
@@ -211,7 +217,7 @@ def _create_session_store() -> SessionStore:
         else:
             try:
                 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-                client = redis.from_url(redis_url)  # type: ignore[attr-defined]
+                client = redis.from_url(redis_url)
                 return RedisSessionStore(client)
             except Exception:
                 logging.getLogger(__name__).warning(

@@ -27,4 +27,3 @@ def test_inmemory_customers_are_tenant_scoped_by_phone():
 
     assert lookup_a is not None and lookup_a.id == c1.id
     assert lookup_b is not None and lookup_b.id == c2.id
-

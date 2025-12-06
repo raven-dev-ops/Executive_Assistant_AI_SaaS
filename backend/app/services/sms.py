@@ -7,7 +7,7 @@ import httpx
 
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..metrics import BusinessSmsMetrics, metrics
 
 
@@ -84,7 +84,7 @@ class SmsService:
         if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
             session_db = SessionLocal()
             try:
-                row = session_db.get(Business, business_id)
+                row = session_db.get(BusinessDB, business_id)
             finally:
                 session_db.close()
             if row is not None and getattr(row, "owner_phone", None):

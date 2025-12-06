@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Owner Onboarding - AI Telephony</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        min-height: 100vh;
+        color: #0f172a;
+      }
+      .page {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 3rem;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        margin-bottom: 1.5rem;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #6366f1 0%, #22c55e 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.5);
+      }
+      .logo svg { width: 26px; height: 26px; fill: #ffffff; }
+      h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #6366f1 0%, #22c55e 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .subtitle {
+        font-size: 0.9rem;
+        color: #64748b;
+        margin-top: 0.125rem;
+      }
+      .muted {
+        font-size: 0.8rem;
+        color: #6b7280;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.15);
+        font-size: 0.75rem;
+        margin-left: 0.25rem;
+      }
+      .step-indicator {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+      }
+      .step-chip {
+        padding: 0.25rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        border: 1px solid #e5e7eb;
+        color: #6b7280;
+      }
+      .step-chip.active {
+        background: #0f172a;
+        color: #e5e7eb;
+        border-color: #0f172a;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem 1.5rem;
+        margin-top: 1rem;
+      }
+      label {
+        font-size: 0.8rem;
+        color: #64748b;
+        display: block;
+        margin-bottom: 0.3rem;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        font-size: 0.9rem;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: #6366f1;
+        box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
+      }
+      textarea { min-height: 80px; resize: vertical; }
+      .button-row {
+        margin-top: 1.5rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      button {
+        padding: 0.6rem 1.4rem;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #6366f1 0%, #22c55e 100%);
+        color: #ffffff;
+        box-shadow: 0 6px 16px rgba(79, 70, 229, 0.5);
+        transition: transform 0.1s, box-shadow 0.1s, opacity 0.1s;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.55);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      .button-secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+        box-shadow: none;
+      }
+      .status {
+        margin-top: 0.75rem;
+        font-size: 0.85rem;
+      }
+      .status.success { color: #16a34a; }
+      .status.error { color: #b91c1c; }
+      .status.info { color: #0f172a; }
+      .tier-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .tier-card {
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        padding: 1rem;
+        cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      }
+      .tier-card:hover {
+        border-color: #6366f1;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+        transform: translateY(-1px);
+      }
+      .tier-card.selected {
+        border-color: #6366f1;
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.45);
+      }
+      .tier-price {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #111827;
+      }
+      .tier-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #4b5563;
+        margin-bottom: 0.25rem;
+      }
+      .tier-note {
+        font-size: 0.8rem;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+      }
+      .tier-feature-list {
+        list-style: disc;
+        padding-left: 1.1rem;
+        font-size: 0.8rem;
+        color: #4b5563;
+      }
+      .tier-feature-list li {
+        margin-bottom: 0.15rem;
+      }
+      .integration-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .integration-card {
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        padding: 0.75rem 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+      }
+      .integration-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .badge {
+        border-radius: 999px;
+        padding: 0.1rem 0.6rem;
+        font-size: 0.7rem;
+      }
+      .badge.connected {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .badge.disconnected {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .voice-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .voice-card {
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        padding: 0.75rem 0.9rem;
+        cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      }
+      .voice-card:hover {
+        border-color: #6366f1;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+        transform: translateY(-1px);
+      }
+      .voice-card.selected {
+        border-color: #6366f1;
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <div class="header">
+          <div class="logo">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L3 6v6c0 5.52 3.84 10.74 9 12 5.16-1.26 9-6.48 9-12V6l-9-4zm0 2.18L18.16 7 12 9.82 5.84 7 12 4.18zM5 9l7 3 7-3v3c0 4.07-2.75 8.12-7 9.44C7.75 20.12 5 16.07 5 12V9z" />
+            </svg>
+          </div>
+          <div>
+            <h1>Owner Onboarding</h1>
+            <div class="subtitle">
+              Tell us about your business, connect accounts, and pick your plan.
+            </div>
+          </div>
+        </div>
+        <div class="muted" id="onboarding-business-label">
+          Loading tenant profile...
+        </div>
+
+        <div class="step-indicator">
+          <span class="step-chip active" data-step-chip="1">1. Terms & Policy</span>
+          <span class="step-chip" data-step-chip="2">2. Business & Owner</span>
+          <span class="step-chip" data-step-chip="3">3. Plan & Pricing</span>
+          <span class="step-chip" data-step-chip="4">4. Connect Accounts</span>
+          <span class="step-chip" data-step-chip="5">5. AI Voice</span>
+        </div>
+
+        <div id="step-1" class="onboarding-step">
+          <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Review Privacy & Terms</h2>
+          <p class="muted">
+            To use this assistant and dashboards with real customer data, the owner must acknowledge the current
+            <a href="../PRIVACY_POLICY.md" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+            and
+            <a href="../TERMS_OF_SERVICE.md" target="_blank" rel="noopener noreferrer">Terms of Service</a>.
+          </p>
+          <div style="margin-top: 1rem;">
+            <label>
+              <input id="step1-accept-privacy" type="checkbox" />
+              <span class="muted" style="margin-left: 0.4rem;">I have read and accept the Privacy Policy.</span>
+            </label>
+          </div>
+          <div style="margin-top: 0.5rem;">
+            <label>
+              <input id="step1-accept-terms" type="checkbox" />
+              <span class="muted" style="margin-left: 0.4rem;">I have read and accept the Terms of Service.</span>
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="step1-next" type="button">Save & Continue</button>
+            <span id="step1-status" class="status info"></span>
+          </div>
+        </div>
+
+        <div id="step-2" class="onboarding-step" style="display: none;">
+          <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Business & Owner Profile</h2>
+          <p class="muted">
+            These details personalize the assistant and CRM. Owner contact information is used only for account
+            communication and is never shared with callers.
+          </p>
+          <div class="form-grid">
+            <div>
+              <label>Owner Name</label>
+              <input id="owner-name" type="text" placeholder="Jane Doe" />
+            </div>
+            <div>
+              <label>Owner Email</label>
+              <input id="owner-email" type="email" placeholder="owner@example.com" />
+            </div>
+            <div>
+              <label>Owner Phone (for alerts)</label>
+              <input id="owner-phone" type="tel" placeholder="+1 (555) 555-1212" />
+            </div>
+            <div>
+              <label>Owner Profile Image URL</label>
+              <input id="owner-profile-image" type="url" placeholder="https://example.com/photo.jpg" />
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="step2-back" type="button" class="button-secondary">Back</button>
+            <button id="step2-next" type="button">Save & Continue</button>
+            <span id="step2-status" class="status info"></span>
+          </div>
+        </div>
+
+        <div id="step-3" class="onboarding-step" style="display: none;">
+          <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Choose Your Plan</h2>
+          <p class="muted">
+            You can change tiers later. All plans include the core AI intake assistant, basic CRM, and owner dashboard.
+          </p>
+          <div class="tier-grid">
+            <div class="tier-card" data-tier="20">
+              <div class="tier-name">Starter</div>
+              <div class="tier-price">$20<span class="muted">/mo</span></div>
+              <div class="tier-note">Solo owner or very small team.</div>
+              <ul class="tier-feature-list">
+                <li>AI call intake + scheduling.</li>
+                <li>Basic CRM (customers & appointments).</li>
+                <li>Today / tomorrow schedule & emergency jobs.</li>
+              </ul>
+            </div>
+            <div class="tier-card" data-tier="100">
+              <div class="tier-name">Growth</div>
+              <div class="tier-price">$100<span class="muted">/mo</span></div>
+              <div class="tier-note">Growing service business with a small crew.</div>
+              <ul class="tier-feature-list">
+                <li>Everything in Starter.</li>
+                <li>90-day calendar + market by ZIP.</li>
+                <li>Service metrics, pipeline & conversion funnel.</li>
+                <li>Owner AI assistant (dashboard chat).</li>
+              </ul>
+            </div>
+            <div class="tier-card" data-tier="200">
+              <div class="tier-name">Scale</div>
+              <div class="tier-price">$200<span class="muted">/mo</span></div>
+              <div class="tier-note">Larger team, multiple techs, higher volume.</div>
+              <ul class="tier-feature-list">
+                <li>Everything in Growth.</li>
+                <li>Retention campaigns & callback queue.</li>
+                <li>Advanced exports and QA views.</li>
+                <li>More flexible AI voice and configuration.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="step3-back" type="button" class="button-secondary">Back</button>
+            <button id="step3-next" type="button">Save & Continue</button>
+            <span id="step3-status" class="status info"></span>
+          </div>
+        </div>
+
+        <div id="step-4" class="onboarding-step" style="display: none;">
+          <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Connect Business Accounts</h2>
+          <p class="muted">
+            Connect business accounts (not personal) so the assistant can auto-fill context and keep your CRM in sync.
+            OAuth and token storage should be configured in your deployment; this screen tracks high-level connection
+            status for each provider.
+          </p>
+          <div class="integration-grid" id="integration-grid">
+            <!-- Filled by JS -->
+          </div>
+          <div class="button-row">
+            <button id="step4-back" type="button" class="button-secondary">Back</button>
+            <button id="step4-next" type="button">Save & Continue</button>
+            <span id="step4-status" class="status info"></span>
+          </div>
+        </div>
+
+        <div id="step-5" class="onboarding-step" style="display: none;">
+          <h2 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Choose Your AI Voice</h2>
+          <p class="muted">
+            This controls the default voice used for owner-facing audio (for example, spoken schedule summaries).
+            In deployments configured with OpenAI TTS, this maps to the <code>voice</code> parameter. For caller-facing
+            audio over the phone, you can also tune Twilio <code>&lt;Say&gt;</code> voices separately.
+          </p>
+          <div class="voice-grid" id="voice-grid">
+            <!-- Filled by JS -->
+          </div>
+          <div class="button-row">
+            <button id="step5-back" type="button" class="button-secondary">Back</button>
+            <button id="step5-finish" type="button">Finish Onboarding</button>
+            <span id="step5-status" class="status info"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const DEFAULT_BACKEND_BASE = "http://localhost:8000";
+      const urlParams = new URLSearchParams(window.location.search);
+
+      let apiKey = localStorage.getItem("owner_api_key") || urlParams.get("api_key") || "";
+      let ownerToken = localStorage.getItem("owner_owner_token") || urlParams.get("owner_token") || "";
+      let onboardingProfile = null;
+      let currentStep = 1;
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function authHeaders() {
+        const headers = {};
+        if (apiKey) headers["X-API-Key"] = apiKey;
+        if (ownerToken) headers["X-Owner-Token"] = ownerToken;
+        return headers;
+      }
+
+      function setStatus(id, text, type) {
+        const el = $(id);
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = "status " + (type || "info");
+      }
+
+      function setStep(step) {
+        currentStep = step;
+        for (let i = 1; i <= 5; i++) {
+          const panel = $("step-" + i);
+          if (panel) panel.style.display = i === step ? "block" : "none";
+          const chip = document.querySelector(`[data-step-chip="${i}"]`);
+          if (chip) {
+            if (i === step) chip.classList.add("active");
+            else chip.classList.remove("active");
+          }
+        }
+      }
+
+      function hydrateProfileFields() {
+        if (!onboardingProfile) return;
+        const label = $("onboarding-business-label");
+        if (label) {
+          const tier = onboardingProfile.service_tier || "unselected";
+          label.textContent = `${onboardingProfile.business_name} (${onboardingProfile.business_id}) – tier: ${tier}`;
+        }
+        const ownerNameEl = $("owner-name");
+        const ownerEmailEl = $("owner-email");
+        const ownerPhoneEl = $("owner-phone");
+        const ownerImageEl = $("owner-profile-image");
+        if (ownerNameEl && onboardingProfile.owner_name) ownerNameEl.value = onboardingProfile.owner_name;
+        if (ownerEmailEl && onboardingProfile.owner_email) ownerEmailEl.value = onboardingProfile.owner_email;
+        if (ownerPhoneEl && onboardingProfile.owner_phone) ownerPhoneEl.value = onboardingProfile.owner_phone;
+        if (ownerImageEl && onboardingProfile.owner_profile_image_url) ownerImageEl.value = onboardingProfile.owner_profile_image_url;
+
+        // Tiers
+        const selectedTier = onboardingProfile.service_tier;
+        document.querySelectorAll(".tier-card").forEach((card) => {
+          const tier = card.getAttribute("data-tier");
+          if (tier && selectedTier && tier === selectedTier) {
+            card.classList.add("selected");
+          } else {
+            card.classList.remove("selected");
+          }
+        });
+
+        // Integrations and voice
+        renderIntegrations();
+        renderVoices();
+      }
+
+      function renderIntegrations() {
+        const grid = $("integration-grid");
+        if (!grid) return;
+        const items = Array.isArray(onboardingProfile?.integrations) ? onboardingProfile.integrations : [];
+        if (!items.length) {
+          grid.innerHTML = '<div class="muted">No integration metadata available yet.</div>';
+          return;
+        }
+        grid.innerHTML = items.map((item) => {
+          const provider = item.provider;
+          const connected = !!item.connected;
+          const label = item.label || provider;
+          const badgeClass = connected ? "badge connected" : "badge disconnected";
+          const badgeText = connected ? "Connected" : "Not connected";
+          const buttonLabel = connected ? "Mark as disconnected" : "Mark as connected";
+          return `
+            <div class="integration-card" data-provider="${provider}">
+              <div class="integration-header">
+                <div>
+                  <div style="font-weight: 600; font-size: 0.9rem;">${label}</div>
+                  <div class="muted" style="font-size: 0.75rem;">Business account only – OAuth handled by your deployment.</div>
+                </div>
+                <span class="${badgeClass}">${badgeText}</span>
+              </div>
+              <div class="button-row" style="margin-top: 0.5rem;">
+                <button type="button" class="button-secondary" data-integration-toggle="${provider}">
+                  ${buttonLabel}
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        grid.querySelectorAll("[data-integration-toggle]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const provider = btn.getAttribute("data-integration-toggle");
+            if (!provider) return;
+            await toggleIntegration(provider);
+          });
+        });
+      }
+
+      function renderVoices() {
+        const grid = $("voice-grid");
+        if (!grid) return;
+        const selectedVoice = onboardingProfile?.tts_voice || "";
+        const voices = [
+          { id: "alloy", label: "Alloy (neutral, friendly)", note: "Balanced voice suitable for most assistants." },
+          { id: "nova", label: "Nova (bright, energetic)", note: "More energetic tone, good for marketing or upbeat brands." },
+          { id: "echo", label: "Echo (calm, concise)", note: "Calmer tone, good for professional or serious brands." },
+        ];
+        grid.innerHTML = voices.map((v) => {
+          const selected = selectedVoice === v.id;
+          const cls = selected ? "voice-card selected" : "voice-card";
+          return `
+            <div class="${cls}" data-voice-id="${v.id}">
+              <div style="font-weight: 600; font-size: 0.9rem;">${v.label}</div>
+              <div class="muted" style="font-size: 0.8rem; margin-top: 0.25rem;">${v.note}</div>
+            </div>
+          `;
+        }).join("");
+
+        grid.querySelectorAll("[data-voice-id]").forEach((card) => {
+          card.addEventListener("click", async () => {
+            const voiceId = card.getAttribute("data-voice-id");
+            if (!voiceId) return;
+            await saveVoice(voiceId);
+          });
+        });
+      }
+
+      async function loadOnboardingProfile() {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        try {
+          const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+          });
+          if (!res.ok) {
+            setStatus("step1-status", "Unable to load onboarding profile (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          hydrateProfileFields();
+        } catch (err) {
+          console.error("Error loading onboarding profile", err);
+          setStatus("step1-status", "Network error while loading onboarding profile.", "error");
+        }
+      }
+
+      async function saveStep1() {
+        const acceptPrivacy = $("step1-accept-privacy")?.checked;
+        const acceptTerms = $("step1-accept-terms")?.checked;
+        if (!acceptPrivacy || !acceptTerms) {
+          setStatus("step1-status", "Please accept both the Privacy Policy and Terms of Service.", "error");
+          return;
+        }
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step1-status", "Saving...", "info");
+        try {
+          const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({ accept_terms: true, accept_privacy: true }),
+          });
+          if (!res.ok) {
+            setStatus("step1-status", "Unable to save acknowledgements (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          setStatus("step1-status", "Saved.", "success");
+          setStep(2);
+        } catch (err) {
+          console.error("Error saving step 1", err);
+          setStatus("step1-status", "Network error while saving.", "error");
+        }
+      }
+
+      async function saveStep2() {
+        const ownerName = $("owner-name")?.value.trim() || null;
+        const ownerEmail = $("owner-email")?.value.trim() || null;
+        const ownerPhone = $("owner-phone")?.value.trim() || null;
+        const ownerProfileImage = $("owner-profile-image")?.value.trim() || null;
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step2-status", "Saving...", "info");
+        try {
+          const payload = {
+            owner_name: ownerName,
+            owner_email: ownerEmail,
+            owner_profile_image_url: ownerProfileImage,
+          };
+          if (ownerPhone && onboardingProfile) {
+            // update owner_phone via business admin-style update on the same endpoint
+            payload.owner_phone = ownerPhone;
+          }
+          const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            setStatus("step2-status", "Unable to save profile (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          setStatus("step2-status", "Saved.", "success");
+          setStep(3);
+        } catch (err) {
+          console.error("Error saving step 2", err);
+          setStatus("step2-status", "Network error while saving.", "error");
+        }
+      }
+
+      function getSelectedTier() {
+        const selected = document.querySelector(".tier-card.selected");
+        if (!selected) return null;
+        return selected.getAttribute("data-tier");
+      }
+
+      function initTierCards() {
+        document.querySelectorAll(".tier-card").forEach((card) => {
+          card.addEventListener("click", () => {
+            document.querySelectorAll(".tier-card").forEach((c) => c.classList.remove("selected"));
+            card.classList.add("selected");
+          });
+        });
+      }
+
+      async function saveStep3() {
+        const tier = getSelectedTier();
+        if (!tier) {
+          setStatus("step3-status", "Please select a plan.", "error");
+          return;
+        }
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step3-status", "Saving...", "info");
+        try {
+          const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({ service_tier: tier }),
+          });
+          if (!res.ok) {
+            setStatus("step3-status", "Unable to save plan (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          setStatus("step3-status", "Plan saved.", "success");
+          setStep(4);
+        } catch (err) {
+          console.error("Error saving step 3", err);
+          setStatus("step3-status", "Network error while saving.", "error");
+        }
+      }
+
+      async function toggleIntegration(provider) {
+        if (!onboardingProfile) return;
+        const current = Array.isArray(onboardingProfile.integrations) ? onboardingProfile.integrations : [];
+        const entry = current.find((i) => i.provider === provider);
+        const connected = entry ? !entry.connected : true;
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step4-status", "Updating integrations...", "info");
+        const payload = {};
+        if (provider === "linkedin") payload.linkedin_connected = connected;
+        if (provider === "gmail") payload.gmail_connected = connected;
+        if (provider === "gcalendar") payload.gcalendar_connected = connected;
+        if (provider === "openai") payload.openai_connected = connected;
+        if (provider === "twilio") payload.twilio_connected = connected;
+        try {
+          const res = await fetch(backendBase + "/v1/owner/onboarding/integrations", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            setStatus("step4-status", "Unable to update integrations (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          setStatus("step4-status", "Integration status updated.", "success");
+          renderIntegrations();
+        } catch (err) {
+          console.error("Error updating integrations", err);
+          setStatus("step4-status", "Network error while updating.", "error");
+        }
+      }
+
+      async function saveVoice(voiceId) {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step5-status", "Saving voice preference...", "info");
+        try {
+          const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders(),
+            },
+            body: JSON.stringify({ tts_voice: voiceId }),
+          });
+          if (!res.ok) {
+            setStatus("step5-status", "Unable to save voice (" + res.status + ")", "error");
+            return;
+          }
+          onboardingProfile = await res.json();
+          setStatus("step5-status", "Voice saved.", "success");
+          renderVoices();
+        } catch (err) {
+          console.error("Error saving voice", err);
+          setStatus("step5-status", "Network error while saving voice.", "error");
+        }
+      }
+
+      function finishOnboarding() {
+        setStatus("step5-status", "Onboarding complete. You can now open the owner dashboard.", "success");
+      }
+
+      function initNavButtons() {
+        $("step1-next")?.addEventListener("click", saveStep1);
+
+        $("step2-back")?.addEventListener("click", () => setStep(1));
+        $("step2-next")?.addEventListener("click", saveStep2);
+
+        $("step3-back")?.addEventListener("click", () => setStep(2));
+        $("step3-next")?.addEventListener("click", saveStep3);
+
+        $("step4-back")?.addEventListener("click", () => setStep(3));
+        $("step4-next")?.addEventListener("click", () => setStep(5));
+
+        $("step5-back")?.addEventListener("click", () => setStep(4));
+        $("step5-finish")?.addEventListener("click", finishOnboarding);
+      }
+
+      window.addEventListener("DOMContentLoaded", () => {
+        setStep(1);
+        initTierCards();
+        initNavButtons();
+        loadOnboardingProfile();
+      });
+    </script>
+  </body>
+</html>
+

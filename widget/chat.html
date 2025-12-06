@@ -189,23 +189,48 @@
         if (emailInput && emailInput.value.trim()) {
           body.customer_email = emailInput.value.trim();
         }
-        const res = await fetch(`${backendBase}/v1/widget/start`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          appendMessage("assistant", "Sorry, the chat service is unavailable right now.");
+        let res;
+        try {
+          res = await fetch(`${backendBase}/v1/widget/start`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify(body),
+          });
+        } catch (err) {
+          appendMessage(
+            "assistant",
+            "Sorry, the chat service is unreachable right now. Please check your connection and try again."
+          );
           if (statusEl) {
             statusEl.textContent = "";
           }
           return;
         }
-        const data = await res.json();
-        conversationId = data.conversation_id;
-        appendMessage("assistant", data.reply_text);
-        if (statusEl) {
-          statusEl.textContent = "";
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            appendMessage(
+              "assistant",
+              "This chat widget is not fully configured for this site (invalid or missing tenant credentials). Please contact the business owner."
+            );
+          } else {
+            appendMessage(
+              "assistant",
+              "Sorry, the chat service is unavailable right now. Please try again in a moment."
+            );
+          }
+          if (statusEl) {
+            statusEl.textContent = "";
+          }
+          return;
+        }
+        try {
+          const data = await res.json();
+          conversationId = data.conversation_id;
+          appendMessage("assistant", data.reply_text);
+        } finally {
+          if (statusEl) {
+            statusEl.textContent = "";
+          }
         }
       }
 
@@ -218,22 +243,47 @@
           statusEl.textContent = "Assistant is typing...";
         }
         appendMessage("user", text);
-        const res = await fetch(`${backendBase}/v1/widget/${conversationId}/message`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ text }),
-        });
-        if (!res.ok) {
-          appendMessage("assistant", "There was an error sending your message.");
+        let res;
+        try {
+          res = await fetch(`${backendBase}/v1/widget/${conversationId}/message`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ text }),
+          });
+        } catch (err) {
+          appendMessage(
+            "assistant",
+            "There was a network error sending your message. Please try again."
+          );
           if (statusEl) {
             statusEl.textContent = "";
           }
           return;
         }
-        const data = await res.json();
-        appendMessage("assistant", data.reply_text);
-        if (statusEl) {
-          statusEl.textContent = "";
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            appendMessage(
+              "assistant",
+              "This chat widget is not fully configured for this site (invalid or missing tenant credentials). Please contact the business owner."
+            );
+          } else {
+            appendMessage(
+              "assistant",
+              "There was an error sending your message. Please try again in a moment."
+            );
+          }
+          if (statusEl) {
+            statusEl.textContent = "";
+          }
+          return;
+        }
+        try {
+          const data = await res.json();
+          appendMessage("assistant", data.reply_text);
+        } finally {
+          if (statusEl) {
+            statusEl.textContent = "";
+          }
         }
       }
 

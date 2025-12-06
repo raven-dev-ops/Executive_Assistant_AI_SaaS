@@ -76,7 +76,24 @@ Working in This Repo
     cd backend
     ruff check .
     black --check .
-    pytest
+    mypy app
+    bandit -q -r app -x tests
+    pytest --cov=app
+    ```
+
+- **Pre-commit hooks**
+  - This repo includes a `.pre-commit-config.yaml` wired for:
+    - `ruff` (lint + format) on `backend/`.
+    - `black` on `backend/`.
+    - `mypy` / `bandit` / `pytest` against the backend.
+  - To enable it locally:
+    ```bash
+    pip install pre-commit
+    pre-commit install
+    ```
+  - Hooks run on changed files by default; you can run the full suite manually with:
+    ```bash
+    pre-commit run --all-files
     ```
 
 - **Dashboard (`dashboard/`) and widget (`widget/`)**

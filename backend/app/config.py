@@ -24,6 +24,7 @@ class SpeechSettings(BaseModel):
     openai_tts_model: str = "gpt-4o-mini"
     openai_tts_voice: str = "alloy"
     openai_stt_model: str = "gpt-4o-mini-transcribe"
+    openai_chat_model: str = "gpt-4o-mini"
 
 
 class SmsSettings(BaseModel):
@@ -81,6 +82,7 @@ class AppSettings(BaseModel):
             openai_tts_model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini"),
             openai_tts_voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
             openai_stt_model=os.getenv("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe"),
+            openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
         )
         sms = SmsSettings(
             provider=os.getenv("SMS_PROVIDER", "stub"),
@@ -88,7 +90,9 @@ class AppSettings(BaseModel):
             owner_number=os.getenv("SMS_OWNER_NUMBER"),
             twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID"),
             twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN"),
-            verify_twilio_signatures=os.getenv("VERIFY_TWILIO_SIGNATURES", "false").lower()
+            verify_twilio_signatures=os.getenv(
+                "VERIFY_TWILIO_SIGNATURES", "false"
+            ).lower()
             == "true",
             twilio_say_language_default=os.getenv("TWILIO_SAY_LANGUAGE_DEFAULT"),
             twilio_say_language_es=os.getenv("TWILIO_SAY_LANGUAGE_ES", "es-US"),
@@ -99,6 +103,8 @@ class AppSettings(BaseModel):
         require_business_api_key = (
             os.getenv("REQUIRE_BUSINESS_API_KEY", "false").lower() == "true"
         )
+        # OWNER_DASHBOARD_TOKEN is the canonical env var; DASHBOARD_OWNER_TOKEN
+        # is accepted as a legacy alias for backward compatibility.
         owner_dashboard_token = os.getenv("OWNER_DASHBOARD_TOKEN") or os.getenv(
             "DASHBOARD_OWNER_TOKEN"
         )

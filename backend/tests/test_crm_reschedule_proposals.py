@@ -44,4 +44,3 @@ def test_propose_slots_returns_candidate_for_existing_appointment():
     slot = slots[0]
     # Proposed slot should include start and end times.
     assert "start_time" in slot and "end_time" in slot
-

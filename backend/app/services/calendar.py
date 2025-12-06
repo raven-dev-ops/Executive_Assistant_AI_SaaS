@@ -15,12 +15,12 @@ except Exception:  # pragma: no cover - fallback when google libs are absent.
     ServiceAccountCredentials = None  # type: ignore[assignment]
     build = None  # type: ignore[assignment]
 
-    class HttpError(Exception):
-        ...
+    class HttpError(Exception): ...
+
 
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 
 
 @dataclass
@@ -89,7 +89,7 @@ def _get_business_hours(business_id: str | None) -> tuple[int, int, set[int]]:
     if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None:
@@ -124,7 +124,7 @@ def _get_business_capacity(
     if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None:
@@ -173,9 +173,7 @@ def _align_to_business_hours(
             )
             continue
 
-        day_open = candidate.replace(
-            hour=open_hour, minute=0, second=0, microsecond=0
-        )
+        day_open = candidate.replace(hour=open_hour, minute=0, second=0, microsecond=0)
         day_close = candidate.replace(
             hour=close_hour, minute=0, second=0, microsecond=0
         )
@@ -218,7 +216,9 @@ class CalendarService:
 
         scopes = ["https://www.googleapis.com/auth/calendar"]
         try:
-            creds = ServiceAccountCredentials.from_service_account_file(str(path), scopes=scopes)
+            creds = ServiceAccountCredentials.from_service_account_file(
+                str(path), scopes=scopes
+            )
             if creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             service = build("calendar", "v3", credentials=creds, cache_discovery=False)
@@ -253,11 +253,15 @@ class CalendarService:
                 end = candidate + duration
                 return [TimeSlot(start=candidate, end=end)]
 
-            from ..repositories import appointments_repo  # Local import to avoid cycles.
+            from ..repositories import (
+                appointments_repo,
+            )  # Local import to avoid cycles.
 
-            max_jobs_per_day, reserve_mornings_for_emergencies, travel_buffer_minutes = _get_business_capacity(
-                business_id
-            )
+            (
+                max_jobs_per_day,
+                reserve_mornings_for_emergencies,
+                travel_buffer_minutes,
+            ) = _get_business_capacity(business_id)
 
             # Search starting roughly an hour from now, up to two weeks out.
             search_start = now + timedelta(hours=1)
@@ -347,7 +351,9 @@ class CalendarService:
                     appt_start = getattr(appt, "start_time")
                     appt_end = getattr(appt, "end_time")
                     if travel_buffer_minutes > 0:
-                        appt_start = appt_start - timedelta(minutes=travel_buffer_minutes)
+                        appt_start = appt_start - timedelta(
+                            minutes=travel_buffer_minutes
+                        )
                         appt_end = appt_end + timedelta(minutes=travel_buffer_minutes)
                     busy_ranges.append((appt_start, appt_end))
 
@@ -388,8 +394,8 @@ class CalendarService:
         # after "now" of the requested duration, using the primary calendar.
         now = datetime.now(UTC)
         open_hour, close_hour, closed_days = _get_business_hours(business_id)
-        max_jobs_per_day, reserve_mornings_for_emergencies, travel_buffer_minutes = _get_business_capacity(
-            business_id
+        max_jobs_per_day, reserve_mornings_for_emergencies, travel_buffer_minutes = (
+            _get_business_capacity(business_id)
         )
         duration = timedelta(minutes=duration_minutes)
         candidate_start = _align_to_business_hours(
@@ -435,11 +441,7 @@ class CalendarService:
         # context by counting busy blocks that fall on the candidate day.
         if max_jobs_per_day is not None and busy_ranges:
             day = candidate_start.date()
-            day_blocks = [
-                (s, e)
-                for s, e in busy_ranges
-                if s.date() == day
-            ]
+            day_blocks = [(s, e) for s, e in busy_ranges if s.date() == day]
             if len(day_blocks) >= max_jobs_per_day:
                 # Fall back to a stub-style aligned slot if capacity is exceeded.
                 candidate = _align_to_business_hours(
@@ -499,9 +501,7 @@ class CalendarService:
         try:
             cal_id = calendar_id or self._settings.calendar_id
             created = (
-                self._client.events()
-                .insert(calendarId=cal_id, body=event)
-                .execute()
+                self._client.events().insert(calendarId=cal_id, body=event).execute()
             )
             return created.get("id", f"event_placeholder_{slot.start.isoformat()}")
         except HttpError:

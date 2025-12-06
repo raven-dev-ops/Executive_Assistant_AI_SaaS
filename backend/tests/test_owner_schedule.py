@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.repositories import appointments_repo, customers_repo, conversations_repo
-from app.metrics import BusinessSmsMetrics, metrics
+from app.metrics import BusinessSmsMetrics, BusinessTwilioMetrics, metrics
 from app.deps import DEFAULT_BUSINESS_ID
 
 
@@ -44,7 +44,7 @@ def test_owner_schedule_tomorrow_with_appointments():
     # Choose a stable time tomorrow (10:00 UTC) so the test
     # does not depend on the current wall-clock hour.
     now = datetime.now(UTC)
-    tomorrow = (now.date() + timedelta(days=1))
+    tomorrow = now.date() + timedelta(days=1)
     start = datetime(
         year=tomorrow.year,
         month=tomorrow.month,
@@ -855,6 +855,71 @@ def test_owner_twilio_metrics_endpoint_returns_counts():
     assert isinstance(body["voice_requests"], int)
 
 
+def test_owner_twilio_metrics_reflects_twilio_usage() -> None:
+    # Reset global and per-tenant Twilio metrics.
+    metrics.twilio_voice_requests = 0
+    metrics.twilio_voice_errors = 0
+    metrics.twilio_sms_requests = 0
+    metrics.twilio_sms_errors = 0
+    metrics.twilio_by_business.clear()
+
+    # Seed some Twilio traffic for the default tenant via the real webhooks.
+    resp_voice = client.post(
+        "/twilio/voice",
+        data={"CallSid": "CA_METRICS", "From": "+15550001234"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp_voice.status_code == 200
+
+    resp_sms = client.post(
+        "/twilio/sms",
+        data={"From": "+15550001234", "Body": "Hello"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp_sms.status_code == 200
+
+    # Owner Twilio metrics should reflect per-tenant counts.
+    resp = client.get("/v1/owner/twilio-metrics")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    per = metrics.twilio_by_business.get(DEFAULT_BUSINESS_ID, BusinessTwilioMetrics())
+    assert body["voice_requests"] == per.voice_requests
+    assert body["voice_errors"] == per.voice_errors
+    assert body["sms_requests"] == per.sms_requests
+    assert body["sms_errors"] == per.sms_errors
+
+
+def test_owner_data_completeness_handles_empty_tenant() -> None:
+    # Ensure no customers or appointments are present for the default business.
+    appointments_repo._by_id.clear()
+    appointments_repo._by_customer.clear()
+    appointments_repo._by_business.clear()
+    customers_repo._by_id.clear()
+    customers_repo._by_phone.clear()
+    customers_repo._by_business.clear()
+
+    resp = client.get("/v1/owner/data-completeness", params={"days": 30})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["window_days"] == 30
+    assert body["total_customers"] == 0
+    assert body["customers_with_email"] == 0
+    assert body["customers_with_address"] == 0
+    assert body["customers_complete"] == 0
+
+    assert body["total_appointments"] == 0
+    assert body["appointments_with_service_type"] == 0
+    assert body["appointments_with_estimated_value"] == 0
+    assert body["appointments_with_lead_source"] == 0
+    assert body["appointments_complete"] == 0
+
+    # When there is no data, completeness scores fall back to 0.0.
+    assert body["customer_completeness_score"] == 0.0
+    assert body["appointment_completeness_score"] == 0.0
+
+
 def test_owner_workload_next_summarises_next_days():
     appointments_repo._by_id.clear()
     appointments_repo._by_customer.clear()
@@ -936,6 +1001,70 @@ def test_owner_workload_next_summarises_next_days():
     assert second["total_appointments"] == 1
     assert second["emergency_appointments"] == 1
     assert second["standard_appointments"] == 0
+
+
+def test_owner_workload_next_includes_days_with_no_appointments() -> None:
+    appointments_repo._by_id.clear()
+    appointments_repo._by_customer.clear()
+    appointments_repo._by_business.clear()
+    customers_repo._by_id.clear()
+    customers_repo._by_phone.clear()
+    customers_repo._by_business.clear()
+
+    # Create a customer.
+    cust_resp = client.post(
+        "/v1/crm/customers",
+        json={"name": "Sparse Workload Owner", "phone": "555-2424"},
+    )
+    customer_id = cust_resp.json()["id"]
+
+    now = datetime.now(UTC)
+    today = now.date()
+    day_two = today + timedelta(days=1)
+
+    # Only create an appointment on day two of a three-day window.
+    start_day_two = datetime(
+        year=day_two.year,
+        month=day_two.month,
+        day=day_two.day,
+        hour=11,
+        minute=0,
+        tzinfo=UTC,
+    )
+    end_day_two = start_day_two + timedelta(hours=1)
+    client.post(
+        "/v1/crm/appointments",
+        json={
+            "customer_id": customer_id,
+            "start_time": start_day_two.isoformat(),
+            "end_time": end_day_two.isoformat(),
+            "service_type": "Inspection",
+            "is_emergency": False,
+            "description": "Middle-day job",
+        },
+    )
+
+    resp = client.get("/v1/owner/workload/next", params={"days": 3})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["days"] == 3
+    items = body["items"]
+    assert len(items) == 3
+
+    # Day 1: no appointments.
+    assert items[0]["total_appointments"] == 0
+    assert items[0]["emergency_appointments"] == 0
+    assert items[0]["standard_appointments"] == 0
+
+    # Day 2: one standard appointment.
+    assert items[1]["total_appointments"] == 1
+    assert items[1]["emergency_appointments"] == 0
+    assert items[1]["standard_appointments"] == 1
+
+    # Day 3: still no appointments.
+    assert items[2]["total_appointments"] == 0
+    assert items[2]["emergency_appointments"] == 0
+    assert items[2]["standard_appointments"] == 0
 
 
 def test_owner_schedule_tomorrow_audio():

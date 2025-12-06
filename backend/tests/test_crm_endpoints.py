@@ -12,7 +12,11 @@ def test_crm_customer_and_appointment_flow():
     # Create customer
     cust_resp = client.post(
         "/v1/crm/customers",
-        json={"name": "Test Customer", "phone": "555-4444", "email": "test@example.com"},
+        json={
+            "name": "Test Customer",
+            "phone": "555-4444",
+            "email": "test@example.com",
+        },
     )
     assert cust_resp.status_code == 200
     customer = cust_resp.json()
@@ -136,7 +140,9 @@ def test_crm_customer_search_by_name_and_phone():
     phone_search = client.get("/v1/crm/customers/search", params={"q": "555-0002"})
     assert phone_search.status_code == 200
     phone_results = phone_search.json()
-    assert any(c["phone"] == "555-0002" and c["name"] == "Beta Heating" for c in phone_results)
+    assert any(
+        c["phone"] == "555-0002" and c["name"] == "Beta Heating" for c in phone_results
+    )
 
 
 def test_crm_appointments_support_basic_filters():
@@ -177,7 +183,6 @@ def test_crm_appointments_support_basic_filters():
         },
     )
     assert resp2.status_code == 200
-    appt2 = resp2.json()
 
     emergency_only = client.get("/v1/crm/appointments", params={"is_emergency": "true"})
     assert emergency_only.status_code == 200
@@ -193,3 +198,12 @@ def test_crm_appointments_support_basic_filters():
     leak_items = leak_only.json()
     assert any(a["id"] == appt1["id"] for a in leak_items)
     assert all(a["service_type"] == "Leak" for a in leak_items)
+
+    # Filter by status should only return matching appointments.
+    status_filtered = client.get(
+        "/v1/crm/appointments",
+        params={"status": "SCHEDULED"},
+    )
+    assert status_filtered.status_code == 200
+    status_items = status_filtered.json()
+    assert all(a["status"] == "SCHEDULED" for a in status_items)

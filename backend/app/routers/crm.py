@@ -158,7 +158,9 @@ def _normalize_outcome_label(text: str) -> str | None:
         return "booked"
     if any(token in value for token in ("cancel", "cancelled", "no show", "lost")):
         return "lost"
-    if any(token in value for token in ("quote", "estimate", "bid", "shopping", "shopper")):
+    if any(
+        token in value for token in ("quote", "estimate", "bid", "shopping", "shopper")
+    ):
         return "price_shopper"
     return value
 
@@ -290,12 +292,7 @@ async def _maybe_llm_enrich_qa_suggestions(
         # On any network or parsing error, keep heuristic suggestion.
         return suggestion
 
-    content = (
-        data.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-        .strip()
-    )
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     if not content:
         return suggestion
 
@@ -430,12 +427,18 @@ def create_appointment(
         is_emergency=payload.is_emergency,
         description=payload.description,
         lead_source=payload.lead_source,
-        estimated_value=int(payload.estimated_value) if payload.estimated_value is not None else None,
+        estimated_value=(
+            int(payload.estimated_value)
+            if payload.estimated_value is not None
+            else None
+        ),
         job_stage=payload.job_stage,
         business_id=business_id,
         tags=payload.tags,
         technician_id=payload.technician_id,
-        quoted_value=int(payload.quoted_value) if payload.quoted_value is not None else None,
+        quoted_value=(
+            int(payload.quoted_value) if payload.quoted_value is not None else None
+        ),
         quote_status=payload.quote_status,
     )
     return AppointmentResponse(
@@ -458,7 +461,9 @@ def create_appointment(
     )
 
 
-@router.get("/customers/{customer_id}/appointments", response_model=list[AppointmentResponse])
+@router.get(
+    "/customers/{customer_id}/appointments", response_model=list[AppointmentResponse]
+)
 def list_customer_appointments(customer_id: str) -> list[AppointmentResponse]:
     customer = customers_repo.get(customer_id)
     if not customer:
@@ -510,7 +515,9 @@ def list_appointments(
         filtered: list = []
         for a in appts:
             start = getattr(a, "start_time", None)
-            if start_time_from is not None and (start is None or start < start_time_from):
+            if start_time_from is not None and (
+                start is None or start < start_time_from
+            ):
                 continue
             if start_time_to is not None and (start is None or start > start_time_to):
                 continue
@@ -566,7 +573,9 @@ async def update_appointment(
 ) -> AppointmentResponse:
     appt = appointments_repo.get(appointment_id)
     if not appt or appt.business_id != business_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+        )
 
     new_start = payload.start_time or appt.start_time
     new_end = payload.end_time or appt.end_time
@@ -587,20 +596,52 @@ async def update_appointment(
         appointment_id,
         start_time=new_start,
         end_time=new_end,
-        service_type=payload.service_type if payload.service_type is not None else appt.service_type,
-        description=payload.description if payload.description is not None else appt.description,
-        is_emergency=payload.is_emergency if payload.is_emergency is not None else appt.is_emergency,
+        service_type=(
+            payload.service_type
+            if payload.service_type is not None
+            else appt.service_type
+        ),
+        description=(
+            payload.description if payload.description is not None else appt.description
+        ),
+        is_emergency=(
+            payload.is_emergency
+            if payload.is_emergency is not None
+            else appt.is_emergency
+        ),
         status=payload.status if payload.status is not None else appt.status,
-        lead_source=payload.lead_source if payload.lead_source is not None else appt.lead_source,
-        estimated_value=int(payload.estimated_value) if payload.estimated_value is not None else appt.estimated_value,
-        job_stage=payload.job_stage if payload.job_stage is not None else appt.job_stage,
+        lead_source=(
+            payload.lead_source if payload.lead_source is not None else appt.lead_source
+        ),
+        estimated_value=(
+            int(payload.estimated_value)
+            if payload.estimated_value is not None
+            else appt.estimated_value
+        ),
+        job_stage=(
+            payload.job_stage if payload.job_stage is not None else appt.job_stage
+        ),
         tags=payload.tags if payload.tags is not None else getattr(appt, "tags", None),
-        technician_id=payload.technician_id if payload.technician_id is not None else getattr(appt, "technician_id", None),
-        quoted_value=int(payload.quoted_value) if payload.quoted_value is not None else getattr(appt, "quoted_value", None),
-        quote_status=payload.quote_status if payload.quote_status is not None else getattr(appt, "quote_status", None),
+        technician_id=(
+            payload.technician_id
+            if payload.technician_id is not None
+            else getattr(appt, "technician_id", None)
+        ),
+        quoted_value=(
+            int(payload.quoted_value)
+            if payload.quoted_value is not None
+            else getattr(appt, "quoted_value", None)
+        ),
+        quote_status=(
+            payload.quote_status
+            if payload.quote_status is not None
+            else getattr(appt, "quote_status", None)
+        ),
     )
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+        )
 
     return AppointmentResponse(
         id=updated.id,
@@ -679,7 +720,9 @@ async def cancel_appointment(
 ) -> None:
     appt = appointments_repo.get(appointment_id)
     if not appt or appt.business_id != business_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+        )
 
     if appt.calendar_event_id:
         calendar_id = get_calendar_id_for_business(business_id)
@@ -692,7 +735,9 @@ async def cancel_appointment(
 
 
 @router.get("/conversations", response_model=list[ConversationSummaryResponse])
-def list_conversations(business_id: str = Depends(ensure_business_active)) -> list[ConversationSummaryResponse]:
+def list_conversations(
+    business_id: str = Depends(ensure_business_active),
+) -> list[ConversationSummaryResponse]:
     conversations = conversations_repo.list_for_business(business_id)
     # Best-effort mapping of conversations to a service type and whether the
     # customer has any active appointments in this business.
@@ -703,7 +748,9 @@ def list_conversations(business_id: str = Depends(ensure_business_active)) -> li
             appts = appointments_repo.list_for_customer(c.customer_id)
             # Filter appointments to this business.
             appts = [
-                a for a in appts if getattr(a, "business_id", business_id) == business_id
+                a
+                for a in appts
+                if getattr(a, "business_id", business_id) == business_id
             ]
             appts.sort(key=lambda a: a.start_time, reverse=True)
             svc_by_customer[c.customer_id] = appts[0].service_type if appts else None
@@ -736,13 +783,18 @@ def list_conversations(business_id: str = Depends(ensure_business_active)) -> li
     ]
 
 
-@router.get("/customers/{customer_id}/conversations", response_model=list[ConversationSummaryResponse])
+@router.get(
+    "/customers/{customer_id}/conversations",
+    response_model=list[ConversationSummaryResponse],
+)
 def list_customer_conversations(
     customer_id: str,
     business_id: str = Depends(ensure_business_active),
 ) -> list[ConversationSummaryResponse]:
     conversations = [
-        c for c in conversations_repo.list_for_business(business_id) if c.customer_id == customer_id
+        c
+        for c in conversations_repo.list_for_business(business_id)
+        if c.customer_id == customer_id
     ]
     # Treat any active appointment for this customer in this business as
     # a "has_appointments" indicator.
@@ -827,7 +879,9 @@ def customer_timeline(
     return items
 
 
-@router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
+@router.get(
+    "/conversations/{conversation_id}", response_model=ConversationDetailResponse
+)
 async def get_conversation(conversation_id: str) -> ConversationDetailResponse:
     conv = conversations_repo.get(conversation_id)
     if not conv:
@@ -842,8 +896,7 @@ async def get_conversation(conversation_id: str) -> ConversationDetailResponse:
         if appts:
             service_type = appts[0].service_type
             has_appointments = any(
-                getattr(a, "status", "SCHEDULED").upper()
-                in {"SCHEDULED", "CONFIRMED"}
+                getattr(a, "status", "SCHEDULED").upper() in {"SCHEDULED", "CONFIRMED"}
                 for a in appts
             )
 
@@ -876,7 +929,9 @@ async def get_conversation(conversation_id: str) -> ConversationDetailResponse:
     )
 
 
-@router.patch("/conversations/{conversation_id}/qa", response_model=ConversationDetailResponse)
+@router.patch(
+    "/conversations/{conversation_id}/qa", response_model=ConversationDetailResponse
+)
 async def update_conversation_qa(
     conversation_id: str, payload: ConversationQAUpdate
 ) -> ConversationDetailResponse:

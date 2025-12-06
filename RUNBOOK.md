@@ -21,6 +21,10 @@ This runbook is informed by:
 
 - **Backend API** (`backend/`):
   - Health: `GET /healthz` should return `{"status": "ok"}`.
+  - Readiness: `GET /readyz` includes a basic database connectivity check and can be used as a K8s
+    readiness probe when running with a real database. The response includes a `status` field
+    (`"ok"` or `"degraded"`) and a `database` object with `available`/`healthy` booleans; treat a
+    `"degraded"` status as not ready when database connectivity is required for the environment.
   - Metrics: `GET /metrics` returns JSON counters such as:
     - `total_requests`, `total_errors`
     - `appointments_scheduled`
@@ -33,7 +37,7 @@ This runbook is informed by:
     - `twilio_by_business[business_id].voice_requests/voice_errors/sms_requests/sms_errors`
   - Voice & telephony:
     - `/v1/voice/session/*` - direct voice session API.
-    - `/telephony/*` - webhook-style entry for a telephony provider.
+    - `/telephony/*` (and `/v1/telephony/*`) - webhook-style entry for a telephony provider.
   - CRM & owner views:
     - `/v1/crm/*` - customers and appointments.
     - `/v1/owner/schedule/tomorrow` - text summary for the owner's schedule.
@@ -297,10 +301,15 @@ groups:
         for: 5m
         labels:
           severity: warning
-        annotations:
-          summary: "High voice session error rate"
-          description: "Voice session API errors >5% for 5m."
+         annotations:
+           summary: "High voice session error rate"
+           description: "Voice session API errors >5% for 5m."
 ```
+
+- When running in a Kubernetes cluster with the Prometheus Operator or kube-prometheus stack, you
+  can use `k8s/prometheus-rules.yaml` in this repo as a starting point for alerts wired directly to
+  the exported Prometheus metrics (`ai_telephony_twilio_voice_*` and
+  `ai_telephony_voice_session_*`). Adjust labels/selectors to match your Prometheus installation.
 
 - **Log aggregation**:
   - Backend logs are emitted to stdout by default via `logging_config.configure_logging`.

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import Request
 
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import AuditEventDB, Business
+from ..db_models import AuditEventDB, BusinessDB
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +42,14 @@ def _resolve_business_id_from_headers(request: Request) -> str | None:
         business = None
         if x_api_key:
             business = (
-                session.query(Business)
-                .filter(Business.api_key == x_api_key)
+                session.query(BusinessDB)
+                .filter(BusinessDB.api_key == x_api_key)
                 .one_or_none()
             )
         elif x_widget_token:
             business = (
-                session.query(Business)
-                .filter(Business.widget_token == x_widget_token)
+                session.query(BusinessDB)
+                .filter(BusinessDB.widget_token == x_widget_token)
                 .one_or_none()
             )
         if business:
@@ -122,4 +122,3 @@ async def record_audit_event(request: Request, status_code: int) -> None:
         logger.exception("audit_event_persist_failed")
     finally:
         session.close()
-

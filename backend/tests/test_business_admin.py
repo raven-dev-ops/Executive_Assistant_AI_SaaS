@@ -1,17 +1,20 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import SQLALCHEMY_AVAILABLE
+from app.db import SQLALCHEMY_AVAILABLE, SessionLocal
+from app.db_models import AppointmentDB, BusinessDB, ConversationDB, ConversationMessageDB
 from app.main import app
+from app.metrics import BusinessTwilioMetrics, metrics
 
 
 client = TestClient(app)
 
 
 pytestmark = pytest.mark.skipif(
-    not SQLALCHEMY_AVAILABLE, reason="Admin tenant usage endpoints require database support"
+    not SQLALCHEMY_AVAILABLE,
+    reason="Admin tenant usage endpoints require database support",
 )
 
 
@@ -130,3 +133,200 @@ def test_get_business_via_widget_token_allows_crm_access():
     # Demo tenants seed at least two customers per tenant.
     assert isinstance(customers, list)
     assert len(customers) >= 2
+
+
+def test_admin_environment_uses_env_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    resp = client.get("/v1/admin/environment")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["environment"] == "staging"
+
+
+def test_admin_governance_summary_includes_tenants() -> None:
+    # Seed demo tenants and then fetch governance summary.
+    resp = client.post("/v1/admin/demo-tenants")
+    assert resp.status_code == 200
+    tenants = resp.json()["businesses"]
+    assert tenants
+
+    gov_resp = client.get("/v1/admin/governance")
+    assert gov_resp.status_code == 200
+    summary = gov_resp.json()
+
+    assert isinstance(summary["multi_tenant_mode"], bool)
+    assert summary["business_count"] >= len(tenants)
+    assert isinstance(summary["require_business_api_key"], bool)
+    assert isinstance(summary["verify_twilio_signatures"], bool)
+
+    tenant_summaries = summary["tenants"]
+    assert isinstance(tenant_summaries, list)
+    assert tenant_summaries
+    first = tenant_summaries[0]
+    assert "id" in first and "name" in first and "status" in first
+
+
+def test_admin_audit_endpoint_returns_events() -> None:
+    # Trigger a few requests so audit events are recorded.
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
+    resp = client.get("/v1/admin/environment")
+    assert resp.status_code == 200
+
+    audit_resp = client.get("/v1/admin/audit?limit=10")
+    assert audit_resp.status_code == 200
+    events = audit_resp.json()
+    # There should be at least one recent audit event.
+    assert isinstance(events, list)
+    assert events
+    first = events[0]
+    assert "id" in first
+    assert "path" in first
+    assert "method" in first
+    assert "status_code" in first
+
+
+def test_admin_audit_filters_by_business_and_actor_and_time_window() -> None:
+    # Create an audit event associated with a specific business via headers.
+    resp = client.get("/healthz", headers={"X-Business-ID": "audit-biz"})
+    assert resp.status_code == 200
+
+    # Filter by business_id and actor_type; events should be recent.
+    audit_resp = client.get(
+        "/v1/admin/audit",
+        params={"business_id": "audit-biz", "actor_type": "anonymous", "since_minutes": 10, "limit": 50},
+    )
+    assert audit_resp.status_code == 200
+    events = audit_resp.json()
+    assert isinstance(events, list)
+    assert events
+    for ev in events:
+        assert ev["business_id"] == "audit-biz"
+        assert ev["actor_type"] == "anonymous"
+
+
+def test_admin_twilio_health_reflects_config_and_metrics() -> None:
+    # Seed global and per-business Twilio metrics.
+    metrics.twilio_voice_requests = 5
+    metrics.twilio_voice_errors = 1
+    metrics.twilio_sms_requests = 7
+    metrics.twilio_sms_errors = 2
+    metrics.twilio_by_business.clear()
+    metrics.twilio_by_business["biz-twilio"] = BusinessTwilioMetrics(
+        voice_requests=3,
+        voice_errors=1,
+        sms_requests=4,
+        sms_errors=0,
+    )
+
+    resp = client.get("/v1/admin/twilio/health")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Global aggregates.
+    assert body["twilio_voice_requests"] == metrics.twilio_voice_requests
+    assert body["twilio_voice_errors"] == metrics.twilio_voice_errors
+    assert body["twilio_sms_requests"] == metrics.twilio_sms_requests
+    assert body["twilio_sms_errors"] == metrics.twilio_sms_errors
+
+    per_map = {b["business_id"]: b for b in body["per_business"]}
+    assert "biz-twilio" in per_map
+    biz_stats = per_map["biz-twilio"]
+    assert biz_stats["voice_requests"] == 3
+    assert biz_stats["voice_errors"] == 1
+    assert biz_stats["sms_requests"] == 4
+    assert biz_stats["sms_errors"] == 0
+
+    cfg = body["config"]
+    # Shape checks for Twilio configuration status.
+    assert "provider" in cfg
+    assert isinstance(cfg["from_number_set"], bool)
+    assert isinstance(cfg["owner_number_set"], bool)
+    assert isinstance(cfg["account_sid_set"], bool)
+    assert isinstance(cfg["auth_token_set"], bool)
+    assert isinstance(cfg["verify_signatures"], bool)
+
+
+def test_admin_gcp_storage_health_uses_service_result(monkeypatch) -> None:
+    from app.routers import business_admin as admin_module
+
+    class DummyHealth:
+        configured = True
+        project_id = "proj-123"
+        bucket_name = "bucket-abc"
+        library_available = True
+        can_connect = True
+        error = None
+
+    monkeypatch.setattr(admin_module, "get_gcs_health", lambda: DummyHealth())
+
+    resp = client.get("/v1/admin/gcp/storage-health")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["configured"] is True
+    assert body["project_id"] == "proj-123"
+    assert body["bucket_name"] == "bucket-abc"
+    assert body["library_available"] is True
+    assert body["can_connect"] is True
+    assert body["error"] is None
+
+
+def test_admin_retention_prune_deletes_old_data() -> None:
+    assert SessionLocal is not None
+    session = SessionLocal()
+    try:
+        biz_id = "retention_test"
+        row = session.get(BusinessDB, biz_id)
+        if row is None:
+            row = BusinessDB(  # type: ignore[call-arg]
+                id=biz_id,
+                name="Retention Test",
+                appointment_retention_days=30,
+                conversation_retention_days=30,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+
+        # Create old appointment and conversation + message that should be pruned.
+        old_time = datetime.now(UTC) - timedelta(days=60)
+        appt = AppointmentDB(  # type: ignore[call-arg]
+            id="appt-retention",
+            customer_id="cust-retention",
+            business_id=biz_id,
+            start_time=old_time,
+            end_time=old_time,
+            service_type="Old Job",
+            is_emergency=False,
+        )
+        session.add(appt)
+
+        conv = ConversationDB(  # type: ignore[call-arg]
+            id="conv-retention",
+            business_id=biz_id,
+            customer_id="cust-retention",
+            channel="sms",
+            created_at=old_time,
+        )
+        session.add(conv)
+
+        msg = ConversationMessageDB(  # type: ignore[call-arg]
+            id="msg-retention",
+            conversation_id="conv-retention",
+            role="user",
+            text="old message",
+            timestamp=old_time,
+        )
+        session.add(msg)
+
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post("/v1/admin/retention/prune")
+    assert resp.status_code == 200
+    body = resp.json()
+    # All of the seeded rows should be counted as deleted.
+    assert body["appointments_deleted"] >= 1
+    assert body["conversations_deleted"] >= 1
+    assert body["conversation_messages_deleted"] >= 1

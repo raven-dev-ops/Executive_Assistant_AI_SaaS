@@ -12,8 +12,11 @@ from .routers import (
     business_admin,
     chat_widget,
     crm,
+    auth_integration,
     owner,
+    owner_assistant,
     owner_export,
+    public_signup,
     reminders,
     retention,
     telephony,
@@ -40,11 +43,11 @@ def create_app() -> FastAPI:
     business_count = None
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         try:
-            from .db_models import Business  # local import to avoid cycles
+            from .db_models import BusinessDB  # local import to avoid cycles
 
             session_db = SessionLocal()
             try:
-                business_count = session_db.query(Business).count()
+                business_count = session_db.query(BusinessDB).count()
                 multi_tenant = business_count > 1
             finally:
                 session_db.close()
@@ -117,21 +120,64 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(voice.router, prefix="/v1/voice", tags=["voice"])
+    # Support both legacy and versioned prefixes for telephony and Twilio
+    # endpoints so existing integrations continue to function while new
+    # clients can adopt /v1/* routes.
     app.include_router(telephony.router, prefix="/telephony", tags=["telephony"])
+    app.include_router(telephony.router, prefix="/v1/telephony", tags=["telephony"])
     app.include_router(crm.router, prefix="/v1/crm", tags=["crm"])
+    app.include_router(
+        auth_integration.router,
+        prefix="/auth",
+        tags=["auth-integrations"],
+    )
     app.include_router(owner.router, prefix="/v1/owner", tags=["owner"])
     app.include_router(
         owner_export.router, prefix="/v1/owner/export", tags=["owner-export"]
+    )
+    app.include_router(
+        owner_assistant.router,
+        prefix="/v1/owner/assistant",
+        tags=["owner-assistant"],
     )
     app.include_router(reminders.router, prefix="/v1/reminders", tags=["reminders"])
     app.include_router(retention.router, prefix="/v1/retention", tags=["retention"])
     app.include_router(chat_widget.router, prefix="/v1/widget", tags=["widget"])
     app.include_router(business_admin.router, prefix="/v1/admin", tags=["admin"])
     app.include_router(twilio_integration.router, prefix="/twilio", tags=["twilio"])
+    app.include_router(twilio_integration.router, prefix="/v1/twilio", tags=["twilio"])
+    app.include_router(public_signup.router, tags=["public-signup"])
 
     @app.get("/healthz", tags=["health"])
     async def health_check() -> dict:
         return {"status": "ok"}
+
+    @app.get("/readyz", tags=["health"])
+    async def readiness_check() -> dict:
+        """Readiness probe that includes basic dependency checks.
+
+        Currently verifies database connectivity when SQLAlchemy support is
+        enabled; other external dependency checks can be added over time.
+        """
+        db_available = SQLALCHEMY_AVAILABLE and SessionLocal is not None
+        db_healthy = False
+        if db_available:
+            session = SessionLocal()
+            try:
+                session.execute("SELECT 1")
+                db_healthy = True
+            except Exception:
+                db_healthy = False
+            finally:
+                session.close()
+        status_value = "ok" if db_healthy or not db_available else "degraded"
+        return {
+            "status": status_value,
+            "database": {
+                "available": db_available,
+                "healthy": db_healthy,
+            },
+        }
 
     @app.get("/metrics", tags=["metrics"])
     async def get_metrics() -> dict:
@@ -150,13 +196,17 @@ def create_app() -> FastAPI:
 
         emit("ai_telephony_total_requests", float(metrics.total_requests))
         emit("ai_telephony_total_errors", float(metrics.total_errors))
-        emit("ai_telephony_appointments_scheduled", float(metrics.appointments_scheduled))
+        emit(
+            "ai_telephony_appointments_scheduled", float(metrics.appointments_scheduled)
+        )
         emit("ai_telephony_sms_sent_total", float(metrics.sms_sent_total))
         emit("ai_telephony_twilio_voice_requests", float(metrics.twilio_voice_requests))
         emit("ai_telephony_twilio_voice_errors", float(metrics.twilio_voice_errors))
         emit("ai_telephony_twilio_sms_requests", float(metrics.twilio_sms_requests))
         emit("ai_telephony_twilio_sms_errors", float(metrics.twilio_sms_errors))
-        emit("ai_telephony_voice_session_requests", float(metrics.voice_session_requests))
+        emit(
+            "ai_telephony_voice_session_requests", float(metrics.voice_session_requests)
+        )
         emit("ai_telephony_voice_session_errors", float(metrics.voice_session_errors))
 
         # Per-route request/error counts with a path label.

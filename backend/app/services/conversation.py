@@ -5,12 +5,12 @@ from datetime import UTC, datetime, timedelta
 import logging
 
 from .calendar import TimeSlot, calendar_service
-from .stt_tts import speech_service
+from .stt_tts import speech_service  # noqa: F401  (re-exported for voice router)
 from .sessions import CallSession
 from .sms import sms_service
 from .nlu import parse_address, parse_name
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..metrics import metrics
 from ..repositories import appointments_repo, customers_repo
 from ..business_config import (
@@ -44,7 +44,7 @@ def _get_emergency_keywords_for_business(business_id: str | None) -> list[str]:
     if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "emergency_keywords", None):
@@ -60,7 +60,7 @@ def _get_business_name(business_id: str | None) -> str:
     if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "name", None):
@@ -125,7 +125,7 @@ def _get_service_duration_overrides(business_id: str | None) -> dict[str, int]:
         return {}
     session_db = SessionLocal()
     try:
-        row = session_db.get(Business, business_id)
+        row = session_db.get(BusinessDB, business_id)
     finally:
         session_db.close()
     raw = getattr(row, "service_duration_config", None) if row is not None else None
@@ -158,7 +158,9 @@ def _infer_duration_minutes(
     """Return a default duration for scheduling based on service type."""
     service_type = _infer_service_type(problem_summary) or "general_plumbing"
     overrides = _get_service_duration_overrides(business_id)
-    base = overrides.get(service_type, SERVICE_TYPE_DURATIONS_MINUTES.get(service_type, 60))
+    base = overrides.get(
+        service_type, SERVICE_TYPE_DURATIONS_MINUTES.get(service_type, 60)
+    )
     # Ensure emergencies are not scheduled for unrealistically short windows.
     if is_emergency and base < 60:
         return 60
@@ -243,13 +245,17 @@ def _session_state(session: CallSession, pending_slot: TimeSlot | None = None) -
 class ConversationManager:
     """Simple state-machine-based conversation manager for Phase 1."""
 
-    async def handle_input(self, session: CallSession, text: str | None) -> ConversationResult:
+    async def handle_input(
+        self, session: CallSession, text: str | None
+    ) -> ConversationResult:
         session.updated_at = datetime.now(UTC)
         normalized = (text or "").strip()
         lower = normalized.lower()
 
         # Resolve language and business context up-front.
-        business_id = getattr(session, "business_id", "default_business") or "default_business"
+        business_id = (
+            getattr(session, "business_id", "default_business") or "default_business"
+        )
         language_code = get_language_for_business(business_id)
         business_name = _get_business_name(business_id)
         vertical = get_vertical_for_business(business_id).lower()
@@ -259,7 +265,9 @@ class ConversationManager:
         returning_customer_name: str | None = None
         returning_customer_address: str | None = None
         if session.caller_phone:
-            customer = customers_repo.get_by_phone(session.caller_phone, business_id=business_id)
+            customer = customers_repo.get_by_phone(
+                session.caller_phone, business_id=business_id
+            )
             if customer:
                 is_returning_customer = True
                 returning_customer_name = customer.name
@@ -285,7 +293,11 @@ class ConversationManager:
             if not normalized:
                 if language_code == "es":
                     if is_returning_customer:
-                        name_part = f" {returning_customer_name}" if returning_customer_name else ""
+                        name_part = (
+                            f" {returning_customer_name}"
+                            if returning_customer_name
+                            else ""
+                        )
                         reply = (
                             f"Hola{name_part}, te habla el asistente automatizado de {business_name}. "
                             "Parece que ya hemos trabajado contigo antes. "
@@ -299,7 +311,11 @@ class ConversationManager:
                         )
                 else:
                     if is_returning_customer:
-                        name_part = f" {returning_customer_name}" if returning_customer_name else ""
+                        name_part = (
+                            f" {returning_customer_name}"
+                            if returning_customer_name
+                            else ""
+                        )
                         reply = (
                             f"Hi{name_part}, this is the automated assistant for {business_name}. "
                             "It looks like we've worked with you before. "
@@ -312,21 +328,21 @@ class ConversationManager:
                             "To get started, what is your name? "
                         )
                 session.stage = "ASK_NAME"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             # If the caller says something on the greeting turn, treat it as a name.
             parsed_name = parse_name(normalized) or normalized
             session.caller_name = parsed_name
             session.stage = "ASK_ADDRESS"
             if language_code == "es":
-                reply = (
-                    f"Gracias, {parsed_name}. ¿Cuál es la dirección del servicio para esta visita?"
-                )
+                reply = f"Gracias, {parsed_name}. ¿Cuál es la dirección del servicio para esta visita?"
             else:
-                reply = (
-                    f"Thanks, {parsed_name}. What is the service address for this visit?"
-                )
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                reply = f"Thanks, {parsed_name}. What is the service address for this visit?"
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # ASK_NAME: capture caller name.
         if session.stage == "ASK_NAME":
@@ -335,19 +351,21 @@ class ConversationManager:
                     reply = "No alcancé a escuchar tu nombre. ¿Cómo te llamas?"
                 else:
                     reply = "Sorry, I didn't catch your name. What is your name?"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             parsed_name = parse_name(normalized) or normalized
             session.caller_name = parsed_name
             session.stage = "ASK_ADDRESS"
             if language_code == "es":
-                reply = (
-                    f"Gracias, {parsed_name}. ¿Cuál es la dirección del servicio para esta visita?"
-                )
+                reply = f"Gracias, {parsed_name}. ¿Cuál es la dirección del servicio para esta visita?"
             else:
                 # Test suite looks for this phrase.
                 reply = "Okay, what is the service address for this visit?"
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # ASK_ADDRESS: collect or confirm address.
         if session.stage == "ASK_ADDRESS":
@@ -365,25 +383,37 @@ class ConversationManager:
                         f"I have your address as {returning_customer_address}. "
                         "Does that still work for this visit?"
                     )
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             if not normalized:
                 if language_code == "es":
-                    reply = "¿Cuál es la dirección completa del servicio para esta visita?"
+                    reply = (
+                        "¿Cuál es la dirección completa del servicio para esta visita?"
+                    )
                 else:
                     reply = "What is the full service address for this visit?"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             # Treat any non-empty answer as an address.
             parsed_address = parse_address(normalized) or normalized
             session.address = parsed_address
             session.stage = "ASK_PROBLEM"
             if language_code == "es":
-                reply = "Perfecto. Describe brevemente qué está pasando con la plomería."
+                reply = (
+                    "Perfecto. Describe brevemente qué está pasando con la plomería."
+                )
             else:
                 # Test suite looks for this phrase.
-                reply = f"Got it. Briefly describe what's going on with your {vertical}."
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                reply = (
+                    f"Got it. Briefly describe what's going on with your {vertical}."
+                )
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # CONFIRM_ADDRESS: confirm or replace stored address.
         if session.stage == "CONFIRM_ADDRESS":
@@ -394,28 +424,34 @@ class ConversationManager:
                     reply = "De acuerdo, ¿cuál es la dirección del servicio para esta visita?"
                 else:
                     reply = "Okay, what is the service address for this visit?"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             # Any non-negative answer confirms the stored address.
             session.stage = "ASK_PROBLEM"
             if language_code == "es":
-                reply = "Perfecto. Describe brevemente qué está pasando con la plomería."
+                reply = (
+                    "Perfecto. Describe brevemente qué está pasando con la plomería."
+                )
             else:
-                reply = f"Got it. Briefly describe what's going on with your {vertical}."
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                reply = (
+                    f"Got it. Briefly describe what's going on with your {vertical}."
+                )
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # ASK_PROBLEM: capture problem summary and move to scheduling.
         if session.stage == "ASK_PROBLEM":
             if not normalized:
                 if language_code == "es":
-                    reply = (
-                        "Por favor describe el problema de plomería para saber cómo prepararnos."
-                    )
+                    reply = "Por favor describe el problema de plomería para saber cómo prepararnos."
                 else:
-                    reply = (
-                        f"Please describe the {vertical} issue so we know what to prepare for."
-                    )
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                    reply = f"Please describe the {vertical} issue so we know what to prepare for."
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             session.problem_summary = normalized
             session.stage = "ASK_SCHEDULE"
@@ -440,13 +476,17 @@ class ConversationManager:
                     reply_prefix = "Thanks for the details. "
 
             if language_code == "es":
-                reply = reply_prefix + "¿Quieres que busque la siguiente cita disponible?"
+                reply = (
+                    reply_prefix + "¿Quieres que busque la siguiente cita disponible?"
+                )
             else:
                 reply = (
                     reply_prefix
                     + "Would you like me to look for the next available appointment time?"
                 )
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # ASK_SCHEDULE: search for slots or mark for follow-up.
         if session.stage == "ASK_SCHEDULE":
@@ -463,7 +503,9 @@ class ConversationManager:
                     )
                 session.stage = "COMPLETED"
                 session.status = "PENDING_FOLLOWUP"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             # Any non-negative response is treated as consent to search for a slot.
             duration_minutes = _infer_duration_minutes(
@@ -492,7 +534,9 @@ class ConversationManager:
                     )
                 session.stage = "COMPLETED"
                 session.status = "PENDING_FOLLOWUP"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             session.stage = "CONFIRM_SLOT"
             session.requested_time = slot.start.isoformat()
@@ -502,8 +546,7 @@ class ConversationManager:
             else:
                 # Test suite looks for this phrase.
                 reply = (
-                    f"I can book you for {when_str}. "
-                    "Does that time work for you?"
+                    f"I can book you for {when_str}. " "Does that time work for you?"
                 )
             return ConversationResult(
                 reply_text=reply,
@@ -525,7 +568,9 @@ class ConversationManager:
                     )
                 session.stage = "COMPLETED"
                 session.status = "PENDING_FOLLOWUP"
-                return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                return ConversationResult(
+                    reply_text=reply, new_state=_session_state(session)
+                )
 
             # Confirm the proposed slot and create the appointment.
             duration_minutes = _infer_duration_minutes(
@@ -691,29 +736,21 @@ class ConversationManager:
             if language_code == "es":
                 reply = "Listo. Hemos programado tu cita y te veremos entonces."
                 if session.is_emergency:
-                    reply += (
-                        " Como fue marcada como emergencia, la trataremos como una prioridad alta."
-                    )
+                    reply += " Como fue marcada como emergencia, la trataremos como una prioridad alta."
             else:
                 # Test suite checks for this phrase.
-                reply = (
-                    "You're all set. We've scheduled your appointment and will see you then."
-                )
+                reply = "You're all set. We've scheduled your appointment and will see you then."
                 if session.is_emergency:
-                    reply += (
-                        " Because this was flagged as an emergency, we will treat it as a high priority."
-                    )
-            return ConversationResult(reply_text=reply, new_state=_session_state(session))
+                    reply += " Because this was flagged as an emergency, we will treat it as a high priority."
+            return ConversationResult(
+                reply_text=reply, new_state=_session_state(session)
+            )
 
         # Fallback for completed or unknown stages.
         if language_code == "es":
-            reply = (
-                "Esta sesión parece completa. Si necesitas algo más, por favor vuelve a llamar."
-            )
+            reply = "Esta sesión parece completa. Si necesitas algo más, por favor vuelve a llamar."
         else:
-            reply = (
-                "This session looks complete. If you need anything else, please call back."
-            )
+            reply = "This session looks complete. If you need anything else, please call back."
         return ConversationResult(reply_text=reply, new_state=_session_state(session))
 
 

@@ -21,6 +21,13 @@ Env Profiles
   - Usage (from `backend/`):
     - `uvicorn app.main:app --reload --env-file ..\env.dev.db`
 
+- `env.dev.twilio`
+  - SQLite-backed developer profile that uses the real Twilio provider against your sandbox account
+    while keeping the calendar in stub mode.
+  - Suitable when you are ready to test real inbound/outbound SMS and voice calls via Twilio.
+  - Usage (from `backend/`):
+    - `uvicorn app.main:app --reload --env-file ..\env.dev.twilio`
+
 See `ENGINEERING.md` for more on the two local development profiles.
 
 

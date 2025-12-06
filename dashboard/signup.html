@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign Up - AI Telephony for Service Businesses</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        min-height: 100vh;
+        color: #0f172a;
+      }
+      .page {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 3rem;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+      }
+      .card + .card { margin-top: 1.5rem; }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 14px rgba(16, 185, 129, 0.4);
+      }
+      .logo svg { width: 26px; height: 26px; fill: #ffffff; }
+      h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .subtitle {
+        font-size: 0.9rem;
+        color: #64748b;
+        margin-top: 0.125rem;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem 1.5rem;
+        margin-top: 1rem;
+      }
+      label {
+        font-size: 0.8rem;
+        color: #64748b;
+        display: block;
+        margin-bottom: 0.3rem;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        font-size: 0.9rem;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: #0ea5e9;
+        box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.2);
+      }
+      textarea { min-height: 80px; resize: vertical; }
+      .muted { font-size: 0.8rem; color: #94a3b8; }
+      .status {
+        margin-top: 0.75rem;
+        font-size: 0.85rem;
+      }
+      .status.success { color: #16a34a; }
+      .status.error { color: #b91c1c; }
+      .status.info { color: #0f172a; }
+      .button-row {
+        margin-top: 1.5rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      button {
+        padding: 0.6rem 1.4rem;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        color: #ffffff;
+        box-shadow: 0 6px 16px rgba(22, 163, 74, 0.45);
+        transition: transform 0.1s, box-shadow 0.1s, opacity 0.1s;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(22, 163, 74, 0.55);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      .button-secondary {
+        background: #e2e8f0;
+        color: #0f172a;
+        box-shadow: none;
+      }
+      .credentials-card {
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      .credentials-card h2 {
+        font-size: 1.1rem;
+        margin-bottom: 0.75rem;
+      }
+      .credentials-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+      }
+      .cred-box {
+        padding: 0.75rem;
+        border-radius: 10px;
+        background: #020617;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.85rem;
+        word-break: break-all;
+      }
+      .cred-label { font-size: 0.75rem; color: #9ca3af; margin-bottom: 0.25rem; }
+      .cred-value { color: #f9fafb; }
+      .step-list {
+        margin-top: 0.75rem;
+        font-size: 0.8rem;
+        color: #cbd5e1;
+      }
+      .step-list li { margin-left: 1.25rem; margin-bottom: 0.25rem; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.15);
+        font-size: 0.75rem;
+        margin-left: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <div class="header">
+          <div class="logo">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L3 6v6c0 5.52 3.84 10.74 9 12 5.16-1.26 9-6.48 9-12V6l-9-4zm0 2.18L18.16 7 12 9.82 5.84 7 12 4.18zM5 9l7 3 7-3v3c0 4.07-2.75 8.12-7 9.44C7.75 20.12 5 16.07 5 12V9z" />
+            </svg>
+          </div>
+          <div>
+            <h1>Sign Up Your Service Business</h1>
+            <div class="subtitle">
+              Create a tenant, get your API key, and connect AI Telephony to your phones and website.
+            </div>
+          </div>
+        </div>
+        <p class="muted">
+          This form creates a new tenant in the AI Telephony backend when self-service signup is enabled
+          (<code>ALLOW_SELF_SIGNUP=true</code>). You will receive a tenant API key and widget token that you
+          can use with the dashboards and web widget.
+        </p>
+
+        <div class="form-grid" style="margin-top: 1.25rem;">
+          <div>
+            <label>Business Name *</label>
+            <input id="signup-business-name" type="text" placeholder="Bristol Plumbing" />
+          </div>
+          <div>
+            <label>Vertical</label>
+            <select id="signup-vertical">
+              <option value="">Select or leave default</option>
+              <option value="plumbing">Plumbing</option>
+              <option value="hvac">HVAC</option>
+              <option value="electrical">Electrical</option>
+              <option value="roofing">Roofing</option>
+              <option value="cleaning">Cleaning</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label>Owner Phone (for alerts)</label>
+            <input id="signup-owner-phone" type="tel" placeholder="+1 (555) 555-1212" />
+          </div>
+          <div>
+            <label>Business ZIP Code *</label>
+            <input id="signup-zip-code" type="text" placeholder="e.g. 66202" />
+          </div>
+          <div>
+            <label>Contact Name</label>
+            <input id="signup-contact-name" type="text" placeholder="Jane Doe" />
+          </div>
+          <div>
+            <label>Contact Email</label>
+            <input id="signup-contact-email" type="email" placeholder="owner@example.com" />
+          </div>
+          <div>
+            <label>Website (optional)</label>
+            <input id="signup-website-url" type="url" placeholder="https://yourbusiness.com" />
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <label>
+            <input id="signup-accept-terms" type="checkbox" />
+            <span style="font-size: 0.8rem; color: #64748b; margin-left: 0.4rem;">
+              I agree to the current Privacy Policy and Terms of Service for this proof-of-concept deployment.
+            </span>
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button id="signup-submit" type="button">Create My Tenant</button>
+          <button id="signup-reset" type="button" class="button-secondary">Reset</button>
+          <span id="signup-status" class="status info"></span>
+        </div>
+      </div>
+
+      <div id="credentials-card" class="card credentials-card" style="display: none;">
+        <h2>Your Tenant Credentials</h2>
+        <p class="muted">
+          Copy these values somewhere safe. You will need them when configuring the dashboards and web widget.
+        </p>
+        <div class="credentials-grid" style="margin-top: 1rem;">
+          <div class="cred-box">
+            <div class="cred-label">Business ID</div>
+            <div id="cred-business-id" class="cred-value"></div>
+          </div>
+          <div class="cred-box">
+            <div class="cred-label">Tenant API Key <span class="pill">X-API-Key</span></div>
+            <div id="cred-api-key" class="cred-value"></div>
+          </div>
+          <div class="cred-box">
+            <div class="cred-label">Widget Token <span class="pill">X-Widget-Token</span></div>
+            <div id="cred-widget-token" class="cred-value"></div>
+          </div>
+        </div>
+        <ul class="step-list">
+          <li>Use the API key and a new owner token (<code>OWNER_DASHBOARD_TOKEN</code>) with <code>dashboard/index.html</code>.</li>
+          <li>Use the widget token with <code>widget/embed.js</code> and <code>widget/chat.html</code> on your website.</li>
+          <li>Configure Twilio and Google Calendar as described in <code>DEPLOYMENT_CHECKLIST.md</code> and <code>DEPLOYMENT_GCP_GKE.md</code>.</li>
+          <li>Optionally, open <code>dashboard/onboarding.html</code> to complete owner onboarding and connect accounts.</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      const DEFAULT_BACKEND_BASE = "http://localhost:8000";
+      const backendBaseInputKey = "signup_backend_base";
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function setStatus(text, type) {
+        const el = $("signup-status");
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = "status " + (type || "info");
+      }
+
+      async function submitSignup() {
+        const nameEl = $("signup-business-name");
+        const verticalEl = $("signup-vertical");
+          const ownerPhoneEl = $("signup-owner-phone");
+          const zipEl = $("signup-zip-code");
+        const contactNameEl = $("signup-contact-name");
+        const contactEmailEl = $("signup-contact-email");
+        const websiteEl = $("signup-website-url");
+        const termsEl = $("signup-accept-terms");
+        const submitBtn = $("signup-submit");
+
+        if (!nameEl || !termsEl || !submitBtn) return;
+
+        const businessName = nameEl.value.trim();
+        if (!businessName) {
+          setStatus("Please enter your business name.", "error");
+          return;
+        }
+        if (!termsEl.checked) {
+          setStatus("Please accept the terms to continue.", "error");
+          return;
+        }
+
+        const payload = {
+          business_name: businessName,
+          vertical: verticalEl ? verticalEl.value || null : null,
+          owner_phone: ownerPhoneEl ? ownerPhoneEl.value || null : null,
+          zip_code: zipEl ? zipEl.value.trim() || null : null,
+          contact_name: contactNameEl ? contactNameEl.value || null : null,
+          contact_email: contactEmailEl ? contactEmailEl.value || null : null,
+          website_url: websiteEl ? websiteEl.value || null : null,
+        };
+
+          const backendBase = DEFAULT_BACKEND_BASE;
+
+        setStatus("Submitting signup request...", "info");
+        submitBtn.disabled = true;
+
+        try {
+          const res = await fetch(backendBase + "/v1/public/signup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            let msg = "Signup failed (" + res.status + ").";
+            try {
+              const data = JSON.parse(text);
+              if (data && data.detail) {
+                msg = data.detail;
+              }
+            } catch (_) {
+              // ignore
+            }
+            setStatus(msg, "error");
+            submitBtn.disabled = false;
+            return;
+          }
+          const data = await res.json();
+          setStatus("Signup successful. Copy your credentials below.", "success");
+
+          const card = $("credentials-card");
+          if (card) card.style.display = "block";
+          if ($("cred-business-id")) $("cred-business-id").textContent = data.business_id || "";
+          if ($("cred-api-key")) $("cred-api-key").textContent = data.api_key || "";
+          if ($("cred-widget-token")) $("cred-widget-token").textContent = data.widget_token || "";
+
+          // Optionally redirect owners straight into onboarding with query params.
+          const onboardingUrl = `onboarding.html?business_id=${encodeURIComponent(data.business_id)}&api_key=${encodeURIComponent(data.api_key)}`;
+          const statusEl = $("signup-status");
+          if (statusEl) {
+            statusEl.innerHTML = `Signup successful. <a href="${onboardingUrl}">Click here to start owner onboarding.</a>`;
+            statusEl.className = "status success";
+          }
+        } catch (err) {
+          console.error("Signup error", err);
+          setStatus("Network error while contacting the backend. Check that it is running at " + backendBase + ".", "error");
+        } finally {
+          submitBtn.disabled = false;
+        }
+      }
+
+      function resetForm() {
+        ["signup-business-name","signup-vertical","signup-owner-phone","signup-contact-name","signup-contact-email","signup-website-url"]
+          .forEach(id => {
+            const el = $(id);
+            if (!el) return;
+            if (el.tagName === "SELECT") {
+              el.selectedIndex = 0;
+            } else {
+              el.value = "";
+            }
+          });
+        const termsEl = $("signup-accept-terms");
+        if (termsEl) termsEl.checked = false;
+        const card = $("credentials-card");
+        if (card) card.style.display = "none";
+        setStatus("", "info");
+      }
+
+      document.getElementById("signup-submit")?.addEventListener("click", submitSignup);
+      document.getElementById("signup-reset")?.addEventListener("click", resetForm);
+    </script>
+  </body>
+</html>

@@ -7,6 +7,7 @@ from ..deps import ensure_business_active
 from ..metrics import BusinessVoiceSessionMetrics, metrics
 from ..repositories import conversations_repo, customers_repo
 from ..services import conversation, sessions
+from ..business_config import get_voice_for_business
 
 
 router = APIRouter()
@@ -92,7 +93,10 @@ async def inbound_call(
 
     try:
         result = await conversation.conversation_manager.handle_input(session, None)
-        audio = await conversation.speech_service.synthesize(result.reply_text)
+        voice = get_voice_for_business(business_id)
+        audio = await conversation.speech_service.synthesize(
+            result.reply_text, voice=voice
+        )
     except Exception:
         metrics.voice_session_errors += 1
         per_err = metrics.voice_sessions_by_business.setdefault(
@@ -147,7 +151,12 @@ async def call_audio(payload: CallAudioRequest) -> CallAudioResponse:
 
     try:
         result = await conversation.conversation_manager.handle_input(session, text)
-        audio = await conversation.speech_service.synthesize(result.reply_text)
+        voice = get_voice_for_business(
+            getattr(session, "business_id", "default_business")
+        )
+        audio = await conversation.speech_service.synthesize(
+            result.reply_text, voice=voice
+        )
     except Exception:
         metrics.voice_session_errors += 1
         logger.exception(
@@ -159,7 +168,9 @@ async def call_audio(payload: CallAudioRequest) -> CallAudioResponse:
         raise
 
     if conv:
-        conversations_repo.append_message(conv.id, role="assistant", text=result.reply_text)
+        conversations_repo.append_message(
+            conv.id, role="assistant", text=result.reply_text
+        )
 
     return CallAudioResponse(
         reply_text=result.reply_text,

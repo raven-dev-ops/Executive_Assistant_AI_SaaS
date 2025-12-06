@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+import io
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, EmailStr, Field
 
 from ..deps import ensure_business_active, require_owner_dashboard_auth
 from ..repositories import appointments_repo, conversations_repo, customers_repo
@@ -12,7 +13,7 @@ from ..services.stt_tts import speech_service
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import (
     AppointmentDB,
-    Business,
+    BusinessDB,
     ConversationDB,
     ConversationMessageDB,
     CustomerDB,
@@ -20,6 +21,8 @@ from ..db_models import (
 )
 from ..metrics import metrics
 from ..services.geo_utils import derive_neighborhood_label
+from ..services.zip_enrichment import fetch_zip_income
+from ..business_config import get_voice_for_business
 
 
 router = APIRouter(dependencies=[Depends(require_owner_dashboard_auth)])
@@ -39,7 +42,9 @@ class OwnerScheduleResponse(BaseModel):
 
 
 @router.get("/schedule/tomorrow", response_model=OwnerScheduleResponse)
-def tomorrow_schedule(business_id: str = Depends(ensure_business_active)) -> OwnerScheduleResponse:
+def tomorrow_schedule(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerScheduleResponse:
     """Summarize tomorrow's appointments in a voice-friendly way."""
     now = datetime.now(UTC)
     tomorrow = now.date() + timedelta(days=1)
@@ -67,7 +72,7 @@ def tomorrow_schedule(business_id: str = Depends(ensure_business_active)) -> Own
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "name", None):
@@ -75,7 +80,9 @@ def tomorrow_schedule(business_id: str = Depends(ensure_business_active)) -> Own
 
     if not items:
         if business_name:
-            reply_text = f"Tomorrow you have no appointments scheduled for {business_name}."
+            reply_text = (
+                f"Tomorrow you have no appointments scheduled for {business_name}."
+            )
         else:
             reply_text = "Tomorrow you have no appointments scheduled."
         return OwnerScheduleResponse(reply_text=reply_text, appointments=[])
@@ -106,7 +113,8 @@ async def tomorrow_schedule_audio(
 ) -> OwnerScheduleAudioResponse:
     """Return tomorrow's schedule plus synthesized audio for the owner."""
     base = tomorrow_schedule(business_id=business_id)
-    audio = await speech_service.synthesize(base.reply_text)
+    voice = get_voice_for_business(business_id)
+    audio = await speech_service.synthesize(base.reply_text, voice=voice)
     return OwnerScheduleAudioResponse(reply_text=base.reply_text, audio=audio)
 
 
@@ -165,13 +173,17 @@ async def today_summary_audio(
 ) -> OwnerTodaySummaryAudioResponse:
     """Return today's summary plus synthesized audio for the owner."""
     base = today_summary(business_id=business_id)
-    audio = await speech_service.synthesize(base.reply_text)
+    voice = get_voice_for_business(business_id)
+    audio = await speech_service.synthesize(base.reply_text, voice=voice)
     return OwnerTodaySummaryAudioResponse(reply_text=base.reply_text, audio=audio)
 
 
 class OwnerBusinessResponse(BaseModel):
     id: str
     name: str
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_profile_image_url: str | None = None
     max_jobs_per_day: int | None = None
     reserve_mornings_for_emergencies: bool | None = None
     travel_buffer_minutes: int | None = None
@@ -195,6 +207,9 @@ def get_owner_business(
     currently in view.
     """
     name = "Default Business"
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_profile_image_url: str | None = None
     max_jobs_per_day: int | None = None
     reserve_mornings_for_emergencies: bool | None = None
     travel_buffer_minutes: int | None = None
@@ -202,11 +217,14 @@ def get_owner_business(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None and getattr(row, "name", None):
             name = row.name
+            owner_name = getattr(row, "owner_name", None)
+            owner_email = getattr(row, "owner_email", None)
+            owner_profile_image_url = getattr(row, "owner_profile_image_url", None)
             max_jobs_per_day = getattr(row, "max_jobs_per_day", None)
             reserve_mornings_for_emergencies = getattr(
                 row, "reserve_mornings_for_emergencies", None
@@ -216,6 +234,9 @@ def get_owner_business(
     return OwnerBusinessResponse(
         id=business_id,
         name=name,
+        owner_name=owner_name,
+        owner_email=owner_email,
+        owner_profile_image_url=owner_profile_image_url,
         max_jobs_per_day=max_jobs_per_day,
         reserve_mornings_for_emergencies=reserve_mornings_for_emergencies,
         travel_buffer_minutes=travel_buffer_minutes,
@@ -358,9 +379,7 @@ def list_reschedules(
         reply_text = "You have no appointments marked for rescheduling."
     else:
         count = len(items)
-        reply_text = (
-            f"You have {count} appointment{'s' if count != 1 else ''} marked for rescheduling."
-        )
+        reply_text = f"You have {count} appointment{'s' if count != 1 else ''} marked for rescheduling."
 
     # Sort by start time for convenience.
     items.sort(key=lambda i: i.start_time)
@@ -539,7 +558,9 @@ def owner_pipeline(
             continue
         if start_time < window or start_time > now:
             continue
-        stage = (getattr(appt, "job_stage", None) or "Unspecified").strip() or "Unspecified"
+        stage = (
+            getattr(appt, "job_stage", None) or "Unspecified"
+        ).strip() or "Unspecified"
         est_value = getattr(appt, "estimated_value", None)
         value = float(est_value) if est_value is not None else 0.0
         bucket = buckets.setdefault(stage, {"count": 0.0, "value": 0.0})
@@ -568,12 +589,7 @@ def owner_pipeline(
 
 def _is_quote_stage(stage: str) -> bool:
     text = stage.lower()
-    return (
-        "quote" in text
-        or "estimate" in text
-        or "proposal" in text
-        or "lead" in text
-    )
+    return "quote" in text or "estimate" in text or "proposal" in text or "lead" in text
 
 
 def _is_booked_or_completed_stage(stage: str) -> bool:
@@ -711,7 +727,7 @@ class OwnerTwilioMetricsResponse(BaseModel):
 @router.get("/twilio-metrics", response_model=OwnerTwilioMetricsResponse)
 def owner_twilio_metrics(
     business_id: str = Depends(ensure_business_active),
-    ) -> OwnerTwilioMetricsResponse:
+) -> OwnerTwilioMetricsResponse:
     """Return Twilio webhook metrics for the current tenant.
 
     This is a tenant-scoped view over the same in-process metrics that power
@@ -795,6 +811,572 @@ def owner_workload_next(
     return OwnerWorkloadNextResponse(days=days, items=items)
 
 
+class OwnerCalendarDaySummary(BaseModel):
+    date: date
+    total_appointments: int
+    tag_counts: dict[str, int]
+    service_type_counts: dict[str, int]
+    estimated_value_total: float
+    estimated_value_average: float | None = None
+    new_customers: int
+
+
+class OwnerCalendarWindowResponse(BaseModel):
+    start_date: date
+    end_date: date
+    days: list[OwnerCalendarDaySummary]
+
+
+def _compute_first_appointment_dates(business_id: str) -> dict[str, date]:
+    """Return first-seen appointment date per customer for this tenant."""
+    first_by_customer: dict[str, datetime] = {}
+    for appt in appointments_repo.list_for_business(business_id):
+        customer_id = getattr(appt, "customer_id", None)
+        start_time = getattr(appt, "start_time", None)
+        if not customer_id or not start_time:
+            continue
+        existing = first_by_customer.get(customer_id)
+        if existing is None or start_time < existing:
+            first_by_customer[customer_id] = start_time
+    return {cid: dt.date() for cid, dt in first_by_customer.items()}
+
+
+def _classify_calendar_tags(
+    appt,
+    is_new_client: bool,
+) -> set[str]:
+    """Assign high-level calendar tags to an appointment.
+
+    Tags are used for the 90-day calendar heatmap:
+    - emergency
+    - routine (non-emergency work)
+    - maintenance (service_type hints)
+    - service (all qualifying work)
+    - new_client (first appointment for a customer)
+    """
+    tags: set[str] = set()
+    is_emergency = bool(getattr(appt, "is_emergency", False))
+    service_type_raw = getattr(appt, "service_type", None) or ""
+    service_type = str(service_type_raw).lower()
+
+    if is_emergency:
+        tags.add("emergency")
+    else:
+        tags.add("routine")
+
+    if (
+        "maint" in service_type
+        or "tune" in service_type
+        or "inspection" in service_type
+    ):
+        tags.add("maintenance")
+
+    # All scheduled work is still tagged as generic service.
+    tags.add("service")
+
+    if is_new_client:
+        tags.add("new_client")
+
+    return tags
+
+
+def _compute_calendar_window(
+    business_id: str,
+    start_date: date,
+    end_date: date,
+) -> OwnerCalendarWindowResponse:
+    """Aggregate appointments into per-day calendar buckets for a window."""
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
+
+    first_dates = _compute_first_appointment_dates(business_id)
+
+    buckets: dict[date, dict[str, object]] = {}
+    for appt in appointments_repo.list_for_business(business_id):
+        start_time = getattr(appt, "start_time", None)
+        if not start_time:
+            continue
+        appt_day = start_time.date()
+        if appt_day < start_date or appt_day > end_date:
+            continue
+        status = getattr(appt, "status", "SCHEDULED").upper()
+        if status not in {"SCHEDULED", "CONFIRMED", "COMPLETED"}:
+            continue
+
+        customer_id = getattr(appt, "customer_id", None)
+        is_new_client = False
+        if customer_id:
+            first_date = first_dates.get(customer_id)
+            if first_date is not None and first_date == appt_day:
+                is_new_client = True
+
+        tags = _classify_calendar_tags(appt, is_new_client=is_new_client)
+
+        bucket = buckets.setdefault(
+            appt_day,
+            {
+                "total": 0,
+                "tags": {},  # type: ignore[dict-item]
+                "services": {},  # type: ignore[dict-item]
+                "value_total": 0.0,
+                "value_count": 0,
+                "new_customers": 0,
+            },
+        )
+        bucket["total"] = int(bucket["total"]) + 1  # type: ignore[index]
+        tag_counts: dict[str, int] = bucket["tags"]  # type: ignore[assignment]
+        for tag in tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+        service_type_name = getattr(appt, "service_type", None) or "unspecified"
+        services: dict[str, int] = bucket["services"]  # type: ignore[assignment]
+        services[service_type_name] = services.get(service_type_name, 0) + 1
+
+        est_value_raw = getattr(appt, "estimated_value", None)
+        if est_value_raw is not None:
+            value = float(est_value_raw)
+            bucket["value_total"] = float(bucket["value_total"]) + value  # type: ignore[index]
+            bucket["value_count"] = int(bucket["value_count"]) + 1  # type: ignore[index]
+
+        if is_new_client:
+            bucket["new_customers"] = int(bucket["new_customers"]) + 1  # type: ignore[index]
+
+    days: list[OwnerCalendarDaySummary] = []
+    span_days = (end_date - start_date).days + 1
+    for offset in range(span_days):
+        day = start_date + timedelta(days=offset)
+        bucket = buckets.get(
+            day,
+            {
+                "total": 0,
+                "tags": {},
+                "services": {},
+                "value_total": 0.0,
+                "value_count": 0,
+                "new_customers": 0,
+            },
+        )
+        total = int(bucket["total"])  # type: ignore[index]
+        value_total = float(bucket["value_total"])  # type: ignore[index]
+        value_count = int(bucket["value_count"])  # type: ignore[index]
+        avg_value = value_total / float(value_count) if value_count > 0 else None
+        tag_counts = dict(bucket["tags"])  # type: ignore[arg-type]
+        service_type_counts = dict(bucket["services"])  # type: ignore[arg-type]
+        new_customers = int(bucket["new_customers"])  # type: ignore[index]
+        days.append(
+            OwnerCalendarDaySummary(
+                date=day,
+                total_appointments=total,
+                tag_counts=tag_counts,
+                service_type_counts=service_type_counts,
+                estimated_value_total=value_total,
+                estimated_value_average=avg_value,
+                new_customers=new_customers,
+            )
+        )
+
+    return OwnerCalendarWindowResponse(
+        start_date=start_date,
+        end_date=end_date,
+        days=days,
+    )
+
+
+def _business_onboarding_profile_from_row(
+    row: BusinessDB, business_id: str
+) -> OwnerOnboardingProfile:
+    business_name = getattr(row, "name", "Default Business")
+    vertical = getattr(row, "vertical", None)
+    owner_name = getattr(row, "owner_name", None)
+    owner_email = getattr(row, "owner_email", None)
+    owner_phone = getattr(row, "owner_phone", None)
+    owner_profile_image_url = getattr(row, "owner_profile_image_url", None)
+    service_tier = getattr(row, "service_tier", None)
+    tts_voice = getattr(row, "tts_voice", None)
+    terms_accepted = bool(getattr(row, "terms_accepted_at", None))
+    privacy_accepted = bool(getattr(row, "privacy_accepted_at", None))
+
+    def _status(attr: str) -> bool:
+        raw = (getattr(row, attr, None) or "").lower()
+        return raw == "connected"
+
+    integrations: list[OwnerIntegrationStatus] = [
+        OwnerIntegrationStatus(
+            provider="linkedin",
+            connected=_status("integration_linkedin_status"),
+            label="LinkedIn Company",
+        ),
+        OwnerIntegrationStatus(
+            provider="gmail",
+            connected=_status("integration_gmail_status"),
+            label="Gmail / Google Workspace",
+        ),
+        OwnerIntegrationStatus(
+            provider="gcalendar",
+            connected=_status("integration_gcalendar_status"),
+            label="Google Calendar",
+        ),
+        OwnerIntegrationStatus(
+            provider="openai",
+            connected=_status("integration_openai_status"),
+            label="OpenAI account",
+        ),
+        OwnerIntegrationStatus(
+            provider="twilio",
+            connected=_status("integration_twilio_status"),
+            label="Twilio account",
+        ),
+    ]
+
+    return OwnerOnboardingProfile(
+        business_id=business_id,
+        business_name=business_name,
+        vertical=vertical,
+        owner_name=owner_name,
+        owner_email=owner_email,
+        owner_phone=owner_phone,
+        owner_profile_image_url=owner_profile_image_url,
+        service_tier=service_tier,
+        terms_accepted=terms_accepted,
+        privacy_accepted=privacy_accepted,
+        tts_voice=tts_voice,
+        integrations=integrations,
+    )
+
+
+@router.get("/calendar/90d", response_model=OwnerCalendarWindowResponse)
+def owner_calendar_90d(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerCalendarWindowResponse:
+    """Return a 90-day calendar view for the owner dashboard.
+
+    The window starts today (inclusive) and extends 89 days into the
+    future. Each day is annotated with high-level tags such as routine,
+    emergency, maintenance, service, and new_client.
+    """
+    today = datetime.now(UTC).date()
+    end = today + timedelta(days=89)
+    return _compute_calendar_window(business_id, start_date=today, end_date=end)
+
+
+class OwnerIntegrationStatus(BaseModel):
+    provider: str
+    connected: bool
+    label: str | None = None
+
+
+class OwnerOnboardingProfile(BaseModel):
+    business_id: str
+    business_name: str
+    vertical: str | None = None
+    owner_name: str | None = None
+    owner_email: str | None = None
+    owner_phone: str | None = None
+    owner_profile_image_url: str | None = None
+    service_tier: str | None = None
+    terms_accepted: bool
+    privacy_accepted: bool
+    tts_voice: str | None = None
+    integrations: list[OwnerIntegrationStatus]
+
+
+@router.get("/onboarding/profile", response_model=OwnerOnboardingProfile)
+def owner_onboarding_profile(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerOnboardingProfile:
+    """Return the current onboarding/profile state for this tenant."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        # Fall back to a minimal profile when database support is unavailable.
+        return OwnerOnboardingProfile(
+            business_id=business_id,
+            business_name="Default Business",
+            vertical=None,
+            owner_name=None,
+            owner_email=None,
+            owner_phone=None,
+            owner_profile_image_url=None,
+            service_tier=None,
+            terms_accepted=False,
+            privacy_accepted=False,
+            tts_voice=get_voice_for_business(business_id),
+            integrations=[
+                OwnerIntegrationStatus(
+                    provider="linkedin", connected=False, label="LinkedIn Company"
+                ),
+                OwnerIntegrationStatus(
+                    provider="gmail", connected=False, label="Gmail / Google Workspace"
+                ),
+                OwnerIntegrationStatus(
+                    provider="gcalendar", connected=False, label="Google Calendar"
+                ),
+                OwnerIntegrationStatus(
+                    provider="openai", connected=False, label="OpenAI account"
+                ),
+                OwnerIntegrationStatus(
+                    provider="twilio", connected=False, label="Twilio account"
+                ),
+            ],
+        )
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Business not found",
+            )
+        return _business_onboarding_profile_from_row(row, business_id)
+    finally:
+        session.close()
+
+
+class OwnerOnboardingUpdateRequest(BaseModel):
+    owner_name: str | None = None
+    owner_email: EmailStr | None = None
+    owner_profile_image_url: str | None = None
+    service_tier: str | None = Field(
+        default=None,
+        description="Selected service tier (e.g. '20', '100', '200').",
+    )
+    accept_terms: bool | None = None
+    accept_privacy: bool | None = None
+    tts_voice: str | None = None
+
+
+@router.patch("/onboarding/profile", response_model=OwnerOnboardingProfile)
+def owner_onboarding_update(
+    payload: OwnerOnboardingUpdateRequest,
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerOnboardingProfile:
+    """Update onboarding/profile fields for this tenant."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Database support is not available for onboarding updates.",
+        )
+
+    if payload.service_tier is not None and payload.service_tier not in {
+        "20",
+        "100",
+        "200",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid service tier; expected one of '20', '100', or '200'.",
+        )
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+
+        if payload.owner_name is not None:
+            row.owner_name = payload.owner_name
+        if payload.owner_email is not None:
+            row.owner_email = str(payload.owner_email)
+        if payload.owner_profile_image_url is not None:
+            row.owner_profile_image_url = payload.owner_profile_image_url
+        if payload.service_tier is not None:
+            row.service_tier = payload.service_tier
+        if payload.tts_voice is not None:
+            row.tts_voice = payload.tts_voice
+
+        now = datetime.now(UTC)
+        if payload.accept_terms:
+            row.terms_accepted_at = getattr(row, "terms_accepted_at", None) or now
+        if payload.accept_privacy:
+            row.privacy_accepted_at = getattr(row, "privacy_accepted_at", None) or now
+
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _business_onboarding_profile_from_row(row, business_id)
+    finally:
+        session.close()
+
+
+class OwnerIntegrationsUpdateRequest(BaseModel):
+    linkedin_connected: bool | None = None
+    gmail_connected: bool | None = None
+    gcalendar_connected: bool | None = None
+    openai_connected: bool | None = None
+    twilio_connected: bool | None = None
+
+
+@router.patch("/onboarding/integrations", response_model=OwnerOnboardingProfile)
+def owner_onboarding_integrations(
+    payload: OwnerIntegrationsUpdateRequest,
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerOnboardingProfile:
+    """Update high-level integration connection flags for this tenant."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Database support is not available for onboarding updates.",
+        )
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+
+        def _set_status(flag: bool | None, attr: str) -> None:
+            if flag is None:
+                return
+            setattr(row, attr, "connected" if flag else "disconnected")
+
+        _set_status(payload.linkedin_connected, "integration_linkedin_status")
+        _set_status(payload.gmail_connected, "integration_gmail_status")
+        _set_status(payload.gcalendar_connected, "integration_gcalendar_status")
+        _set_status(payload.openai_connected, "integration_openai_status")
+        _set_status(payload.twilio_connected, "integration_twilio_status")
+
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _business_onboarding_profile_from_row(row, business_id)
+    finally:
+        session.close()
+
+
+@router.get("/calendar/report.pdf")
+def owner_calendar_report_pdf(
+    business_id: str = Depends(ensure_business_active),
+    day: date = Query(..., description="Calendar day to export as a PDF report."),
+) -> Response:
+    """Export a single day's calendar summary as a small PDF report.
+
+    This reuses the same aggregation as the 90-day calendar view and is
+    intended to be downloaded directly from the owner dashboard.
+    """
+    window = _compute_calendar_window(business_id, start_date=day, end_date=day)
+    day_summary = window.days[0] if window.days else None
+
+    if day_summary is None or day_summary.total_appointments == 0:
+        # Return a simple "empty" PDF so the UX is consistent.
+        title = f"Schedule report for {day.isoformat()}"
+        pdf_bytes = _render_simple_calendar_pdf(
+            title=title,
+            overall_total=0,
+            tag_counts={},
+            service_type_counts={},
+            estimated_value_total=0.0,
+            new_customers=0,
+        )
+    else:
+        title = f"Schedule report for {day_summary.date.isoformat()}"
+        pdf_bytes = _render_simple_calendar_pdf(
+            title=title,
+            overall_total=day_summary.total_appointments,
+            tag_counts=day_summary.tag_counts,
+            service_type_counts=day_summary.service_type_counts,
+            estimated_value_total=day_summary.estimated_value_total,
+            new_customers=day_summary.new_customers,
+        )
+
+    filename = f"schedule_{day.isoformat()}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _render_simple_calendar_pdf(
+    title: str,
+    overall_total: int,
+    tag_counts: dict[str, int],
+    service_type_counts: dict[str, int],
+    estimated_value_total: float,
+    new_customers: int,
+) -> bytes:
+    """Render a compact calendar summary PDF using reportlab when available.
+
+    If reportlab is not installed, this falls back to a plain-text PDF-like
+    payload so the owner still receives something downloadable.
+    """
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        # Minimal fallback: emit a very small pseudo-PDF as bytes so the
+        # download still works, even if it is not richly formatted.
+        buffer = io.StringIO()
+        buffer.write(title + "\n\n")
+        buffer.write(f"Total appointments: {overall_total}\n")
+        buffer.write(f"New customers: {new_customers}\n")
+        buffer.write(f"Estimated value total: {estimated_value_total:.2f}\n")
+        if tag_counts:
+            buffer.write("\nBy tag:\n")
+            for tag, count in sorted(tag_counts.items()):
+                buffer.write(f"- {tag}: {count}\n")
+        if service_type_counts:
+            buffer.write("\nBy service type:\n")
+            for svc, count in sorted(service_type_counts.items()):
+                buffer.write(f"- {svc}: {count}\n")
+        return buffer.getvalue().encode("utf-8")
+
+    from reportlab.lib.units import inch
+
+    mem_buffer = io.BytesIO()
+    c = canvas.Canvas(mem_buffer, pagesize=letter)
+    width, height = letter
+
+    y = height - 1 * inch
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(1 * inch, y, title)
+    y -= 0.4 * inch
+
+    c.setFont("Helvetica", 10)
+    c.drawString(1 * inch, y, f"Total appointments: {overall_total}")
+    y -= 0.2 * inch
+    c.drawString(1 * inch, y, f"New customers: {new_customers}")
+    y -= 0.2 * inch
+    c.drawString(
+        1 * inch,
+        y,
+        f"Estimated value total: ${estimated_value_total:,.2f}",
+    )
+    y -= 0.4 * inch
+
+    if tag_counts:
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(1 * inch, y, "By tag")
+        y -= 0.25 * inch
+        c.setFont("Helvetica", 10)
+        for tag, count in sorted(tag_counts.items()):
+            c.drawString(1.1 * inch, y, f"- {tag}: {count}")
+            y -= 0.18 * inch
+            if y < 1 * inch:
+                c.showPage()
+                y = height - 1 * inch
+                c.setFont("Helvetica", 10)
+
+    if service_type_counts:
+        if y < 1.4 * inch:
+            c.showPage()
+            y = height - 1 * inch
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(1 * inch, y, "By service type")
+        y -= 0.25 * inch
+        c.setFont("Helvetica", 10)
+        for svc, count in sorted(service_type_counts.items()):
+            c.drawString(1.1 * inch, y, f"- {svc}: {count}")
+            y -= 0.18 * inch
+            if y < 1 * inch:
+                c.showPage()
+                y = height - 1 * inch
+                c.setFont("Helvetica", 10)
+
+    c.showPage()
+    c.save()
+    mem_buffer.seek(0)
+    return mem_buffer.getvalue()
+
+
 class OwnerLeadSourceItem(BaseModel):
     lead_source: str
     appointments: int
@@ -856,11 +1438,27 @@ class OwnerNeighborhoodItem(BaseModel):
     appointments: int
     emergency_appointments: int
     estimated_value_total: float
+    median_household_income: int | None = None
 
 
 class OwnerNeighborhoodResponse(BaseModel):
     window_days: int
     items: list[OwnerNeighborhoodItem]
+
+
+class OwnerServiceMetricsItem(BaseModel):
+    service_type: str
+    appointments: int
+    estimated_value_total: float
+    estimated_value_average: float
+    scheduled_minutes_min: float | None = None
+    scheduled_minutes_max: float | None = None
+    scheduled_minutes_average: float | None = None
+
+
+class OwnerServiceMetricsResponse(BaseModel):
+    window_days: int
+    items: list[OwnerServiceMetricsItem]
 
 
 class OwnerTimeToBookBucket(BaseModel):
@@ -945,7 +1543,7 @@ class OwnerCallbackSummaryResponse(BaseModel):
 def owner_lead_sources(
     business_id: str = Depends(ensure_business_active),
     days: int = Query(30, ge=1, le=365),
-    ) -> OwnerLeadSourceResponse:
+) -> OwnerLeadSourceResponse:
     """Summarize appointment volume and value by lead_source for this tenant."""
     now = datetime.now(UTC)
     window = now - timedelta(days=days)
@@ -962,7 +1560,9 @@ def owner_lead_sources(
         if status not in {"SCHEDULED", "CONFIRMED"}:
             continue
 
-        source = (getattr(appt, "lead_source", None) or "unspecified").strip() or "unspecified"
+        source = (
+            getattr(appt, "lead_source", None) or "unspecified"
+        ).strip() or "unspecified"
         est_value = getattr(appt, "estimated_value", None)
         value = float(est_value) if est_value is not None else 0.0
         bucket = buckets.setdefault(source, {"count": 0.0, "value": 0.0})
@@ -1088,9 +1688,7 @@ def owner_customer_analytics(
     new_appt_value = 0.0
 
     for customer_id, appts in per_customer.items():
-        appts_sorted = sorted(
-            appts, key=lambda a: getattr(a, "start_time", now)
-        )
+        appts_sorted = sorted(appts, key=lambda a: getattr(a, "start_time", now))
         if len(appts_sorted) >= 2:
             repeat_customers += 1
 
@@ -1235,11 +1833,20 @@ def owner_neighborhoods(
         bucket["value"] += value
 
     items: list[OwnerNeighborhoodItem] = []
+    zip_income_cache: dict[str, int | None] = {}
     for label, agg in buckets.items():
         customers = len(agg["customers"])  # type: ignore[index]
         appts = int(agg["appointments"])
         emergencies = int(agg["emergencies"])
         value = float(agg["value"])
+        median_income: int | None = None
+        if len(label) == 5 and label.isdigit():
+            cached = zip_income_cache.get(label)
+            if cached is None and label not in zip_income_cache:
+                profile = fetch_zip_income(label)
+                cached = profile.median_household_income
+                zip_income_cache[label] = cached
+            median_income = cached
         items.append(
             OwnerNeighborhoodItem(
                 label=label,
@@ -1247,12 +1854,99 @@ def owner_neighborhoods(
                 appointments=appts,
                 emergency_appointments=emergencies,
                 estimated_value_total=value,
+                median_household_income=median_income,
             )
         )
     # Sort by total value descending.
     items.sort(key=lambda i: i.estimated_value_total, reverse=True)
 
     return OwnerNeighborhoodResponse(window_days=days, items=items)
+
+
+@router.get("/service-metrics", response_model=OwnerServiceMetricsResponse)
+def owner_service_metrics(
+    business_id: str = Depends(ensure_business_active),
+    days: int = Query(90, ge=7, le=365),
+) -> OwnerServiceMetricsResponse:
+    """Summarize per-service price and time metrics for the owner.
+
+    For each `service_type`, this aggregates:
+    - appointment count
+    - total and average estimated_value
+    - min/avg/max scheduled duration in minutes (from start_time/end_time)
+    """
+    now = datetime.now(UTC)
+    window_start = now - timedelta(days=days)
+
+    buckets: dict[str, dict[str, float]] = {}
+    for appt in appointments_repo.list_for_business(business_id):
+        start_time = getattr(appt, "start_time", None)
+        end_time = getattr(appt, "end_time", None)
+        if not start_time or not end_time:
+            continue
+        if start_time < window_start or start_time > now:
+            continue
+        status = getattr(appt, "status", "SCHEDULED").upper()
+        if status not in {"SCHEDULED", "CONFIRMED", "COMPLETED"}:
+            continue
+        service_type = getattr(appt, "service_type", None)
+        if not service_type:
+            continue
+
+        # Scheduled duration in minutes.
+        duration_minutes = (end_time - start_time).total_seconds() / 60.0
+        if duration_minutes <= 0:
+            continue
+
+        est_value_raw = getattr(appt, "estimated_value", None)
+        est_value = float(est_value_raw) if est_value_raw is not None else 0.0
+
+        bucket = buckets.setdefault(
+            service_type,
+            {
+                "appointments": 0.0,
+                "est_total": 0.0,
+                "dur_sum": 0.0,
+                "dur_min": float("inf"),
+                "dur_max": 0.0,
+            },
+        )
+        bucket["appointments"] += 1.0
+        bucket["est_total"] += est_value
+        bucket["dur_sum"] += duration_minutes
+        if duration_minutes < bucket["dur_min"]:
+            bucket["dur_min"] = duration_minutes
+        if duration_minutes > bucket["dur_max"]:
+            bucket["dur_max"] = duration_minutes
+
+    items: list[OwnerServiceMetricsItem] = []
+    for svc, agg in buckets.items():
+        appts = int(agg["appointments"])
+        est_total = float(agg["est_total"])
+        avg_est = est_total / appts if appts > 0 else 0.0
+        if appts > 0:
+            avg_dur = agg["dur_sum"] / appts
+            min_dur = agg["dur_min"] if agg["dur_min"] != float("inf") else None
+            max_dur = agg["dur_max"] if agg["dur_max"] > 0 else None
+        else:
+            avg_dur = None
+            min_dur = None
+            max_dur = None
+        items.append(
+            OwnerServiceMetricsItem(
+                service_type=svc,
+                appointments=appts,
+                estimated_value_total=est_total,
+                estimated_value_average=avg_est,
+                scheduled_minutes_min=min_dur,
+                scheduled_minutes_max=max_dur,
+                scheduled_minutes_average=avg_dur,
+            )
+        )
+
+    # Sort by total estimated value descending.
+    items.sort(key=lambda i: i.estimated_value_total, reverse=True)
+    return OwnerServiceMetricsResponse(window_days=days, items=items)
 
 
 @router.get("/time-to-book", response_model=OwnerTimeToBookResponse)
@@ -1441,9 +2135,7 @@ def owner_conversion_funnel(
         booked = per_channel_booked.get(channel, 0)
         conv_rate = float(booked) / float(leads) if leads > 0 else 0.0
         avg_minutes = (
-            per_channel_minutes.get(channel, 0.0) / float(booked)
-            if booked > 0
-            else 0.0
+            per_channel_minutes.get(channel, 0.0) / float(booked) if booked > 0 else 0.0
         )
         channels.append(
             OwnerConversionFunnelChannel(
@@ -1457,9 +2149,7 @@ def owner_conversion_funnel(
     channels.sort(key=lambda c: c.channel)
 
     overall_conversion = (
-        float(overall_booked) / float(overall_leads)
-        if overall_leads > 0
-        else 0.0
+        float(overall_booked) / float(overall_leads) if overall_leads > 0 else 0.0
     )
 
     return OwnerConversionFunnelResponse(
@@ -1883,9 +2573,7 @@ def owner_retention_summary(
     """Summarize retention SMS campaigns for this tenant."""
     per_sms = metrics.sms_by_business.get(business_id)
     total = per_sms.retention_messages_sent if per_sms else 0
-    campaigns_raw = getattr(metrics, "retention_by_business", {}).get(
-        business_id, {}
-    )
+    campaigns_raw = getattr(metrics, "retention_by_business", {}).get(business_id, {})
     campaigns: list[OwnerRetentionCampaignItem] = []
     for ctype, count in campaigns_raw.items():
         campaigns.append(

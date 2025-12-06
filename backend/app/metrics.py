@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Dict
 
 
@@ -71,9 +71,13 @@ class Metrics:
     twilio_by_business: Dict[str, BusinessTwilioMetrics] = field(default_factory=dict)
     voice_session_requests: int = 0
     voice_session_errors: int = 0
-    voice_sessions_by_business: Dict[str, BusinessVoiceSessionMetrics] = field(default_factory=dict)
+    voice_sessions_by_business: Dict[str, BusinessVoiceSessionMetrics] = field(
+        default_factory=dict
+    )
     route_metrics: Dict[str, RouteMetrics] = field(default_factory=dict)
-    callbacks_by_business: Dict[str, Dict[str, CallbackItem]] = field(default_factory=dict)
+    callbacks_by_business: Dict[str, Dict[str, CallbackItem]] = field(
+        default_factory=dict
+    )
     retention_by_business: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, Any]:

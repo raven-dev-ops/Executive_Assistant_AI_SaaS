@@ -75,14 +75,18 @@ Endpoints:
   - Marks the session as ended in the in-memory store.
 
 
-Telephony API (`/telephony/*`)
-------------------------------
+Telephony API (`/telephony/*`, `/v1/telephony/*`)
+-------------------------------------------------
 
 Headers:
 
 - `X-API-Key` or `X-Business-ID` to resolve the tenant.
 
-Endpoints:
+These routes are exposed under both a legacy prefix (`/telephony/*`) and a
+versioned alias (`/v1/telephony/*`). New clients should prefer the `/v1`
+paths; existing integrations can continue using `/telephony/*` unchanged.
+
+Endpoints (paths shown with the legacy prefix):
 
 - `POST /telephony/inbound`
   - Body: `{ "caller_phone": "...", "provider_call_id": "...", "lead_source": "..." }`
@@ -100,16 +104,19 @@ Endpoints:
   - Response: `{ "status": "ended:<session_id>" }`
   - Ends a telephony call and clears the in-memory session.
 
-
-Twilio Webhooks (`/twilio/*`)
------------------------------
+Twilio Webhooks (`/twilio/*`, `/v1/twilio/*`)
+---------------------------------------------
 
 Configured from the Twilio Console. Per-tenant routing can be:
 
 - By query parameter: `?business_id=<tenant_id>`.
 - Or by API key: add `X-API-Key` via a proxy in front of Twilio.
 
-Endpoints:
+These webhooks are available both at `/twilio/*` and the versioned alias
+`/v1/twilio/*`. The latter is preferred for new Twilio Console
+configurations while keeping existing `/twilio/*` URLs valid.
+
+Endpoints (paths shown with the legacy prefix):
 
 - `POST /twilio/voice`
   - Form-encoded Twilio params (`From`, `To`, `CallSid`, `SpeechResult`, etc.).
@@ -165,6 +172,50 @@ Key endpoints:
   - Conversation QA views and updates (flags, tags, outcome, notes).
 
 
+Public Signup (`/v1/public/*`)
+------------------------------
+
+These endpoints are designed for a simple self-service onboarding portal for new service businesses.
+By default they are disabled; enable them by setting `ALLOW_SELF_SIGNUP=true` in the backend
+environment.
+
+- `POST /v1/public/signup`
+  - No auth headers (guarded by environment flag).
+  - Body:
+
+    ```json
+    {
+      "business_name": "Example Plumbing",
+      "vertical": "plumbing",
+      "owner_phone": "+15555551234",
+      "contact_name": "Jane Owner",
+      "contact_email": "owner@example.com",
+      "website_url": "https://exampleplumbing.com"
+    }
+    ```
+
+  - Behavior:
+    - Creates a new `Business` row with a generated `id`, `api_key`, and `widget_token`.
+    - Uses defaults from `AppSettings` for vertical, language, and calendar ID.
+  - Response:
+
+    ```json
+    {
+      "business_id": "generated-id",
+      "name": "Example Plumbing",
+      "vertical": "plumbing",
+      "api_key": "TENANT_API_KEY",
+      "widget_token": "WIDGET_TOKEN",
+      "status": "ACTIVE",
+      "owner_phone": "+15555551234"
+    }
+    ```
+
+  - Use the returned `api_key` and `widget_token` with:
+    - `dashboard/index.html` (owner dashboard) and `dashboard/admin.html` (admin dashboard).
+    - `widget/embed.js` and `widget/chat.html` (web chat widget).
+
+
 Owner API (`/v1/owner/*`)
 -------------------------
 
@@ -188,6 +239,7 @@ Analytics & exports:
 - `GET /v1/owner/customers/analytics?days=N`
 - `GET /v1/owner/service-economics?days=N`
 - `GET /v1/owner/neighborhoods?days=N`
+- `GET /v1/owner/calendar/90d`
 - `GET /v1/owner/time-to-book?days=N`
  - `GET /v1/owner/conversion-funnel?days=N`
  - `GET /v1/owner/data-completeness?days=N`
@@ -195,6 +247,7 @@ Analytics & exports:
 - `GET /v1/owner/retention`
 - `GET /v1/owner/export/service-mix.csv?days=N`
 - `GET /v1/owner/export/conversations.csv?days=N`
+ - `GET /v1/owner/calendar/report.pdf?day=YYYY-MM-DD`
 
 Conversations & QA:
 
@@ -207,6 +260,55 @@ Metrics:
 
 - `GET /v1/owner/sms-metrics`
 - `GET /v1/owner/twilio-metrics`
+
+AI owner assistant:
+
+  - `POST /v1/owner/assistant/query`
+  - Headers: `X-API-Key`, `X-Owner-Token`.
+  - Body: `{ "question": "How do I read the emergency jobs metric?" }`.
+  - Response: `{ "answer": "...", "model": "gpt-4o-mini" }`.
+    - Backed by the same OpenAI configuration used for speech when `SPEECH_PROVIDER=openai` and
+      `OPENAI_API_KEY` are set; otherwise returns a simple "assistant not configured" message. The
+      model is grounded in local documentation (README, DASHBOARD, API reference, data model,
+      security and privacy policies, and runbook) and is intended to answer questions about the
+      owner dashboard, metrics, data semantics, and operational policies.
+
+
+Auth Integrations (`/auth/*`)
+-----------------------------
+
+These routes are stubs that sketch how OAuth-style integrations for LinkedIn, Gmail/Workspace,
+Google Calendar, OpenAI, and Twilio plug into the onboarding flow. They **do not** perform real
+OAuth exchanges; a production deployment should replace the placeholder URLs and token handling
+with provider SDKs and a secure secret store.
+
+- `GET /auth/{provider}/start?business_id=...`
+  - Path param `provider`: one of `linkedin`, `gmail`, `gcalendar`, `openai`, `twilio`.
+  - Query: `business_id` (tenant initiating the flow).
+  - Response body:
+    - `provider`: normalized provider name.
+    - `authorization_url`: placeholder URL to redirect the owner to for OAuth consent.
+    - `note`: explanation that this URL should be replaced with the real provider authorize URL
+      and a signed `state` token encoding the business id (and CSRF nonce).
+  - Intended usage:
+    - Owner clicks "Connect {provider}" in onboarding.
+    - Frontend calls this endpoint, then redirects the browser to `authorization_url`.
+
+- `GET /auth/{provider}/callback?state=...&code=...`
+  - Path param `provider`: as above.
+  - Query:
+    - `state`: opaque token that encodes the `business_id` (in this stub, the raw id).
+    - `code`: OAuth authorization code (ignored in the stub implementation).
+  - Behaviour (stub):
+    - Looks up the `Business` row for the decoded `business_id`.
+    - Marks the corresponding `integration_*_status` column as `"connected"` for the provider.
+    - Returns JSON:
+      - `provider`, `business_id`, `connected: true`, and `redirect_url` (e.g. `/dashboard/onboarding.html`).
+  - In a real implementation:
+    - Validate and decode `state` to recover `business_id` and prevent CSRF.
+    - Exchange `code` for tokens using the provider SDKs.
+    - Store tokens/refresh tokens in a secure secret store keyed by `business_id`.
+    - Optionally redirect the browser to the onboarding page or owner dashboard.
 
 
 Reminders & Retention (`/v1/reminders/*`, `/v1/retention/*`)

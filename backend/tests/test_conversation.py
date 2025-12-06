@@ -1,6 +1,18 @@
 import asyncio
 
-from app.services.conversation import ConversationManager, _infer_service_type, _infer_duration_minutes
+import pytest
+
+from app.db import SQLALCHEMY_AVAILABLE, SessionLocal
+from app.db_models import BusinessDB
+from app.services.conversation import (
+    ConversationManager,
+    _get_emergency_keywords_for_business,
+    _get_service_duration_overrides,
+    _infer_duration_minutes,
+    _infer_quote_for_service_type,
+    _infer_service_type,
+    _normalize_lead_source,
+)
 from app.services.sessions import CallSession
 from app.repositories import customers_repo
 
@@ -57,9 +69,7 @@ def test_conversation_emergency_flag_and_followup():
 
     # Emergency description.
     result = run(
-        manager.handle_input(
-            session, "Basement is flooding and sewage backing up"
-        )
+        manager.handle_input(session, "Basement is flooding and sewage backing up")
     )
     assert result.new_state["is_emergency"] is True
     assert result.new_state["stage"] == "ASK_SCHEDULE"
@@ -79,7 +89,9 @@ def test_conversation_greets_returning_customer():
         address="789 Oak St, KC MO",
         business_id="default_business",
     )
-    session = CallSession(id="test3", caller_phone="555-9999", business_id="default_business")
+    session = CallSession(
+        id="test3", caller_phone="555-9999", business_id="default_business"
+    )
     manager = ConversationManager()
 
     result = run(manager.handle_input(session, None))
@@ -98,7 +110,9 @@ def test_conversation_reuses_address_for_returning_customer():
         address="1010 Cedar St, Merriam KS",
         business_id="default_business",
     )
-    session = CallSession(id="addr1", caller_phone="555-2222", business_id="default_business")
+    session = CallSession(
+        id="addr1", caller_phone="555-2222", business_id="default_business"
+    )
     manager = ConversationManager()
 
     # Greeting (no text).
@@ -121,7 +135,10 @@ def test_conversation_reuses_address_for_returning_customer():
 
 def test_infer_service_type_basic_keywords():
     # Tankless specialization.
-    assert _infer_service_type("Navien tankless water heater install") == "tankless_water_heater"
+    assert (
+        _infer_service_type("Navien tankless water heater install")
+        == "tankless_water_heater"
+    )
 
     # General water heater.
     assert _infer_service_type("replace old water heater") == "water_heater"
@@ -156,3 +173,77 @@ def test_infer_duration_minutes_defaults_reasonable():
         )
         <= 90
     )
+
+
+@pytest.mark.skipif(
+    not SQLALCHEMY_AVAILABLE or SessionLocal is None,
+    reason="Emergency keyword and duration overrides require database support",
+)
+def test_emergency_keywords_and_duration_overrides_use_business_settings() -> None:
+    # Configure a tenant-specific emergency keyword list and service duration overrides.
+    session = SessionLocal()
+    try:
+        biz_id = "conversation_config_test"
+        row = session.get(BusinessDB, biz_id)
+        if row is None:
+            row = BusinessDB(  # type: ignore[call-arg]
+                id=biz_id,
+                name="Conversation Config Test",
+                emergency_keywords="overflow, backup",
+                service_duration_config="drain_or_sewer=45,general_plumbing=30,bad=abc,negative=-5",
+            )
+            session.add(row)
+        else:
+            row.emergency_keywords = "overflow, backup"
+            row.service_duration_config = (
+                "drain_or_sewer=45,general_plumbing=30,bad=abc,negative=-5"
+            )
+        session.commit()
+    finally:
+        session.close()
+
+    keywords = _get_emergency_keywords_for_business(biz_id)
+    assert "overflow" in keywords
+    assert "backup" in keywords
+
+    overrides = _get_service_duration_overrides(biz_id)
+    assert overrides["drain_or_sewer"] == 45
+    assert overrides["general_plumbing"] == 30
+    # Invalid entries should be ignored.
+    assert "bad" not in overrides
+    assert "negative" not in overrides
+
+    # Duration inference should respect overrides and emergency floor.
+    normal_duration = _infer_duration_minutes(
+        "main sewer line backing up", False, biz_id
+    )
+    assert normal_duration == 45
+
+    emergency_duration = _infer_duration_minutes(
+        "kitchen faucet is leaking", True, biz_id
+    )
+    # Override is 30, but emergencies should be at least 60 minutes.
+    assert emergency_duration >= 60
+
+
+def test_infer_quote_for_service_type_ranges_and_emergency_markup() -> None:
+    low, high = _infer_quote_for_service_type("drain_or_sewer", is_emergency=False)
+    assert low is not None and high is not None
+    assert low < high
+
+    # Unknown service type should return (None, None).
+    none_low, none_high = _infer_quote_for_service_type("unknown_type", False)
+    assert none_low is None and none_high is None
+
+    # Emergency markup should increase the range.
+    em_low, em_high = _infer_quote_for_service_type("drain_or_sewer", True)
+    assert em_low is not None and low is not None
+    assert em_low > low
+    assert em_high > high
+
+
+def test_normalize_lead_source_labels_and_campaign() -> None:
+    assert _normalize_lead_source("phone") == "Phone"
+    assert _normalize_lead_source("web", "Google Ads - KS") == "Web ? Google Ads - KS"
+    # Unknown channels should be title-cased.
+    assert _normalize_lead_source("facebook") == "Facebook"

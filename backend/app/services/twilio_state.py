@@ -36,36 +36,30 @@ class TwilioStateStore(Protocol):
     Implementations may be in-memory or backed by a shared store such as Redis.
     """
 
-    def get_call_session(self, call_sid: str) -> Optional[CallSessionLink]:
-        ...
+    def get_call_session(self, call_sid: str) -> Optional[CallSessionLink]: ...
 
-    def set_call_session(self, call_sid: str, session_id: str) -> None:
-        ...
+    def set_call_session(self, call_sid: str, session_id: str) -> None: ...
 
-    def clear_call_session(self, call_sid: str) -> Optional[CallSessionLink]:
-        ...
+    def clear_call_session(self, call_sid: str) -> Optional[CallSessionLink]: ...
 
     def get_sms_conversation(
         self,
         business_id: str,
         from_phone: str,
-    ) -> Optional[SmsConversationLink]:
-        ...
+    ) -> Optional[SmsConversationLink]: ...
 
     def set_sms_conversation(
         self,
         business_id: str,
         from_phone: str,
         conversation_id: str,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def clear_sms_conversation(
         self,
         business_id: str,
         from_phone: str,
-    ) -> Optional[SmsConversationLink]:
-        ...
+    ) -> Optional[SmsConversationLink]: ...
 
 
 class InMemoryTwilioStateStore:
@@ -275,7 +269,8 @@ def _create_twilio_state_store() -> TwilioStateStore:
     Defaults to an in-memory implementation. When TWILIO_STATE_BACKEND=redis
     and Redis is available, a Redis-backed implementation is used instead.
     """
-    settings = get_settings()
+    # Ensure application settings are loaded at least once for metrics/logging.
+    get_settings()
     backend = os.getenv("TWILIO_STATE_BACKEND", "memory").lower()
     if backend == "redis":
         if redis is None:
@@ -297,4 +292,3 @@ def _create_twilio_state_store() -> TwilioStateStore:
 
 
 twilio_state_store: TwilioStateStore = _create_twilio_state_store()
-

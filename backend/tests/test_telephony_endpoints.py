@@ -31,4 +31,3 @@ def test_telephony_inbound_and_audio_flow():
     end_resp = client.post("/telephony/end", json={"session_id": session_id})
     assert end_resp.status_code == 200
     assert "ended" in end_resp.json()["status"]
-

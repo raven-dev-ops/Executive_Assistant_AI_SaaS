@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal
-from .db_models import Business
+from .db_models import BusinessDB
 
 
 def get_calendar_id_for_business(business_id: str) -> str:
@@ -19,7 +19,7 @@ def get_calendar_id_for_business(business_id: str) -> str:
 
     session = SessionLocal()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if row and getattr(row, "calendar_id", None):
             return row.calendar_id  # type: ignore[return-value]
         return default_calendar_id
@@ -41,7 +41,7 @@ def get_language_for_business(business_id: str | None) -> str:
 
     session = SessionLocal()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if row and getattr(row, "language_code", None):
             return row.language_code  # type: ignore[return-value]
         return default_language
@@ -63,9 +63,31 @@ def get_vertical_for_business(business_id: str | None) -> str:
 
     session = SessionLocal()
     try:
-        row = session.get(Business, business_id)
+        row = session.get(BusinessDB, business_id)
         if row and getattr(row, "vertical", None):
             return row.vertical  # type: ignore[return-value]
         return default_vertical
+    finally:
+        session.close()
+
+
+def get_voice_for_business(business_id: str | None) -> str:
+    """Return the preferred TTS voice for a tenant.
+
+    Falls back to the global OpenAI TTS voice from settings when no per-tenant
+    override is configured or when database support is unavailable.
+    """
+    settings = get_settings()
+    default_voice = settings.speech.openai_tts_voice
+
+    if not business_id or not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return default_voice
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row and getattr(row, "tts_voice", None):
+            return row.tts_voice  # type: ignore[return-value]
+        return default_voice
     finally:
         session.close()

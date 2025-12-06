@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        args: ["check", "backend"]
+      - id: ruff-format
+        name: ruff (format)
+        args: ["backend"]
+
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        name: black (format)
+        args: ["backend"]
+
+  - repo: local
+    hooks:
+      - id: bandit
+        name: bandit (backend)
+        entry: bandit
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["-q", "-r", "backend/app", "-x", "backend/tests"]
+
+      - id: pytest
+        name: pytest (backend)
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["backend"]

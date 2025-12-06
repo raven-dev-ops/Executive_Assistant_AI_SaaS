@@ -83,7 +83,7 @@ def test_customer_timeline_includes_appointments_and_conversations():
         business_id="default_business",
         calendar_event_id=None,
     )
-    conv = conversations_repo.create(
+    conversations_repo.create(
         channel="phone",
         customer_id=customer.id,
         business_id="default_business",
@@ -99,4 +99,3 @@ def test_customer_timeline_includes_appointments_and_conversations():
     types = {item["type"] for item in items}
     assert "appointment" in types
     assert "conversation" in types
-

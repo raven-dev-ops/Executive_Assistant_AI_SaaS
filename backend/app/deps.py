@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastapi import Depends, Header, HTTPException, status
+from typing import cast
 
 from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal
-from .db_models import Business
+from .db_models import BusinessDB
 
 DEFAULT_BUSINESS_ID = "default_business"
 
@@ -28,20 +29,24 @@ async def get_business_id(
     settings = get_settings()
     require_business_api_key = getattr(settings, "require_business_api_key", False)
 
-    if SQLALCHEMY_AVAILABLE and SessionLocal is not None and (x_api_key or x_widget_token):
+    if (
+        SQLALCHEMY_AVAILABLE
+        and SessionLocal is not None
+        and (x_api_key or x_widget_token)
+    ):
         session = SessionLocal()
         try:
             business = None
             if x_api_key:
                 business = (
-                    session.query(Business)
-                    .filter(Business.api_key == x_api_key)
+                    session.query(BusinessDB)
+                    .filter(BusinessDB.api_key == x_api_key)
                     .one_or_none()
                 )
             elif x_widget_token:
                 business = (
-                    session.query(Business)
-                    .filter(getattr(Business, "widget_token", None) == x_widget_token)
+                    session.query(BusinessDB)
+                    .filter(BusinessDB.widget_token == x_widget_token)
                     .one_or_none()
                 )
         finally:
@@ -52,11 +57,16 @@ async def get_business_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid tenant credentials",
             )
-        return business.id
+        return cast(str, business.id)
 
     # If configured, do not allow silent fallback to the default tenant when no
     # tenant-identifying headers are present.
-    if require_business_api_key and not x_business_id and not x_api_key and not x_widget_token:
+    if (
+        require_business_api_key
+        and not x_business_id
+        and not x_api_key
+        and not x_widget_token
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing tenant credentials",
@@ -77,7 +87,7 @@ async def ensure_business_active(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
-            row = session.get(Business, business_id)
+            row = session.get(BusinessDB, business_id)
         finally:
             session.close()
         if row is not None and getattr(row, "status", "ACTIVE") != "ACTIVE":
@@ -115,10 +125,14 @@ async def require_owner_dashboard_auth(
 ) -> None:
     """Optional owner/dashboard authentication for CRM & owner routes.
 
-    - If OWNER_DASHBOARD_TOKEN/DASHBOARD_OWNER_TOKEN is not set, these routes
-      remain open (development mode).
-    - If set, callers (e.g., the dashboard) must send a matching X-Owner-Token
-      header or receive 401 Unauthorized.
+    - If OWNER_DASHBOARD_TOKEN is not set, these routes remain open
+      (development mode).
+    - If set, callers (e.g., the dashboard) must send a matching
+      X-Owner-Token header or receive 401 Unauthorized.
+    - A legacy alias DASHBOARD_OWNER_TOKEN is still accepted by the
+      configuration loader for backward compatibility, but
+      OWNER_DASHBOARD_TOKEN is the canonical name and should be used
+      in all new deployments.
     """
     settings = get_settings()
     expected = getattr(settings, "owner_dashboard_token", None)

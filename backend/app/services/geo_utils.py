@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 
 ZIP_RE = re.compile(r"\b(\d{5})\b")
@@ -31,4 +30,3 @@ def derive_neighborhood_label(address: str | None) -> str:
             return tail
 
     return "unspecified"
-

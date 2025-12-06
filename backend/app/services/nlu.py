@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from typing import Optional
+
 """Lightweight NLU helpers for the Phase 1 conversation manager.
 
 These helpers are intentionally simple and deterministic so they can be used
 in safety-critical flows without introducing external dependencies.
 """
-
-from typing import Optional
 
 
 def parse_name(text: str) -> Optional[str]:
@@ -73,4 +73,3 @@ def parse_address(text: str) -> Optional[str]:
         return None
 
     return stripped
-

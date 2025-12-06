@@ -32,6 +32,11 @@ Configure environment variables for the backend process:
   - `TWILIO_ACCOUNT_SID=...`
   - `TWILIO_AUTH_TOKEN=...`
   - Optional: `VERIFY_TWILIO_SIGNATURES=true` - enforce Twilio signature verification.
+- **Session store (optional, for multi-instance deployments)**
+  - `SESSION_STORE_BACKEND=memory` (default) or `redis` to enable a shared Redis-backed
+    `SessionStore`.
+  - `REDIS_URL=redis://host:port/db` - connection string used when `SESSION_STORE_BACKEND=redis`
+    (defaults to `redis://localhost:6379/0`).
 
 2. Calendar Configuration
 -------------------------
@@ -119,10 +124,12 @@ Notes:
 In the Twilio Console for each phone number you use:
 
 - **Voice webhook**:
-  - Request URL: `POST https://<your-domain>/twilio/voice`
+  - Request URL: `POST https://<your-domain>/twilio/voice` (or the versioned alias
+    `POST https://<your-domain>/v1/twilio/voice` for new setups).
   - Optionally add `?business_id=<tenant_id>` if you want to route by query parameter instead of relying solely on `X-API-Key`.
 - **Messaging webhook**:
-  - Request URL: `POST https://<your-domain>/twilio/sms`
+  - Request URL: `POST https://<your-domain>/twilio/sms` (or
+    `POST https://<your-domain>/v1/twilio/sms`).
   - Same note regarding `business_id` if per-number routing is desired.
 
 8. Optional Seed Data
@@ -146,6 +153,10 @@ This ensures:
 Before onboarding a real tenant:
 
 - Run the backend test suite: `pytest backend -q` - expect all tests to pass.
+- Verify basic health and observability:
+  - `GET /healthz` returns `{"status": "ok"}`.
+  - `GET /readyz` reports database readiness when running with a real DB.
+  - `GET /metrics` and `GET /metrics/prometheus` are reachable and wired into your monitoring stack.
 - From the dashboard:
   - Confirm you can:
     - Use `X-Admin-API-Key` to list/edit tenants, rotate API keys and widget tokens.

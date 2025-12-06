@@ -86,6 +86,19 @@ Main cards and the endpoints they rely on:
 - **Emergency Jobs**
   - Uses `/v1/owner/service-mix` and appointment lists to highlight emergency appointments.
 
+- **90-Day Calendar (Tags)**
+  - Uses `/v1/owner/calendar/90d` to render a compact 90-day calendar heatmap of upcoming work
+    with per-day tags:
+    - `routine` vs `emergency` jobs.
+    - `maintenance` work inferred from service types (e.g. tune-ups, inspections).
+    - `service` as a generic tag for all scheduled work.
+    - `new_client` for the first appointment per customer.
+  - Clicking any day opens a modal summarizing, for that date:
+    - Total jobs, new customers, and estimated value (total and average).
+    - Counts by tag and by service type.
+  - The modal offers a "Download PDF" button that calls
+    `/v1/owner/calendar/report.pdf?day=YYYY-MM-DD` to export a simple daily schedule report.
+
 - **Recent Conversations / QA Queue / Callback Queue**
   - Use `/v1/owner/conversations/review`, `/v1/owner/callbacks`, and related CRM endpoints to:
     - Show recent/flagged conversations by channel (phone, web, SMS).
@@ -95,6 +108,17 @@ Main cards and the endpoints they rely on:
 - **Data Export & Governance**
   - Uses `/v1/owner/export/service-mix.csv` and `/v1/owner/export/conversations.csv` to provide
     simple CSV exports for analytics and QA.
+
+- **Owner AI Assistant (Chat Bubble)**
+  - Floating chat bubble on the bottom-right of the owner dashboard that lets owners ask free-form
+    questions about:
+    - The dashboard cards and metrics.
+    - The underlying data model and how metrics are calculated.
+    - Privacy, security, and operational policies.
+  - Uses `POST /v1/owner/assistant/query` behind the scenes and streams a single textual reply per
+    question. The backend implementation is grounded in local documentation and, when configured
+    with `SPEECH_PROVIDER=openai` and `OPENAI_API_KEY`, calls OpenAI chat completions using the
+    `OPENAI_CHAT_MODEL` (defaults to `gpt-4o-mini`).
 
 
 Admin Dashboard (`admin.html`)

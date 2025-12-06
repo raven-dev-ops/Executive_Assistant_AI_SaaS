@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from ..deps import ensure_business_active
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
-from ..db_models import Business
+from ..db_models import BusinessDB
 from ..metrics import BusinessSmsMetrics, metrics
 from ..repositories import appointments_repo, customers_repo
 from ..services import conversation
@@ -33,7 +33,7 @@ async def send_upcoming_reminders(
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
-            row = session_db.get(Business, business_id)
+            row = session_db.get(BusinessDB, business_id)
         finally:
             session_db.close()
         if row is not None:
@@ -55,7 +55,11 @@ async def send_upcoming_reminders(
         if not (now <= appt.start_time <= cutoff):
             continue
         customer = customers_repo.get(appt.customer_id)
-        if not customer or not customer.phone or getattr(customer, "sms_opt_out", False):
+        if (
+            not customer
+            or not customer.phone
+            or getattr(customer, "sms_opt_out", False)
+        ):
             continue
         when_str = appt.start_time.strftime("%a %b %d at %I:%M %p UTC")
         if language_code == "es":
@@ -110,7 +114,11 @@ async def send_unbooked_lead_followups(
         if conv.customer_id in active_customers:
             continue
         customer = customers_repo.get(conv.customer_id)
-        if not customer or not customer.phone or getattr(customer, "sms_opt_out", False):
+        if (
+            not customer
+            or not customer.phone
+            or getattr(customer, "sms_opt_out", False)
+        ):
             continue
 
         when_str = created_at.strftime("%a %b %d")
@@ -118,7 +126,7 @@ async def send_unbooked_lead_followups(
         if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
             session_db = SessionLocal()
             try:
-                row = session_db.get(Business, business_id)
+                row = session_db.get(BusinessDB, business_id)
             finally:
                 session_db.close()
             if row is not None and getattr(row, "name", None):
@@ -131,9 +139,7 @@ async def send_unbooked_lead_followups(
         )
         await sms_service.notify_customer(customer.phone, body, business_id=business_id)
         metrics.lead_followups_sent += 1
-        per = metrics.sms_by_business.setdefault(
-            business_id, BusinessSmsMetrics()
-        )
+        per = metrics.sms_by_business.setdefault(business_id, BusinessSmsMetrics())
         per.lead_followups_sent += 1
         seen_customers.add(conv.customer_id)
         sent += 1

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Dict, List, Optional
 import os
 
@@ -75,7 +74,9 @@ class InMemoryCustomerRepository:
     def get(self, customer_id: str) -> Optional[Customer]:
         return self._by_id.get(customer_id)
 
-    def get_by_phone(self, phone: str, business_id: str | None = None) -> Optional[Customer]:
+    def get_by_phone(
+        self, phone: str, business_id: str | None = None
+    ) -> Optional[Customer]:
         # When a business_id is provided, restrict the lookup to that tenant.
         if business_id is not None:
             ids = self._by_business.get(business_id, [])
@@ -142,7 +143,9 @@ class InMemoryAppointmentRepository:
             description=description,
             is_emergency=is_emergency,
             lead_source=lead_source,
-            estimated_value=float(estimated_value) if estimated_value is not None else None,
+            estimated_value=(
+                float(estimated_value) if estimated_value is not None else None
+            ),
             job_stage=job_stage,
             quoted_value=float(quoted_value) if quoted_value is not None else None,
             quote_status=quote_status,
@@ -374,7 +377,9 @@ class DbCustomerRepository:
         finally:
             session.close()
 
-    def get_by_phone(self, phone: str, business_id: str = "default_business") -> Optional[Customer]:
+    def get_by_phone(
+        self, phone: str, business_id: str = "default_business"
+    ) -> Optional[Customer]:
         if SessionLocal is None:
             raise RuntimeError("Database session factory is not available")
         session = SessionLocal()
@@ -619,7 +624,9 @@ else:
 class DbConversationRepository:
     """Conversation repository backed by the SQLAlchemy database."""
 
-    def _to_model(self, row: ConversationDB, messages: List[ConversationMessageDB]) -> Conversation:
+    def _to_model(
+        self, row: ConversationDB, messages: List[ConversationMessageDB]
+    ) -> Conversation:
         return Conversation(
             id=row.id,
             channel=row.channel,
