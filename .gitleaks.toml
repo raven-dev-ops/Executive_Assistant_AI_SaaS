@@ -1,0 +1,11 @@
+title = "ai_telephony_service_crm gitleaks config"
+
+[allowlist]
+  description = "Ignore placeholder service account private key committed in sample manifest history"
+  commits = [
+    "9c882b5600bb04cf7afad4ca77d56cde460a8273",
+    "03ce6597e67bc2ba0b8e724f22797d44a33a4e7a",
+  ]
+  paths = [
+    "k8s/backend.yaml",
+  ]

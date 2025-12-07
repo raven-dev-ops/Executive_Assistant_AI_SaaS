@@ -31,6 +31,7 @@ dev = [
     "black>=24.0.0",
     "mypy>=1.10.0",
     "bandit>=1.7.9",
+    "trio>=0.23.0",
 ]
 
 [tool.mypy]

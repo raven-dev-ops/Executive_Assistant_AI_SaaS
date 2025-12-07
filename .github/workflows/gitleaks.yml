@@ -18,4 +18,4 @@ jobs:
       - name: Run gitleaks
         uses: zricethezav/gitleaks-action@v1.6.0
         with:
-          args: detect --no-banner --redact
+          args: detect --no-banner --redact --config .gitleaks.toml
