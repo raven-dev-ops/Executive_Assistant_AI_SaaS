@@ -53,6 +53,13 @@ To run the backend and dashboards locally:
    - Open `chat/index.html` to load the installable chat experience (add it to your home screen for offline access).
    - The PWA caches core assets, queues chat sends when offline via Background Sync, and reuses your `X-API-Key` or `X-Widget-Token` from the input fields.
 
+Secret Management & Safety
+--------------------------
+
+- Secrets are expected in environment variables; non-stub providers (Twilio, Stripe, OpenAI) require their keys to be set. Misconfigurations are logged as warnings at startup.
+- A sanitized config summary is logged on boot; secret values are never logged.
+- Gitleaks runs in CI to prevent committing secrets; rotate keys promptly if exposure is suspected.
+
 
 Source PDFs & Traceability
 --------------------------

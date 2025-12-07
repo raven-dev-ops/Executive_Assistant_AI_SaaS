@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+import logging
 
 from pydantic import BaseModel
 
@@ -176,6 +177,24 @@ class AppSettings(BaseModel):
             default_language_code=default_language_code,
         )
 
+    def validate_combinations(self) -> None:
+        """Warn when non-stub providers are misconfigured to avoid runtime surprises."""
+        logger = logging.getLogger(__name__)
+        warnings: list[str] = []
+
+        if self.sms.provider == "twilio":
+            if not (self.sms.twilio_account_sid and self.sms.twilio_auth_token):
+                warnings.append("Twilio provider requires TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.")
+        if not self.stripe.use_stub and not self.stripe.api_key:
+            warnings.append("STRIPE_API_KEY is required when STRIPE_USE_STUB=false.")
+        if self.speech.provider == "openai" and not self.speech.openai_api_key:
+            warnings.append("OPENAI_API_KEY is required when SPEECH_PROVIDER=openai.")
+        if self.quickbooks.client_id and not self.quickbooks.client_secret:
+            warnings.append("QBO_CLIENT_SECRET is missing while QBO_CLIENT_ID is set.")
+        if warnings:
+            for msg in warnings:
+                logger.warning("configuration_warning", extra={"detail": msg})
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
@@ -184,4 +203,6 @@ def get_settings() -> AppSettings:
     The result is cached for the lifetime of the process so configuration
     is stable and we avoid repeatedly parsing environment variables.
     """
-    return AppSettings.from_env()
+    settings = AppSettings.from_env()
+    settings.validate_combinations()
+    return settings
