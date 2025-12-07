@@ -76,7 +76,9 @@ class OwnerAssistantService:
         self._docs_cache = "\n\n".join(parts)
         return self._docs_cache
 
-    async def answer(self, question: str) -> OwnerAssistantAnswer:
+    async def answer(
+        self, question: str, business_context: Optional[str] = None
+    ) -> OwnerAssistantAnswer:
         """Return an answer for the owner's question.
 
         Uses OpenAI chat completions when configured, otherwise falls back
@@ -122,6 +124,13 @@ class OwnerAssistantService:
                 "content": system_instructions,
             },
         ]
+        if business_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Business context for this tenant:\n{business_context}",
+                }
+            )
         if docs:
             messages.append(
                 {

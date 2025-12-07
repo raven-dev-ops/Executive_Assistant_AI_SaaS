@@ -13,12 +13,17 @@ from .routers import (
     chat_widget,
     crm,
     auth_integration,
+    chat_api,
+    contacts_import,
+    billing,
     owner,
     owner_assistant,
     owner_export,
     public_signup,
     reminders,
     retention,
+    qbo_integration,
+    auth_accounts,
     telephony,
     twilio_integration,
     voice,
@@ -143,6 +148,13 @@ def create_app() -> FastAPI:
     app.include_router(reminders.router, prefix="/v1/reminders", tags=["reminders"])
     app.include_router(retention.router, prefix="/v1/retention", tags=["retention"])
     app.include_router(chat_widget.router, prefix="/v1/widget", tags=["widget"])
+    app.include_router(chat_api.router, prefix="/v1/chat", tags=["chat"])
+    app.include_router(contacts_import.router, prefix="/v1/contacts", tags=["contacts"])
+    app.include_router(
+        qbo_integration.router, prefix="/v1/integrations/qbo", tags=["integrations"]
+    )
+    app.include_router(billing.router, prefix="/v1/billing", tags=["billing"])
+    app.include_router(auth_accounts.router, prefix="/v1/auth", tags=["auth"])
     app.include_router(business_admin.router, prefix="/v1/admin", tags=["admin"])
     app.include_router(twilio_integration.router, prefix="/twilio", tags=["twilio"])
     app.include_router(twilio_integration.router, prefix="/v1/twilio", tags=["twilio"])
@@ -199,6 +211,7 @@ def create_app() -> FastAPI:
         emit(
             "ai_telephony_appointments_scheduled", float(metrics.appointments_scheduled)
         )
+        emit("ai_telephony_users_registered", float(metrics.users_registered))
         emit("ai_telephony_sms_sent_total", float(metrics.sms_sent_total))
         emit("ai_telephony_twilio_voice_requests", float(metrics.twilio_voice_requests))
         emit("ai_telephony_twilio_voice_errors", float(metrics.twilio_voice_errors))
@@ -208,6 +221,37 @@ def create_app() -> FastAPI:
             "ai_telephony_voice_session_requests", float(metrics.voice_session_requests)
         )
         emit("ai_telephony_voice_session_errors", float(metrics.voice_session_errors))
+        emit(
+            "ai_telephony_subscription_activations",
+            float(metrics.subscription_activations),
+        )
+        emit(
+            "ai_telephony_subscription_failures",
+            float(metrics.subscription_failures),
+        )
+        emit("ai_telephony_qbo_connections", float(metrics.qbo_connections))
+        emit("ai_telephony_qbo_sync_errors", float(metrics.qbo_sync_errors))
+        emit("ai_telephony_contacts_imported", float(metrics.contacts_imported))
+        emit("ai_telephony_contacts_import_errors", float(metrics.contacts_import_errors))
+        emit("ai_telephony_chat_messages", float(metrics.chat_messages))
+        emit("ai_telephony_chat_failures", float(metrics.chat_failures))
+        emit(
+            "ai_telephony_chat_latency_ms_total",
+            float(metrics.chat_latency_ms_total),
+        )
+        emit("ai_telephony_chat_latency_ms_max", float(metrics.chat_latency_ms_max))
+        emit(
+            "ai_telephony_chat_latency_samples",
+            float(metrics.chat_latency_samples),
+        )
+        emit(
+            "ai_telephony_billing_webhook_failures",
+            float(metrics.billing_webhook_failures),
+        )
+        emit(
+            "ai_telephony_background_job_errors",
+            float(metrics.background_job_errors),
+        )
 
         # Per-route request/error counts with a path label.
         for path, rm in metrics.route_metrics.items():

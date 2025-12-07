@@ -44,10 +44,14 @@ To run the backend and dashboards locally:
 5. **Try self-service signup & onboarding (optional)**
    - Enable `ALLOW_SELF_SIGNUP=true` in your backend environment.
    - Open `dashboard/signup.html` to create a new tenant via `/v1/public/signup`, then follow the flow into `dashboard/onboarding.html` to connect calendar, email, and other integrations.
+   - Onboarding supports QuickBooks connect + sample sync, or CSV contact import as an alternative data source; statuses/logging surface on the page.
 
 6. **Try the owner AI assistant (optional)**
    - With the owner dashboard open, use the floating chat bubble to ask questions about metrics, data definitions, and operational policies.
    - When configured with `SPEECH_PROVIDER=openai` and `OPENAI_API_KEY`, the backend answers via `/v1/owner/assistant/query` using local documentation plus the configured OpenAI chat model.
+7. **Install the AI chat PWA (mobile-friendly)**
+   - Open `chat/index.html` to load the installable chat experience (add it to your home screen for offline access).
+   - The PWA caches core assets, queues chat sends when offline via Background Sync, and reuses your `X-API-Key` or `X-Widget-Token` from the input fields.
 
 
 Source PDFs & Traceability
@@ -62,6 +66,7 @@ root. This README is distilled from:
 - `Bristol_Plumbing_Project_Plan.pdf` - feature set, phased requirements, and cloud architecture.
 - `Project_Engineering_Whitepaper.pdf` - RavDevOps engineering culture and safety standard that
   governs code, operations, and testing.
+- `Project_Tasklist.pdf` - current end-to-end task list (supersedes earlier task list docs).
 
 Other root docs (`OUTLINE.md`, `BACKLOG.md`, `WIKI.md`, `SECURITY.md`, `PRIVACY_POLICY.md`,
 `TERMS_OF_SERVICE.md`, `RUNBOOK.md`, `PILOT_RUNBOOK.md`, `DEPLOYMENT_CHECKLIST.md`) are similarly
@@ -105,15 +110,19 @@ The system is designed to support:
 - **Customer data & CRM**
   - Cloud database of customers, service history, and appointments.
   - Recognition of repeat customers by phone or name with auto-population of details.
+  - CSV import available at `POST /v1/contacts/import` (Name, Phone, Email, Address) for small owner-managed lists.
   - Linkage of conversations, jobs, and (in the Bristol example) external invoicing.
 
 - **Owner AI assistant (doc-grounded Q&A)**
   - Owner dashboard chat bubble that lets owners ask free-form questions about metrics, dashboards, data semantics, and operating procedures.
-  - Implemented via `POST /v1/owner/assistant/query` and backed by local documentation plus the configured OpenAI chat model when `SPEECH_PROVIDER=openai` and `OPENAI_API_KEY` are set.
+  - Implemented via `POST /v1/owner/assistant/query` and backed by local documentation plus the configured OpenAI chat model when `SPEECH_PROVIDER=openai` and `OPENAI_API_KEY` are set. A business-context chat endpoint at `POST /v1/chat` uses the same assistant with live tenant context and logs each conversation.
 
 - **Self-service signup & onboarding**
   - Opt-in public signup endpoint (`/v1/public/signup`) and static pages (`dashboard/signup.html`, `dashboard/onboarding.html`) that let new service businesses onboard themselves when `ALLOW_SELF_SIGNUP=true`.
   - Auth integration stubs under `/auth/{provider}/*` sketch how to connect LinkedIn, Gmail/Workspace, Google Calendar, OpenAI, and Twilio during onboarding.
+  - QuickBooks stub: `/v1/integrations/qbo/authorize`, `/callback`, `/status`, `/sync`.
+  - Billing stub: `/v1/billing/plans`, `/v1/billing/create-checkout-session`, `/v1/billing/webhook` with per-tenant subscription fields.
+  - Multi-tenant account model (stub): `/v1/auth/register`, `/v1/auth/me`, `/v1/auth/active-business` track users, roles, and active business.
 
 - **Business dashboard (web)**
   - Conversation log viewer for QA and training.
@@ -127,6 +136,9 @@ The system is designed to support:
   - Support for standard SMS opt-out keywords (e.g., STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT)
     so customers can stop receiving text messages while owner alerts continue.
   - Simple retention SMS campaigns for lapsed customers via the `/v1/retention/send-retention` endpoint.
+- **QuickBooks (stubbed)**
+  - OAuth flow via `/v1/integrations/qbo/authorize` and `/callback` (stores tokens/status per tenant).
+  - Status and sample sync via `/v1/integrations/qbo/status` and `/v1/integrations/qbo/sync` (imports sample contacts).
 
 - **Future channels**
   - Website chatbot or voice widget using the same backend.

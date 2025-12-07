@@ -40,10 +40,44 @@ class SmsSettings(BaseModel):
     twilio_say_language_es: str | None = "es-US"
 
 
+class QuickBooksSettings(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str | None = None
+    scopes: str = "com.intuit.quickbooks.accounting openid profile email phone address"
+    sandbox: bool = True
+
+    @property
+    def authorize_base(self) -> str:
+        return (
+            "https://appcenter.intuit.com/connect/oauth2"
+            if not self.sandbox
+            else "https://sandbox.qbo.intuit.com/connect/oauth2"
+        )
+
+    @property
+    def token_base(self) -> str:
+        return (
+            "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+            if not self.sandbox
+            else "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+        )
+
+class StripeSettings(BaseModel):
+    api_key: str | None = None
+    webhook_secret: str | None = None
+    price_basic: str | None = None
+    price_growth: str | None = None
+    price_scale: str | None = None
+    use_stub: bool = True
+
+
 class AppSettings(BaseModel):
     calendar: CalendarSettings = CalendarSettings()
     speech: SpeechSettings = SpeechSettings()
     sms: SmsSettings = SmsSettings()
+    quickbooks: QuickBooksSettings = QuickBooksSettings()
+    stripe: StripeSettings = StripeSettings()
     admin_api_key: str | None = None
     default_vertical: str = "plumbing"
     require_business_api_key: bool = False
@@ -97,6 +131,24 @@ class AppSettings(BaseModel):
             twilio_say_language_default=os.getenv("TWILIO_SAY_LANGUAGE_DEFAULT"),
             twilio_say_language_es=os.getenv("TWILIO_SAY_LANGUAGE_ES", "es-US"),
         )
+        quickbooks = QuickBooksSettings(
+            client_id=os.getenv("QBO_CLIENT_ID"),
+            client_secret=os.getenv("QBO_CLIENT_SECRET"),
+            redirect_uri=os.getenv("QBO_REDIRECT_URI"),
+            scopes=os.getenv(
+                "QBO_SCOPES",
+                "com.intuit.quickbooks.accounting openid profile email phone address",
+            ),
+            sandbox=os.getenv("QBO_SANDBOX", "true").lower() != "false",
+        )
+        stripe = StripeSettings(
+            api_key=os.getenv("STRIPE_API_KEY"),
+            webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET"),
+            price_basic=os.getenv("STRIPE_PRICE_BASIC"),
+            price_growth=os.getenv("STRIPE_PRICE_GROWTH"),
+            price_scale=os.getenv("STRIPE_PRICE_SCALE"),
+            use_stub=os.getenv("STRIPE_USE_STUB", "true").lower() != "false",
+        )
         admin_api_key = os.getenv("ADMIN_API_KEY")
         default_vertical = os.getenv("DEFAULT_VERTICAL", "plumbing")
         default_language_code = os.getenv("DEFAULT_LANGUAGE_CODE", "en")
@@ -113,6 +165,8 @@ class AppSettings(BaseModel):
             calendar=calendar,
             speech=speech,
             sms=sms,
+            quickbooks=quickbooks,
+            stripe=stripe,
             admin_api_key=admin_api_key,
             default_vertical=default_vertical,
             require_business_api_key=require_business_api_key,

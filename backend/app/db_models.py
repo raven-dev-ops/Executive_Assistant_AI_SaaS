@@ -53,8 +53,37 @@ if SQLALCHEMY_AVAILABLE:
         integration_gcalendar_status = Column(String, nullable=True)  # type: ignore[call-arg]
         integration_openai_status = Column(String, nullable=True)  # type: ignore[call-arg]
         integration_twilio_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        integration_qbo_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        qbo_realm_id = Column(String, nullable=True)  # type: ignore[call-arg]
+        qbo_access_token = Column(String, nullable=True)  # type: ignore[call-arg]
+        qbo_refresh_token = Column(String, nullable=True)  # type: ignore[call-arg]
+        qbo_token_expires_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        onboarding_step = Column(String, nullable=True)  # type: ignore[call-arg]
+        onboarding_completed = Column(Boolean, default=False, nullable=False)  # type: ignore[call-arg]
+        stripe_customer_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        stripe_subscription_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        subscription_status = Column(String, nullable=True)  # type: ignore[call-arg]
+        subscription_current_period_end = Column(DateTime, nullable=True)  # type: ignore[call-arg]
         created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
         widget_token = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+
+    class UserDB(Base):  # type: ignore[misc]
+        __tablename__ = "users"
+
+        id = Column(String, primary_key=True, index=True)  # type: ignore[call-arg]
+        email = Column(String, unique=True, nullable=False, index=True)  # type: ignore[call-arg]
+        password_hash = Column(String, nullable=True)  # type: ignore[call-arg]
+        name = Column(String, nullable=True)  # type: ignore[call-arg]
+        active_business_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        created_at = Column(DateTime, default=_utcnow, nullable=False)  # type: ignore[call-arg]
+
+    class BusinessUserDB(Base):  # type: ignore[misc]
+        __tablename__ = "business_users"
+
+        id = Column(String, primary_key=True, index=True)  # type: ignore[call-arg]
+        business_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
+        user_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
+        role = Column(String, nullable=False, default="owner")  # type: ignore[call-arg]
 
     class CustomerDB(Base):  # type: ignore[misc]
         __tablename__ = "customers"
@@ -171,6 +200,30 @@ else:
         integration_gcalendar_status: str | None
         integration_openai_status: str | None
         integration_twilio_status: str | None
+        integration_qbo_status: str | None
+        qbo_realm_id: str | None
+        qbo_access_token: str | None
+        qbo_refresh_token: str | None
+        qbo_token_expires_at: datetime | None
+        onboarding_step: str | None
+        onboarding_completed: bool
+        stripe_customer_id: str | None
+        stripe_subscription_id: str | None
+        subscription_status: str | None
+        subscription_current_period_end: datetime | None
+    class UserDB:  # pragma: no cover - placeholder when SQLAlchemy missing
+        id: str
+        email: str
+        password_hash: str | None
+        name: str | None
+        active_business_id: str | None
+        created_at: datetime
+
+    class BusinessUserDB:  # pragma: no cover - placeholder
+        id: str
+        business_id: str
+        user_id: str
+        role: str
 
     class CustomerDB:  # pragma: no cover - placeholder
         id: str

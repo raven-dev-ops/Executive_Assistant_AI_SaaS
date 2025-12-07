@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -206,6 +206,20 @@
         gap: 1rem;
         margin-top: 1rem;
       }
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .action-card {
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
       .integration-card {
         border-radius: 12px;
         border: 1px solid #e5e7eb;
@@ -213,6 +227,13 @@
         display: flex;
         flex-direction: column;
         gap: 0.3rem;
+      }
+      .badge.pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.15rem 0.6rem;
+        font-weight: 600;
       }
       .integration-header {
         display: flex;
@@ -253,6 +274,16 @@
       .voice-card.selected {
         border-color: #6366f1;
         box-shadow: 0 8px 20px rgba(79, 70, 229, 0.45);
+      }
+      .input-compact {
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .input-compact input[type="file"] {
+        border: none;
+        padding: 0;
       }
     </style>
   </head>
@@ -394,6 +425,37 @@
             OAuth and token storage should be configured in your deployment; this screen tracks high-level connection
             status for each provider.
           </p>
+          <div class="action-grid">
+            <div class="action-card">
+              <div class="integration-header">
+                <div>
+                  <div style="font-weight: 600; font-size: 0.95rem;">QuickBooks Online</div>
+                  <div class="muted" style="font-size: 0.8rem;">Connect to import and sync customers.</div>
+                </div>
+                <span class="badge pill disconnected" id="qbo-badge">Not connected</span>
+              </div>
+              <div class="button-row" style="margin-top: 0.25rem;">
+                <button id="qbo-connect-btn" type="button" class="button-secondary">Connect QuickBooks</button>
+                <button id="qbo-simulate-btn" type="button" class="button-secondary">Mark connected (dev)</button>
+                <button id="qbo-sync-btn" type="button">Sync sample contacts</button>
+              </div>
+              <div id="qbo-status" class="status info"></div>
+            </div>
+            <div class="action-card">
+              <div class="integration-header">
+                <div>
+                  <div style="font-weight: 600; font-size: 0.95rem;">CSV Contact Import</div>
+                  <div class="muted" style="font-size: 0.8rem;">Upload a CSV during onboarding instead of QBO.</div>
+                </div>
+              </div>
+              <div class="input-compact" style="margin-top: 0.4rem;">
+                <input id="csv-file" type="file" accept=".csv,text/csv" />
+                <button id="csv-template-btn" type="button" class="button-secondary">Download template</button>
+                <button id="csv-upload-btn" type="button">Import CSV</button>
+              </div>
+              <div id="csv-status" class="status info"></div>
+            </div>
+          </div>
           <div class="integration-grid" id="integration-grid">
             <!-- Filled by JS -->
           </div>
@@ -436,8 +498,9 @@
         return document.getElementById(id);
       }
 
-      function authHeaders() {
+      function authHeaders(includeJson = true) {
         const headers = {};
+        if (includeJson) headers["Content-Type"] = "application/json";
         if (apiKey) headers["X-API-Key"] = apiKey;
         if (ownerToken) headers["X-Owner-Token"] = ownerToken;
         return headers;
@@ -448,6 +511,25 @@
         if (!el) return;
         el.textContent = text || "";
         el.className = "status " + (type || "info");
+      }
+
+      function stepCodeToNumber(code) {
+        switch (code) {
+          case "terms":
+            return 1;
+          case "profile":
+            return 2;
+          case "plan":
+            return 3;
+          case "integrations":
+            return 4;
+          case "ai":
+          case "voice":
+          case "complete":
+            return 5;
+          default:
+            return 1;
+        }
       }
 
       function setStep(step) {
@@ -468,7 +550,7 @@
         const label = $("onboarding-business-label");
         if (label) {
           const tier = onboardingProfile.service_tier || "unselected";
-          label.textContent = `${onboardingProfile.business_name} (${onboardingProfile.business_id}) – tier: ${tier}`;
+          label.textContent = `${onboardingProfile.business_name} (${onboardingProfile.business_id}) — tier: ${tier}`;
         }
         const ownerNameEl = $("owner-name");
         const ownerEmailEl = $("owner-email");
@@ -493,6 +575,16 @@
         // Integrations and voice
         renderIntegrations();
         renderVoices();
+        loadQboStatus();
+
+        const savedStep = onboardingProfile.onboarding_step;
+        const completed = onboardingProfile.onboarding_completed;
+        if (completed) {
+          setStep(5);
+          setStatus("step5-status", "Onboarding marked complete. You can open the owner dashboard.", "success");
+        } else if (savedStep) {
+          setStep(stepCodeToNumber(savedStep));
+        }
       }
 
       function renderIntegrations() {
@@ -515,7 +607,7 @@
               <div class="integration-header">
                 <div>
                   <div style="font-weight: 600; font-size: 0.9rem;">${label}</div>
-                  <div class="muted" style="font-size: 0.75rem;">Business account only – OAuth handled by your deployment.</div>
+                  <div class="muted" style="font-size: 0.75rem;">Business account only â€“ OAuth handled by your deployment.</div>
                 </div>
                 <span class="${badgeClass}">${badgeText}</span>
               </div>
@@ -570,10 +662,7 @@
         const backendBase = DEFAULT_BACKEND_BASE;
         try {
           const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
+            headers: authHeaders(),
           });
           if (!res.ok) {
             setStatus("step1-status", "Unable to load onboarding profile (" + res.status + ")", "error");
@@ -599,11 +688,8 @@
         try {
           const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
-            body: JSON.stringify({ accept_terms: true, accept_privacy: true }),
+            headers: authHeaders(),
+            body: JSON.stringify({ accept_terms: true, accept_privacy: true, onboarding_step: "profile" }),
           });
           if (!res.ok) {
             setStatus("step1-status", "Unable to save acknowledgements (" + res.status + ")", "error");
@@ -637,11 +723,8 @@
           }
           const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
-            body: JSON.stringify(payload),
+            headers: authHeaders(),
+            body: JSON.stringify({ ...payload, onboarding_step: "plan" }),
           });
           if (!res.ok) {
             setStatus("step2-status", "Unable to save profile (" + res.status + ")", "error");
@@ -682,11 +765,8 @@
         try {
           const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
-            body: JSON.stringify({ service_tier: tier }),
+            headers: authHeaders(),
+            body: JSON.stringify({ service_tier: tier, onboarding_step: "integrations" }),
           });
           if (!res.ok) {
             setStatus("step3-status", "Unable to save plan (" + res.status + ")", "error");
@@ -714,13 +794,11 @@
         if (provider === "gcalendar") payload.gcalendar_connected = connected;
         if (provider === "openai") payload.openai_connected = connected;
         if (provider === "twilio") payload.twilio_connected = connected;
+        if (provider === "quickbooks") payload.quickbooks_connected = connected;
         try {
           const res = await fetch(backendBase + "/v1/owner/onboarding/integrations", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
+            headers: authHeaders(),
             body: JSON.stringify(payload),
           });
           if (!res.ok) {
@@ -742,11 +820,8 @@
         try {
           const res = await fetch(backendBase + "/v1/owner/onboarding/profile", {
             method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...authHeaders(),
-            },
-            body: JSON.stringify({ tts_voice: voiceId }),
+            headers: authHeaders(),
+            body: JSON.stringify({ tts_voice: voiceId, onboarding_step: "voice" }),
           });
           if (!res.ok) {
             setStatus("step5-status", "Unable to save voice (" + res.status + ")", "error");
@@ -762,7 +837,175 @@
       }
 
       function finishOnboarding() {
-        setStatus("step5-status", "Onboarding complete. You can now open the owner dashboard.", "success");
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("step5-status", "Marking onboarding complete...", "info");
+        fetch(backendBase + "/v1/owner/onboarding/profile", {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ onboarding_step: "complete", onboarding_completed: true }),
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              setStatus("step5-status", "Unable to mark complete (" + res.status + ")", "error");
+              return;
+            }
+            onboardingProfile = await res.json();
+            setStatus("step5-status", "Onboarding complete. You can now open the owner dashboard.", "success");
+          })
+          .catch(() => {
+            setStatus("step5-status", "Network error while finishing.", "error");
+          });
+      }
+
+      async function markOnboardingStep(stepCode) {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        try {
+          await fetch(backendBase + "/v1/owner/onboarding/profile", {
+            method: "PATCH",
+            headers: authHeaders(),
+            body: JSON.stringify({ onboarding_step: stepCode }),
+          });
+        } catch (err) {
+          // Best-effort; do not block UI on errors here.
+        }
+      }
+
+      async function loadQboStatus() {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        const badge = $("qbo-badge");
+        try {
+          const res = await fetch(backendBase + "/v1/integrations/qbo/status", {
+            headers: authHeaders(),
+          });
+          if (!res.ok) {
+            setStatus("qbo-status", "Unable to load QBO status (" + res.status + ")", "error");
+            return;
+          }
+          const data = await res.json();
+          const connected = !!data.connected;
+          const realm = data.realm_id || "n/a";
+          if (badge) {
+            badge.textContent = connected ? "Connected" : "Not connected";
+            badge.classList.toggle("connected", connected);
+            badge.classList.toggle("disconnected", !connected);
+          }
+          setStatus(
+            "qbo-status",
+            connected ? "Connected to QBO (realm " + realm + ")." : "Not connected to QBO yet.",
+            connected ? "success" : "info"
+          );
+        } catch (err) {
+          setStatus("qbo-status", "Network error while loading QBO status.", "error");
+        }
+      }
+
+      async function connectQbo() {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("qbo-status", "Opening QuickBooks authorization...", "info");
+        try {
+          const res = await fetch(backendBase + "/v1/integrations/qbo/authorize", {
+            headers: authHeaders(),
+          });
+          if (!res.ok) {
+            setStatus("qbo-status", "Unable to start QBO OAuth (" + res.status + ")", "error");
+            return;
+          }
+          const data = await res.json();
+          if (data.authorization_url) {
+            window.open(data.authorization_url, "_blank");
+          }
+          setStatus(
+            "qbo-status",
+            "If this is a stub environment, click 'Mark connected (dev)' to simulate the callback.",
+            "info"
+          );
+        } catch (err) {
+          setStatus("qbo-status", "Network error while starting QBO OAuth.", "error");
+        }
+      }
+
+      async function simulateQboCallback() {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        const businessId = onboardingProfile?.business_id || "default_business";
+        setStatus("qbo-status", "Marking QuickBooks connected (dev)...", "info");
+        try {
+          const res = await fetch(
+            `${backendBase}/v1/integrations/qbo/callback?code=stub&state=${businessId}&realmId=demo`,
+            { headers: authHeaders() }
+          );
+          if (!res.ok) {
+            setStatus("qbo-status", "Callback simulation failed (" + res.status + ")", "error");
+            return;
+          }
+          setStatus("qbo-status", "QuickBooks marked connected for this tenant.", "success");
+          await loadQboStatus();
+        } catch (err) {
+          setStatus("qbo-status", "Network error while simulating callback.", "error");
+        }
+      }
+
+      async function syncQbo() {
+        const backendBase = DEFAULT_BACKEND_BASE;
+        setStatus("qbo-status", "Syncing sample contacts from QBO...", "info");
+        try {
+          const res = await fetch(backendBase + "/v1/integrations/qbo/sync", {
+            method: "POST",
+            headers: authHeaders(),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setStatus("qbo-status", data.detail || "Sync failed.", "error");
+            return;
+          }
+          setStatus(
+            "qbo-status",
+            `Sync complete. Imported ${data.imported}, skipped ${data.skipped}.`,
+            "success"
+          );
+        } catch (err) {
+          setStatus("qbo-status", "Network error while syncing.", "error");
+        }
+      }
+
+      function downloadCsvTemplate() {
+        const sample = "Name,Phone,Email,Address\nJane Doe,5551234567,jane@example.com,123 Main St\n";
+        const blob = new Blob([sample], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "contacts-template.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      async function importCsvFile() {
+        const fileInput = $("csv-file");
+        if (!fileInput || !fileInput.files || !fileInput.files.length) {
+          setStatus("csv-status", "Select a CSV file first.", "error");
+          return;
+        }
+        const form = new FormData();
+        form.append("file", fileInput.files[0]);
+        setStatus("csv-status", "Uploading CSV...", "info");
+        const backendBase = DEFAULT_BACKEND_BASE;
+        try {
+          const res = await fetch(backendBase + "/v1/contacts/import", {
+            method: "POST",
+            headers: authHeaders(false),
+            body: form,
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setStatus("csv-status", data.detail || "Import failed.", "error");
+            return;
+          }
+          const msg = `Imported ${data.imported}, skipped ${data.skipped}${
+            data.errors && data.errors.length ? " (" + data.errors.length + " errors)" : ""
+          }.`;
+          setStatus("csv-status", msg, data.errors && data.errors.length ? "error" : "success");
+        } catch (err) {
+          setStatus("csv-status", "Network error while importing CSV.", "error");
+        }
       }
 
       function initNavButtons() {
@@ -775,7 +1018,15 @@
         $("step3-next")?.addEventListener("click", saveStep3);
 
         $("step4-back")?.addEventListener("click", () => setStep(3));
-        $("step4-next")?.addEventListener("click", () => setStep(5));
+        $("step4-next")?.addEventListener("click", async () => {
+          await markOnboardingStep("ai");
+          setStep(5);
+        });
+        $("qbo-connect-btn")?.addEventListener("click", connectQbo);
+        $("qbo-simulate-btn")?.addEventListener("click", simulateQboCallback);
+        $("qbo-sync-btn")?.addEventListener("click", syncQbo);
+        $("csv-template-btn")?.addEventListener("click", downloadCsvTemplate);
+        $("csv-upload-btn")?.addEventListener("click", importCsvFile);
 
         $("step5-back")?.addEventListener("click", () => setStep(4));
         $("step5-finish")?.addEventListener("click", finishOnboarding);

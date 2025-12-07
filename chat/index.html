@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#22c55e" />
+    <title>AI Chat (PWA)</title>
+    <link rel="manifest" href="/chat/app.webmanifest" />
+    <link rel="icon" href="/chat/icons/icon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/chat/icons/icon-192.png" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap");
+      :root {
+        --bg: #0b1224;
+        --panel: rgba(16, 23, 42, 0.8);
+        --accent: #22c55e;
+        --accent-2: #6366f1;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Inter", system-ui, -apple-system, sans-serif;
+        background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.15), transparent 35%),
+          radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.18), transparent 30%),
+          linear-gradient(145deg, #0b1224 0%, #0f172a 40%, #0b1224 100%);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .app {
+        width: min(900px, 100%);
+        min-height: min(720px, 100vh - 1rem);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        overflow: hidden;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(10px);
+      }
+      header {
+        padding: 1rem 1.25rem 0.75rem 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .brand {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent-2), var(--accent));
+        display: grid;
+        place-items: center;
+        box-shadow: 0 10px 25px rgba(34, 197, 94, 0.35);
+      }
+      .brand svg {
+        width: 24px;
+        height: 24px;
+        fill: #0b1224;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin: 0.2rem 0 0;
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.3rem;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 0.85rem;
+      }
+      .chip .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      .chip.online .dot {
+        background: #22c55e;
+      }
+      .chip.offline .dot {
+        background: #f97316;
+      }
+      .actions {
+        margin-left: auto;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      button {
+        border: none;
+        border-radius: 12px;
+        padding: 0.65rem 0.95rem;
+        font-weight: 700;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+      }
+      button.primary {
+        background: linear-gradient(135deg, var(--accent), #4ade80);
+        color: #0b1224;
+        box-shadow: 0 10px 20px rgba(34, 197, 94, 0.35);
+      }
+      button.ghost {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      button:not(:disabled):hover {
+        transform: translateY(-1px);
+      }
+      .status-bar {
+        padding: 0.6rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(34, 197, 94, 0.07);
+        color: #bbf7d0;
+        font-size: 0.9rem;
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+      }
+      .status-bar.hidden {
+        display: none;
+      }
+      .status-bar .emoji {
+        font-size: 1.1rem;
+      }
+      main {
+        position: relative;
+        overflow: hidden;
+      }
+      .chat-log {
+        height: 100%;
+        overflow-y: auto;
+        padding: 1rem 1.25rem 6.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        scroll-behavior: smooth;
+      }
+      .msg {
+        max-width: 82%;
+        padding: 0.75rem 0.9rem;
+        border-radius: 16px;
+        line-height: 1.45;
+        font-size: 0.98rem;
+        word-break: break-word;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      }
+      .msg.user {
+        margin-left: auto;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(34, 197, 94, 0.9));
+        color: #0b1224;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+      .msg.assistant {
+        margin-right: auto;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .msg .meta {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        margin-top: 0.35rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .msg .meta .pill {
+        padding: 0.1rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .composer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 0.85rem 1rem 1rem;
+        background: linear-gradient(180deg, rgba(11, 18, 36, 0.7), #0b1224 40%);
+        border-top: 1px solid var(--border);
+        display: grid;
+        gap: 0.65rem;
+      }
+      .inputs {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.6rem;
+      }
+      label {
+        font-size: 0.85rem;
+        color: var(--muted);
+        display: block;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        padding: 0.75rem 0.8rem;
+        font-size: 1rem;
+        outline: none;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: rgba(34, 197, 94, 0.6);
+        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.12);
+      }
+      textarea {
+        min-height: 58px;
+        resize: none;
+        line-height: 1.45;
+      }
+      .composer-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .ghost.small {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+      }
+      .install-hint {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      @media (max-width: 720px) {
+        body {
+          padding: 0.5rem;
+        }
+        .app {
+          min-height: calc(100vh - 1rem);
+          border-radius: 14px;
+        }
+        header {
+          padding: 0.85rem 1rem 0.65rem;
+        }
+        .chat-log {
+          padding: 0.75rem 0.9rem 6.5rem;
+        }
+        .msg {
+          max-width: 92%;
+        }
+        .composer {
+          padding: 0.75rem 0.9rem 0.9rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div class="brand" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path
+              d="M11 2h2l-1 6h4l-6 14 1-8H7l4-12Z"
+            />
+          </svg>
+        </div>
+        <div>
+          <h1>AI Chat</h1>
+          <p class="subtitle">Installable, offline-friendly assistant for owners and crews.</p>
+          <div class="chip-row">
+            <span id="connection-chip" class="chip offline">
+              <span class="dot"></span>
+              <span id="connection-text">Offline</span>
+            </span>
+            <span class="chip" id="backend-chip">Backend: <span id="backend-label">N/A</span></span>
+            <span class="chip" id="business-chip" title="Uses X-API-Key or widget token">
+              Tenant: <span id="tenant-label">default</span>
+            </span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost small" id="install-btn" type="button">Install app</button>
+          <button class="ghost small" id="reset-btn" type="button">Reset chat</button>
+        </div>
+      </header>
+      <div id="status-bar" class="status-bar hidden">
+        <span class="emoji">📡</span>
+        <span id="status-text">Offline. Messages will queue.</span>
+      </div>
+      <main>
+        <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
+        <div class="composer">
+          <div class="inputs">
+            <div class="form-row">
+              <label>
+                API Key (X-API-Key)
+                <input id="api-key-input" type="password" autocomplete="off" placeholder="Optional tenant key" />
+              </label>
+              <label>
+                Widget Token (X-Widget-Token)
+                <input id="widget-token-input" type="text" autocomplete="off" placeholder="Optional widget token" />
+              </label>
+            </div>
+            <textarea id="chat-input" placeholder="Ask for schedule, status, or CRM updates..." aria-label="Message"></textarea>
+          </div>
+          <div class="composer-actions">
+            <button class="primary" id="send-btn" type="button">Send</button>
+            <button class="ghost" id="save-auth-btn" type="button">Save tokens</button>
+            <span class="install-hint" id="install-hint">Add to home screen for faster access.</span>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <template id="msg-template">
+      <div class="msg">
+        <div class="text"></div>
+        <div class="meta">
+          <span class="pill role"></span>
+          <span class="state"></span>
+        </div>
+      </div>
+    </template>
+
+    <script>
+      const DEFAULT_BACKEND = "http://localhost:8000";
+      const chatLog = document.getElementById("chat-log");
+      const connectionChip = document.getElementById("connection-chip");
+      const connectionText = document.getElementById("connection-text");
+      const backendLabel = document.getElementById("backend-label");
+      const tenantLabel = document.getElementById("tenant-label");
+      const statusBar = document.getElementById("status-bar");
+      const statusText = document.getElementById("status-text");
+      const sendBtn = document.getElementById("send-btn");
+      const chatInput = document.getElementById("chat-input");
+      const apiKeyInput = document.getElementById("api-key-input");
+      const widgetTokenInput = document.getElementById("widget-token-input");
+      const saveAuthBtn = document.getElementById("save-auth-btn");
+      const resetBtn = document.getElementById("reset-btn");
+      const installBtn = document.getElementById("install-btn");
+      const installHint = document.getElementById("install-hint");
+      const messageTemplate = document.getElementById("msg-template");
+
+      let backendBase = DEFAULT_BACKEND;
+      let conversationId = localStorage.getItem("chat_conversation_id");
+      let queuedStart = false;
+      let deferredPrompt = null;
+
+      const pendingMessages = new Map(); // clientMessageId -> element
+      installBtn.disabled = true;
+
+      function resolveBackend() {
+        try {
+          const params = new URLSearchParams(window.location.search || "");
+          const fromQuery = params.get("backend_base");
+          if (fromQuery) return fromQuery;
+        } catch (e) {}
+        if (window.BACKEND_BASE_URL) return window.BACKEND_BASE_URL;
+        return DEFAULT_BACKEND;
+      }
+
+      function updateConnectionUI() {
+        const online = navigator.onLine;
+        connectionChip.classList.toggle("online", online);
+        connectionChip.classList.toggle("offline", !online);
+        connectionText.textContent = online ? "Online" : "Offline";
+        statusBar.classList.toggle("hidden", online);
+        if (!online) {
+          statusText.textContent = "Offline. Messages will queue and send when back online.";
+        } else {
+          postToServiceWorker({ type: "flush-queue" });
+        }
+      }
+
+      function authHeaders() {
+        const headers = { "Content-Type": "application/json" };
+        const apiKey = localStorage.getItem("chat_api_key") || apiKeyInput.value.trim();
+        const widgetToken = localStorage.getItem("chat_widget_token") || widgetTokenInput.value.trim();
+        if (apiKey) headers["X-API-Key"] = apiKey;
+        if (widgetToken) headers["X-Widget-Token"] = widgetToken;
+        return headers;
+      }
+
+      function setTenantLabel() {
+        const token = localStorage.getItem("chat_widget_token") || widgetTokenInput.value.trim();
+        const apiKey = localStorage.getItem("chat_api_key") || apiKeyInput.value.trim();
+        tenantLabel.textContent = token ? "widget-token" : apiKey ? "api-key" : "default";
+      }
+
+      function appendMessage(role, text, state = "live", clientMessageId = null) {
+        const node = messageTemplate.content.firstElementChild.cloneNode(true);
+        node.classList.add(role);
+        node.querySelector(".text").textContent = text;
+        node.querySelector(".role").textContent = role === "user" ? "You" : "Assistant";
+        node.querySelector(".state").textContent =
+          state === "queued" ? "Queued" : state === "sending" ? "Sending..." : "";
+        if (clientMessageId) {
+          pendingMessages.set(clientMessageId, node);
+          node.dataset.clientMessageId = clientMessageId;
+        }
+        chatLog.appendChild(node);
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      function updatePendingMessage(clientMessageId, newState, extraText = null) {
+        const node = pendingMessages.get(clientMessageId);
+        if (!node) return;
+        const stateEl = node.querySelector(".state");
+        stateEl.textContent = newState || "";
+        if (extraText) {
+          const textEl = node.querySelector(".text");
+          textEl.textContent = extraText;
+        }
+        if (!newState) {
+          pendingMessages.delete(clientMessageId);
+        }
+      }
+
+      async function registerServiceWorker() {
+        if (!("serviceWorker" in navigator)) {
+          installHint.textContent = "Browser does not support PWAs.";
+          return;
+        }
+        try {
+          const reg = await navigator.serviceWorker.register("/chat/sw.js", {
+            scope: "/chat/",
+          });
+          navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
+          return reg;
+        } catch (err) {
+          console.error("Service worker registration failed", err);
+        }
+      }
+
+      async function ensureConversationOnline() {
+        if (conversationId && !conversationId.startsWith("offline-")) {
+          return conversationId;
+        }
+        const res = await fetch(`${backendBase}/v1/widget/start`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) {
+          throw new Error("Failed to start chat session");
+        }
+        const data = await res.json();
+        conversationId = data.conversation_id || data.conversationId || data.id;
+        localStorage.setItem("chat_conversation_id", conversationId);
+        if (data.reply_text) {
+          appendMessage("assistant", data.reply_text);
+        }
+        queuedStart = false;
+        return conversationId;
+      }
+
+      function queueStartIfNeeded() {
+        if (conversationId && !conversationId.startsWith("offline-")) return;
+        if (!conversationId) {
+          conversationId = `offline-${crypto.randomUUID()}`;
+        }
+        if (queuedStart) return;
+        queuedStart = true;
+        postToServiceWorker({
+          type: "queue-chat",
+          kind: "start",
+          backendBase,
+          headers: authHeaders(),
+          placeholderId: conversationId,
+          clientMessageId: `start-${conversationId}`,
+          payload: {},
+        });
+        appendMessage("assistant", "We will start your session once you're back online.", "queued");
+      }
+
+      function postToServiceWorker(payload) {
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage(payload);
+        }
+      }
+
+      async function sendMessageOnline(text, clientMessageId) {
+        await ensureConversationOnline();
+        const res = await fetch(`${backendBase}/v1/widget/${conversationId}/message`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) {
+          throw new Error("Message send failed");
+        }
+        const data = await res.json();
+        appendMessage("assistant", data.reply_text || "Message received.");
+        updatePendingMessage(clientMessageId, "");
+      }
+
+      async function handleSend() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        chatInput.value = "";
+        const clientMessageId = crypto.randomUUID();
+        appendMessage("user", text, navigator.onLine ? "sending" : "queued", clientMessageId);
+
+        if (!navigator.onLine) {
+          queueStartIfNeeded();
+          postToServiceWorker({
+            type: "queue-chat",
+            kind: "message",
+            backendBase,
+            headers: authHeaders(),
+            placeholderId: conversationId || `offline-${crypto.randomUUID()}`,
+            conversationId: conversationId || null,
+            clientMessageId,
+            payload: { text },
+          });
+          statusText.textContent = "Queued message. It will send when connection resumes.";
+          statusBar.classList.remove("hidden");
+          return;
+        }
+
+        try {
+          await sendMessageOnline(text, clientMessageId);
+        } catch (err) {
+          updatePendingMessage(clientMessageId, "Failed to send");
+          statusText.textContent = "Send failed. Try again or check your network.";
+          statusBar.classList.remove("hidden");
+        }
+      }
+
+      function resetChat() {
+        conversationId = null;
+        queuedStart = false;
+        localStorage.removeItem("chat_conversation_id");
+        chatLog.innerHTML = "";
+        appendMessage("assistant", "Reset complete. Ask me anything when you're ready.");
+      }
+
+      function handleServiceWorkerMessage(event) {
+        const data = event.data || {};
+        if (data.type === "chat-response") {
+          if (data.conversationId) {
+            conversationId = data.conversationId;
+            localStorage.setItem("chat_conversation_id", conversationId);
+          }
+          if (data.clientMessageId) {
+            updatePendingMessage(data.clientMessageId, "");
+          }
+          if (data.replyText) {
+            appendMessage("assistant", data.replyText);
+          }
+        } else if (data.type === "queue-error") {
+          statusText.textContent = data.message || "Background sync failed.";
+          statusBar.classList.remove("hidden");
+        } else if (data.type === "queue-status") {
+          statusText.textContent = data.message;
+          statusBar.classList.toggle("hidden", !data.message);
+        }
+      }
+
+      function loadSavedTokens() {
+        try {
+          const params = new URLSearchParams(window.location.search || "");
+          const fromQueryKey = params.get("api_key");
+          const fromQueryWidget = params.get("widget_token");
+          if (fromQueryKey) {
+            localStorage.setItem("chat_api_key", fromQueryKey);
+          }
+          if (fromQueryWidget) {
+            localStorage.setItem("chat_widget_token", fromQueryWidget);
+          }
+        } catch (e) {}
+        const savedKey = localStorage.getItem("chat_api_key");
+        const savedWidget = localStorage.getItem("chat_widget_token");
+        if (savedKey) apiKeyInput.value = savedKey;
+        if (savedWidget) widgetTokenInput.value = savedWidget;
+        setTenantLabel();
+      }
+
+      function saveTokens() {
+        localStorage.setItem("chat_api_key", apiKeyInput.value.trim());
+        localStorage.setItem("chat_widget_token", widgetTokenInput.value.trim());
+        setTenantLabel();
+        statusText.textContent = "Saved tokens locally for reuse.";
+        statusBar.classList.remove("hidden");
+      }
+
+      function setupInstallPrompt() {
+        window.addEventListener("beforeinstallprompt", (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+          installHint.textContent = "Install for faster access and offline support.";
+          installBtn.disabled = false;
+        });
+        installBtn.addEventListener("click", async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          const choice = await deferredPrompt.userChoice;
+          if (choice.outcome === "accepted") {
+            installHint.textContent = "Installed. You can launch from your home screen.";
+          }
+          deferredPrompt = null;
+        });
+      }
+
+      async function init() {
+        backendBase = resolveBackend();
+        backendLabel.textContent = backendBase.replace(/^https?:\/\//, "");
+        updateConnectionUI();
+        window.addEventListener("online", updateConnectionUI);
+        window.addEventListener("offline", updateConnectionUI);
+        loadSavedTokens();
+        await registerServiceWorker();
+        try {
+          if (navigator.onLine) {
+            await ensureConversationOnline();
+          } else {
+            appendMessage("assistant", "You're offline. I'll queue your session and replies.");
+            queueStartIfNeeded();
+          }
+        } catch (err) {
+          statusText.textContent = "Could not start chat. Check backend availability.";
+          statusBar.classList.remove("hidden");
+        }
+        setupInstallPrompt();
+      }
+
+      sendBtn.addEventListener("click", handleSend);
+      chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
+      });
+      saveAuthBtn.addEventListener("click", saveTokens);
+      resetBtn.addEventListener("click", resetChat);
+
+      init();
+    </script>
+  </body>
+</html>

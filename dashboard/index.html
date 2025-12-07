@@ -16,6 +16,10 @@
       crossorigin=""
     ></script>
     <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
+      :root {
+        --nav-height: 80px;
+      }
       * {
         margin: 0;
         padding: 0;
@@ -23,10 +27,14 @@
       }
       
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.18), transparent 30%),
+          radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.2), transparent 30%),
+          linear-gradient(135deg, #0b1224 0%, #0f172a 40%, #0b1224 100%);
         min-height: 100vh;
         color: #1a202c;
+        padding-bottom: 2rem;
+        line-height: 1.5;
       }
       
       .header-bar {
@@ -156,14 +164,14 @@
       .container {
         max-width: 1400px;
         margin: 0 auto;
-        padding: 2rem;
+        padding: 1.5rem;
       }
       
       .dashboard-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 1.5rem;
-        margin-top: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1.25rem;
+        margin-top: 1rem;
       }
       
       .card {
@@ -173,6 +181,7 @@
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
         transition: all 0.3s;
         border: 1px solid rgba(0, 0, 0, 0.05);
+        scroll-margin-top: 90px;
       }
       
       .card:hover {
@@ -308,6 +317,21 @@
         margin-bottom: 1rem;
       }
 
+      .table-scroll {
+        overflow-x: auto;
+      }
+
+      .card table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .card table th,
+      .card table td {
+        text-align: left;
+        padding: 0.5rem 0.25rem;
+      }
+
       label {
         display: block;
         margin-bottom: 0.5rem;
@@ -349,6 +373,129 @@
         border-radius: 12px;
         overflow: hidden;
         border: 1px solid #e2e8f0;
+      }
+      
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 1.25rem 0 0.5rem;
+        color: #e2e8f0;
+      }
+
+      .section-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+
+      .section-eyebrow {
+        font-size: 0.7rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+
+      .section-subtitle {
+        font-size: 0.85rem;
+        color: #cbd5e1;
+      }
+
+      .section-anchor {
+        height: 1px;
+        width: 100%;
+        position: relative;
+        top: -72px;
+      }
+
+      .integration-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.6rem 0;
+        border-bottom: 1px solid #f1f5f9;
+      }
+
+      .integration-row:last-child {
+        border-bottom: none;
+      }
+
+      .integration-row .label {
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      .integration-row .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+
+      .integration-row.connected .status {
+        background: #ecfdf3;
+        color: #15803d;
+      }
+
+      .integration-row.disconnected .status {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+
+      .tips-list {
+        list-style: none;
+        display: grid;
+        gap: 0.6rem;
+        margin: 0.75rem 0 0;
+        padding: 0;
+      }
+
+      .tips-list li {
+        padding: 0.7rem 0.8rem;
+        border-radius: 10px;
+        background: #f8fafc;
+        color: #1f2937;
+        font-size: 0.9rem;
+      }
+
+      .mobile-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: var(--nav-height);
+        background: rgba(15, 23, 42, 0.95);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        display: none;
+        grid-template-columns: repeat(4, 1fr);
+        z-index: 80;
+        backdrop-filter: blur(12px);
+      }
+
+      .mobile-nav button {
+        background: none;
+        border: none;
+        color: #cbd5e1;
+        display: grid;
+        place-items: center;
+        gap: 0.25rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .mobile-nav button .icon {
+        width: 22px;
+        height: 22px;
+      }
+
+      .mobile-nav button.active {
+        color: #22c55e;
       }
       
       body.dark {
@@ -784,6 +931,54 @@
       body.dark .assistant-form {
         border-top-color: #374151;
       }
+
+      @media (max-width: 960px) {
+        .header-bar {
+          padding: 0.9rem 1.1rem;
+        }
+        .header-content {
+          gap: 1rem;
+        }
+        .container {
+          padding: 1rem;
+        }
+        .card {
+          padding: 1.25rem;
+        }
+        .dashboard-grid {
+          grid-template-columns: 1fr;
+        }
+        body {
+          padding-bottom: calc(var(--nav-height) + 10px);
+        }
+        .mobile-nav {
+          display: grid;
+        }
+        .assistant-root {
+          bottom: calc(var(--nav-height) + 0.5rem);
+        }
+      }
+
+      @media (max-width: 640px) {
+        .header-bar {
+          padding: 0.8rem 1rem;
+        }
+        .controls {
+          width: 100%;
+          justify-content: flex-start;
+        }
+        .status-bar {
+          width: 100%;
+          justify-content: flex-start;
+        }
+        body {
+          padding-bottom: calc(var(--nav-height) + 8px);
+        }
+        .card table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
     </style>
   </head>
   <body>
@@ -816,6 +1011,14 @@
 
     <!-- Main Container -->
     <div class="container">
+      <div class="section-anchor" id="section-settings"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-eyebrow">Access</div>
+          <div class="section-title">Settings & Integrations</div>
+          <div class="section-subtitle">Save your tokens and verify key connections.</div>
+        </div>
+      </div>
       <!-- Owner Authentication -->
       <div class="card">
         <div class="card-header">
@@ -844,10 +1047,33 @@
         </div>
       </div>
 
+      <div class="card" id="integration-card">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 3H3v7h7V3zm0 11H3v7h7v-7zM21 3h-7v7h7V3zm0 11h-7v7h7v-7z"/>
+            </svg>
+          </div>
+          <h2>Integration Status</h2>
+        </div>
+        <div id="integration-status-list">
+          <div class="loading">Loading integrations</div>
+        </div>
+      </div>
+
+      <div class="section-anchor" id="section-dashboard"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-eyebrow">Overview</div>
+          <div class="section-title">Owner Dashboard</div>
+          <div class="section-subtitle">Bookings, revenue signals, and assistant tips at a glance.</div>
+        </div>
+      </div>
+
       <!-- Quick Stats -->
       <div class="dashboard-grid">
         <!-- KPI Overview -->
-        <div class="card" style="grid-column: span 2;">
+        <div class="card" id="kpi-card" style="grid-column: span 2;">
           <div class="card-header">
             <div class="card-icon">
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -879,7 +1105,7 @@
         </div>
 
         <!-- Tomorrow's Schedule -->
-        <div class="card" style="grid-column: span 2;">
+        <div class="card" id="schedule-card" style="grid-column: span 2;">
           <div class="card-header">
             <div class="card-icon">
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -991,8 +1217,32 @@
           </div>
         </div>
 
+        <!-- AI Assistant Tips -->
+        <div class="card" id="ai-tips-card">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7v2h1v8l9 5 9-5V9h1V7l-10-5zm0 2.18L18.16 8 12 11.82 5.84 8 12 4.18zM4 10l7 4v6l-7-3.89V10zm16 6.11L13 20v-6l7-4v6.11z"/>
+              </svg>
+            </div>
+            <h2>AI Assistant & Tips</h2>
+          </div>
+          <p style="color: #475569; margin-top: 0.25rem;">
+            Ask the owner assistant for real-time answers, or start with these shortcuts.
+          </p>
+          <ul class="tips-list">
+            <li>"What emergencies are pending today and who's assigned?"</li>
+            <li>"Summarize bookings and revenue this week vs last week."</li>
+            <li>"Who are my top repeat customers in the last 90 days?"</li>
+          </ul>
+          <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <button id="open-assistant-cta" type="button" style="flex: 1;">Open assistant</button>
+            <button id="scroll-conversations" type="button" style="flex: 1;">View conversations</button>
+          </div>
+        </div>
+
         <!-- Conversations -->
-        <div class="card" style="grid-column: span 2;">
+        <div class="card" id="chat-card" style="grid-column: span 2;">
           <div class="card-header">
             <div class="card-icon">
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1012,6 +1262,33 @@
         </div>
       </div>
     </div>
+
+    <nav class="mobile-nav" aria-label="Primary navigation">
+      <button type="button" data-target="kpi-card">
+        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M5 3h14a2 2 0 0 1 2 2v14l-4-4H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+        </svg>
+        <span>Dashboard</span>
+      </button>
+      <button type="button" data-target="schedule-card">
+        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M7 10h5v5H7zM5 3h2V1h2v2h6V1h2v2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm14 4V5H5v2h14zM5 9v10h14V9H5z"/>
+        </svg>
+        <span>Schedule</span>
+      </button>
+      <button type="button" data-target="chat-card">
+        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M4 4h16v10H5.17L4 15.17zM2 2v18l4-4h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H2z"/>
+        </svg>
+        <span>Chat</span>
+      </button>
+      <button type="button" data-target="integration-card">
+        <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M4 4h16v2H4zm3 4h10v2H7zm-3 4h16v2H4zm3 4h10v2H7z"/>
+        </svg>
+        <span>Settings</span>
+      </button>
+    </nav>
 
     <!-- Calendar report modal -->
     <div id="calendar-report-modal" class="modal-backdrop" aria-hidden="true">
@@ -1181,6 +1458,32 @@
         const actual = tierCodeToNumber(ownerServiceTier);
         if (!required || !actual) return true;
         return actual >= required;
+      }
+
+      function renderIntegrationStatuses(list) {
+        const container = document.getElementById("integration-status-list");
+        if (!container) return;
+        if (!list || !list.length) {
+          container.innerHTML = '<div class="empty-state">No integration data</div>';
+          return;
+        }
+        container.innerHTML = list
+          .map((item) => {
+            const connected = !!item?.connected;
+            const label = escapeHtml(item?.label || item?.provider || "Integration");
+            const statusText = connected ? "Connected" : "Not connected";
+            const statusClass = connected ? "connected" : "disconnected";
+            return `
+              <div class="integration-row ${statusClass}">
+                <div>
+                  <div class="label">${label}</div>
+                  <div class="metric-label">${escapeHtml(item?.provider || "")}</div>
+                </div>
+                <span class="status">${statusText}</span>
+              </div>
+            `;
+          })
+          .join("");
       }
 
       async function loadOwnerKpis() {
@@ -1984,7 +2287,9 @@
             labelEl.textContent = `Plan: ${label}`;
             labelEl.style.display = "inline-flex";
           }
+          renderIntegrationStatuses(data?.integrations || []);
         } catch (err) {
+          renderIntegrationStatuses([]);
           // On failure, keep tier unset and let features load as default.
         }
       }
@@ -2083,6 +2388,51 @@
           loadGeoMarkers();
           loadConversations();
         });
+
+        document.getElementById("open-assistant-cta")?.addEventListener("click", () => {
+          document.getElementById("owner-assistant-toggle")?.click();
+        });
+        document.getElementById("scroll-conversations")?.addEventListener("click", () => {
+          const chatCard = document.getElementById("chat-card");
+          if (chatCard) {
+            chatCard.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
+
+      function initMobileNav() {
+        const buttons = Array.from(document.querySelectorAll(".mobile-nav button[data-target]"));
+        if (!buttons.length) return;
+
+        const setActive = (btn) => {
+          buttons.forEach((b) => b.classList.toggle("active", b === btn));
+        };
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting && entry.target.__navButton) {
+                setActive(entry.target.__navButton);
+              }
+            });
+          },
+          { rootMargin: "-140px 0px -40% 0px", threshold: 0.1 }
+        );
+
+        buttons.forEach((btn) => {
+          const targetId = btn.dataset.target;
+          const target = targetId ? document.getElementById(targetId) : null;
+          if (target) {
+            target.__navButton = btn;
+            observer.observe(target);
+          }
+          btn.addEventListener("click", () => {
+            if (target) {
+              target.scrollIntoView({ behavior: "smooth", block: "start" });
+              setActive(btn);
+            }
+          });
+        });
       }
 
       window.addEventListener("DOMContentLoaded", () => {
@@ -2090,6 +2440,7 @@
         initAuth();
         initThemeToggle();
         initButtons();
+        initMobileNav();
         initCalendarModal();
         initOwnerAssistant();
         loadOwnerOnboardingProfile();

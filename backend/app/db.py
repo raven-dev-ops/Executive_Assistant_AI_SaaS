@@ -136,7 +136,83 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN integration_twilio_status VARCHAR(32) NULL"
                     )
+                if "integration_qbo_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN integration_qbo_status VARCHAR(32) NULL"
+                    )
+                if "qbo_realm_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN qbo_realm_id VARCHAR(128) NULL"
+                    )
+                if "qbo_access_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN qbo_access_token TEXT NULL"
+                    )
+                if "qbo_refresh_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN qbo_refresh_token TEXT NULL"
+                    )
+                if "qbo_token_expires_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN qbo_token_expires_at TIMESTAMP NULL"
+                    )
+                if "onboarding_step" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN onboarding_step VARCHAR(64) NULL"
+                    )
+                if "onboarding_completed" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN onboarding_completed BOOLEAN DEFAULT 0"
+                    )
+                if "stripe_customer_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN stripe_customer_id VARCHAR(255) NULL"
+                    )
+                if "stripe_subscription_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN stripe_subscription_id VARCHAR(255) NULL"
+                    )
+                if "subscription_status" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN subscription_status VARCHAR(64) NULL"
+                    )
+                if "subscription_current_period_end" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN subscription_current_period_end TIMESTAMP NULL"
+                    )
                 conn.commit()
+            # Create user and business_users tables if missing (SQLite only).
+            existing_tables = {
+                str(row[0])
+                for row in conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "users" not in existing_tables:
+                conn.exec_driver_sql(
+                    """
+                    CREATE TABLE users (
+                        id VARCHAR(255) PRIMARY KEY,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NULL,
+                        name VARCHAR(255) NULL,
+                        active_business_id VARCHAR(255) NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            if "business_users" not in existing_tables:
+                conn.exec_driver_sql(
+                    """
+                    CREATE TABLE business_users (
+                        id VARCHAR(255) PRIMARY KEY,
+                        business_id VARCHAR(255) NOT NULL,
+                        user_id VARCHAR(255) NOT NULL,
+                        role VARCHAR(64) NOT NULL DEFAULT 'owner'
+                    )
+                    """
+                )
+            conn.commit()
     except Exception:
         # Schema drift should not prevent the app from starting; any issues
         # will surface when the new fields are actually used.

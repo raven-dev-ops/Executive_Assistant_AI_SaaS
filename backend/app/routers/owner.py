@@ -995,6 +995,12 @@ def _business_onboarding_profile_from_row(
     tts_voice = getattr(row, "tts_voice", None)
     terms_accepted = bool(getattr(row, "terms_accepted_at", None))
     privacy_accepted = bool(getattr(row, "privacy_accepted_at", None))
+    onboarding_step = getattr(row, "onboarding_step", None)
+    onboarding_completed = bool(getattr(row, "onboarding_completed", False))
+    subscription_status = getattr(row, "subscription_status", None)
+    subscription_current_period_end = getattr(
+        row, "subscription_current_period_end", None
+    )
 
     def _status(attr: str) -> bool:
         raw = (getattr(row, attr, None) or "").lower()
@@ -1026,6 +1032,11 @@ def _business_onboarding_profile_from_row(
             connected=_status("integration_twilio_status"),
             label="Twilio account",
         ),
+        OwnerIntegrationStatus(
+            provider="quickbooks",
+            connected=_status("integration_qbo_status"),
+            label="QuickBooks Online",
+        ),
     ]
 
     return OwnerOnboardingProfile(
@@ -1040,6 +1051,10 @@ def _business_onboarding_profile_from_row(
         terms_accepted=terms_accepted,
         privacy_accepted=privacy_accepted,
         tts_voice=tts_voice,
+        onboarding_step=onboarding_step,
+        onboarding_completed=onboarding_completed,
+        subscription_status=subscription_status,
+        subscription_current_period_end=subscription_current_period_end,
         integrations=integrations,
     )
 
@@ -1077,6 +1092,10 @@ class OwnerOnboardingProfile(BaseModel):
     terms_accepted: bool
     privacy_accepted: bool
     tts_voice: str | None = None
+    onboarding_step: str | None = None
+    onboarding_completed: bool = False
+    subscription_status: str | None = None
+    subscription_current_period_end: datetime | None = None
     integrations: list[OwnerIntegrationStatus]
 
 
@@ -1099,6 +1118,10 @@ def owner_onboarding_profile(
             terms_accepted=False,
             privacy_accepted=False,
             tts_voice=get_voice_for_business(business_id),
+            onboarding_step=None,
+            onboarding_completed=False,
+            subscription_status=None,
+            subscription_current_period_end=None,
             integrations=[
                 OwnerIntegrationStatus(
                     provider="linkedin", connected=False, label="LinkedIn Company"
@@ -1114,6 +1137,9 @@ def owner_onboarding_profile(
                 ),
                 OwnerIntegrationStatus(
                     provider="twilio", connected=False, label="Twilio account"
+                ),
+                OwnerIntegrationStatus(
+                    provider="quickbooks", connected=False, label="QuickBooks Online"
                 ),
             ],
         )
@@ -1134,6 +1160,7 @@ def owner_onboarding_profile(
 class OwnerOnboardingUpdateRequest(BaseModel):
     owner_name: str | None = None
     owner_email: EmailStr | None = None
+    owner_phone: str | None = None
     owner_profile_image_url: str | None = None
     service_tier: str | None = Field(
         default=None,
@@ -1142,6 +1169,13 @@ class OwnerOnboardingUpdateRequest(BaseModel):
     accept_terms: bool | None = None
     accept_privacy: bool | None = None
     tts_voice: str | None = None
+    onboarding_step: str | None = Field(
+        default=None,
+        description="Current onboarding step (e.g. 'profile', 'data', 'ai', 'complete').",
+    )
+    onboarding_completed: bool | None = Field(
+        default=None, description="Mark onboarding as completed for this tenant."
+    )
 
 
 @router.patch("/onboarding/profile", response_model=OwnerOnboardingProfile)
@@ -1176,12 +1210,18 @@ def owner_onboarding_update(
             row.owner_name = payload.owner_name
         if payload.owner_email is not None:
             row.owner_email = str(payload.owner_email)
+        if payload.owner_phone is not None:
+            row.owner_phone = payload.owner_phone
         if payload.owner_profile_image_url is not None:
             row.owner_profile_image_url = payload.owner_profile_image_url
         if payload.service_tier is not None:
             row.service_tier = payload.service_tier
         if payload.tts_voice is not None:
             row.tts_voice = payload.tts_voice
+        if payload.onboarding_step is not None:
+            row.onboarding_step = payload.onboarding_step
+        if payload.onboarding_completed is not None:
+            row.onboarding_completed = bool(payload.onboarding_completed)
 
         now = datetime.now(UTC)
         if payload.accept_terms:
@@ -1203,6 +1243,7 @@ class OwnerIntegrationsUpdateRequest(BaseModel):
     gcalendar_connected: bool | None = None
     openai_connected: bool | None = None
     twilio_connected: bool | None = None
+    quickbooks_connected: bool | None = None
 
 
 @router.patch("/onboarding/integrations", response_model=OwnerOnboardingProfile)
@@ -1233,6 +1274,7 @@ def owner_onboarding_integrations(
         _set_status(payload.gcalendar_connected, "integration_gcalendar_status")
         _set_status(payload.openai_connected, "integration_openai_status")
         _set_status(payload.twilio_connected, "integration_twilio_status")
+        _set_status(payload.quickbooks_connected, "integration_qbo_status")
 
         session.add(row)
         session.commit()

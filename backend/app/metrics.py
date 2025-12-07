@@ -59,10 +59,24 @@ class Metrics:
     total_requests: int = 0
     total_errors: int = 0
     appointments_scheduled: int = 0
+    users_registered: int = 0
     sms_sent_total: int = 0
     sms_sent_owner: int = 0
     sms_sent_customer: int = 0
     lead_followups_sent: int = 0
+    subscription_activations: int = 0
+    subscription_failures: int = 0
+    qbo_connections: int = 0
+    qbo_sync_errors: int = 0
+    contacts_imported: int = 0
+    contacts_import_errors: int = 0
+    chat_messages: int = 0
+    chat_failures: int = 0
+    chat_latency_ms_total: float = 0.0
+    chat_latency_ms_max: float = 0.0
+    chat_latency_samples: int = 0
+    billing_webhook_failures: int = 0
+    background_job_errors: int = 0
     sms_by_business: Dict[str, BusinessSmsMetrics] = field(default_factory=dict)
     twilio_voice_requests: int = 0
     twilio_voice_errors: int = 0
@@ -85,10 +99,24 @@ class Metrics:
             "total_requests": self.total_requests,
             "total_errors": self.total_errors,
             "appointments_scheduled": self.appointments_scheduled,
+            "users_registered": self.users_registered,
             "sms_sent_total": self.sms_sent_total,
             "sms_sent_owner": self.sms_sent_owner,
             "sms_sent_customer": self.sms_sent_customer,
             "lead_followups_sent": self.lead_followups_sent,
+            "subscription_activations": self.subscription_activations,
+            "subscription_failures": self.subscription_failures,
+            "qbo_connections": self.qbo_connections,
+            "qbo_sync_errors": self.qbo_sync_errors,
+            "contacts_imported": self.contacts_imported,
+            "contacts_import_errors": self.contacts_import_errors,
+            "chat_messages": self.chat_messages,
+            "chat_failures": self.chat_failures,
+            "chat_latency_ms_total": self.chat_latency_ms_total,
+            "chat_latency_ms_max": self.chat_latency_ms_max,
+            "chat_latency_samples": self.chat_latency_samples,
+            "billing_webhook_failures": self.billing_webhook_failures,
+            "background_job_errors": self.background_job_errors,
             "sms_by_business": {
                 business_id: {
                     "sms_sent_total": m.sms_sent_total,
