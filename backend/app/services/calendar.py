@@ -15,7 +15,14 @@ except Exception:  # pragma: no cover - fallback when google libs are absent.
     ServiceAccountCredentials = None  # type: ignore[assignment]
     build = None  # type: ignore[assignment]
 
-    class HttpError(Exception): ...
+    class HttpError(Exception):
+        """Lightweight stand-in for googleapiclient.errors.HttpError."""
+
+        def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            # Accept any signature shape the callers provide.
+            super().__init__(*args)
+            self.resp = kwargs.get("resp")
+            self.content = kwargs.get("content")
 
 
 from ..config import get_settings
