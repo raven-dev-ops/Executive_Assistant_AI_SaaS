@@ -85,6 +85,27 @@ def test_owner_business_endpoint_returns_default_business():
     assert body["name"]
 
 
+def test_owner_schedule_audio_handles_synthesis_error(monkeypatch):
+    appointments_repo._by_id.clear()
+    appointments_repo._by_customer.clear()
+    appointments_repo._by_business.clear()
+    customers_repo._by_id.clear()
+    customers_repo._by_phone.clear()
+    customers_repo._by_business.clear()
+
+    async def failing_synthesize(*args, **kwargs):
+        raise RuntimeError("audio fail")
+
+    monkeypatch.setattr(
+        "app.routers.owner.speech_service.synthesize", failing_synthesize
+    )
+
+    # Use a client that does not raise on server exceptions so we can assert status.
+    resilient_client = TestClient(app, raise_server_exceptions=False)
+    resp = resilient_client.get("/v1/owner/schedule/tomorrow/audio")
+    assert resp.status_code == 500
+
+
 def test_owner_reschedules_endpoint_lists_pending_reschedules():
     appointments_repo._by_id.clear()
     appointments_repo._by_customer.clear()

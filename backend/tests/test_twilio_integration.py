@@ -283,6 +283,7 @@ def test_twilio_voice_completed_call_short_circuits(monkeypatch):
     metrics.twilio_voice_requests = 0
     metrics.twilio_by_business.clear()
 
+    # Simulate a completed call that should short-circuit.
     resp = client.post(
         "/twilio/voice",
         data={
