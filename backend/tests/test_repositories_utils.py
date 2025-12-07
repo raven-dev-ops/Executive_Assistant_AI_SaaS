@@ -87,6 +87,35 @@ def test_inmemory_customer_repository_get_by_phone_scopes_business() -> None:
     assert repo.get_by_phone("555", business_id="biz-2").sms_opt_out is False
 
 
+def test_inmemory_customer_repository_upsert_updates_existing() -> None:
+    repo = repositories.InMemoryCustomerRepository()
+    original = repo.upsert(
+        name="Original",
+        phone="123",
+        email="orig@example.com",
+        address=None,
+        tags=["one", "two"],
+    )
+    updated = repo.upsert(
+        name="Updated",
+        phone="123",
+        email="new@example.com",
+        address="123 Main",
+        tags=["three"],
+    )
+    assert updated.id == original.id
+    assert updated.name == "Updated"
+    assert updated.email == "new@example.com"
+    assert updated.address == "123 Main"
+    assert updated.tags == ["three"]
+
+
+def test_inmemory_customer_repository_get_by_phone_missing_returns_none() -> None:
+    repo = repositories.InMemoryCustomerRepository()
+    assert repo.get_by_phone("missing") is None
+    repo.set_sms_opt_out("missing", business_id="biz-1", opt_out=True)
+
+
 def test_inmemory_conversation_repository_append_and_list() -> None:
     repo = repositories.InMemoryConversationRepository()
     conv1 = repo.create(channel="sms", business_id="biz-1")

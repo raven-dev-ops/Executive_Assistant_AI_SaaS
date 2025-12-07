@@ -11,6 +11,15 @@ def test_parse_name_short_phrase_fallback():
     assert parse_name("Jane Caller") == "Jane Caller"
 
 
+def test_parse_name_rejects_empty_or_long_text():
+    assert parse_name("") is None
+    assert parse_name("singleword") is None
+    assert (
+        parse_name("this phrase is way too long to be a realistic caller name so reject")
+        is None
+    )
+
+
 def test_parse_address_detects_street_like_input():
     addr = "123 Main St, Merriam KS"
     assert parse_address(addr) == addr

@@ -31,6 +31,7 @@ def test_geocode_address_returns_none_without_api_key(monkeypatch) -> None:
     monkeypatch.setattr(geo_utils, "httpx", type("H", (), {"get": fake_httpx_get}))
 
     assert geo_utils.geocode_address("123 Main St") is None
+    assert geo_utils.geocode_address("   ") is None
     assert called["count"] == 0
 
 

@@ -1,7 +1,8 @@
-import os
 import logging
+import os
+import warnings
 
-from app.config import get_settings
+from app.config import AppSettings, QuickBooksSettings, get_settings
 
 
 def _reset_settings_cache() -> None:
@@ -50,3 +51,23 @@ def test_config_validation_sanitized_log(monkeypatch, caplog):
 
     warning_msgs = [rec for rec in caplog.records if rec.levelno >= logging.WARNING]
     assert not warning_msgs, "No warnings expected for stub configuration"
+
+
+def test_quickbooks_urls_switch_with_sandbox_flag() -> None:
+    qb_sandbox = QuickBooksSettings()
+    assert qb_sandbox.authorize_base.endswith("/sandbox.qbo.intuit.com/connect/oauth2")
+    assert qb_sandbox.token_base.endswith("/oauth2/v1/tokens/bearer")
+
+    qb_live = QuickBooksSettings(sandbox=False)
+    assert qb_live.authorize_base.endswith("/appcenter.intuit.com/connect/oauth2")
+    assert qb_live.token_base.endswith("/oauth2/v1/tokens/bearer")
+
+
+def test_from_env_handles_invalid_business_hours(monkeypatch) -> None:
+    monkeypatch.setenv("BUSINESS_OPEN_HOUR", "not-a-number")
+    monkeypatch.setenv("BUSINESS_CLOSE_HOUR", "also-bad")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        settings = AppSettings.from_env()
+    assert settings.calendar.default_open_hour == 8
+    assert settings.calendar.default_close_hour == 17
