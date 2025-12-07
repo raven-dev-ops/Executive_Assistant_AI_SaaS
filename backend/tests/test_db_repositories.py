@@ -47,6 +47,13 @@ def test_db_customer_repository_upsert_and_sms_opt_out() -> None:
     assert updated is not None
     assert updated.sms_opt_out is True
 
+    # Listing APIs and missing lookups.
+    all_customers = repo.list_all()
+    assert any(c.id == customer.id for c in all_customers)
+    business_customers = repo.list_for_business(business_id)
+    assert business_customers and business_customers[0].business_id == business_id
+    assert repo.get_by_phone("missing", business_id=business_id) is None
+
 
 def test_db_appointment_repository_create_and_update() -> None:
     repo = DbAppointmentRepository()
@@ -97,6 +104,10 @@ def test_db_appointment_repository_create_and_update() -> None:
     assert updated.quote_status == "APPROVED"
     assert updated.tags == ["tag3"]
 
+    assert any(a.id == appt.id for a in repo.list_all())
+    assert any(a.id == appt.id for a in repo.list_for_business(business_id))
+    assert repo.update("missing-id", status="CANCELLED") is None
+
 
 def test_db_conversation_repository_create_append_and_get() -> None:
     repo = DbConversationRepository()
@@ -126,6 +137,7 @@ def test_db_conversation_repository_create_append_and_get() -> None:
 
     repo.append_message(conv.id, role="user", text="Hello")
     repo.append_message(conv.id, role="assistant", text="Hi there")
+    repo.append_message("missing", role="user", text="ignore")
 
     by_session = repo.get_by_session(session_id)
     assert by_session is not None
@@ -136,3 +148,6 @@ def test_db_conversation_repository_create_append_and_get() -> None:
 
     by_business = repo.list_for_business(business_id)
     assert any(c.id == conv.id for c in by_business)
+
+    all_convs = repo.list_all()
+    assert any(c.id == conv.id for c in all_convs)

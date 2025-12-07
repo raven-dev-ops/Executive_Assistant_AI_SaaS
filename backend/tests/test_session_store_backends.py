@@ -123,3 +123,36 @@ def test_session_store_prefers_redis_when_url_present(monkeypatch) -> None:
 
     store = sessions._create_session_store()
     assert isinstance(store, sessions.RedisSessionStore)
+
+
+def test_parse_iso_datetime_handles_invalid_strings() -> None:
+    assert sessions._parse_iso_datetime("") is None
+    assert sessions._parse_iso_datetime("not-a-date") is None
+    iso = "2024-01-01T12:00:00+00:00"
+    parsed = sessions._parse_iso_datetime(iso)
+    assert parsed is not None and parsed.year == 2024
+
+
+def test_session_store_handles_corrupt_payload_and_missing(monkeypatch) -> None:
+    class CorruptClient:
+        def __init__(self) -> None:
+            self._data: dict[str, str] = {}
+
+        def get(self, key: str):
+            return self._data.get(key)
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            self._data[key] = value
+
+    client = CorruptClient()
+    store = sessions.RedisSessionStore(client, key_prefix="call", ttl_seconds=60)
+
+    # Missing session id returns None.
+    assert store.get("missing") is None
+
+    # Corrupt JSON should also return None rather than raising.
+    client.setex("call:bad", 60, "not-json")
+    assert store.get("bad") is None
+
+    # end() should no-op gracefully when session is missing.
+    store.end("missing")

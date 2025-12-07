@@ -3,6 +3,38 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.services.calendar import HttpError, TimeSlot, calendar_service
+import app.services.calendar as calendar_mod
+
+
+def test_parse_closed_days_and_invalid_hours(monkeypatch):
+    # Avoid DB access.
+    monkeypatch.setattr(calendar_mod, "SQLALCHEMY_AVAILABLE", False)
+    monkeypatch.setattr(calendar_mod, "SessionLocal", None)
+
+    class DummyCalendar:
+        default_open_hour = 18
+        default_close_hour = 8
+        default_closed_days = "sat, sunday, 7, bad"
+
+    class DummySettings:
+        calendar = DummyCalendar()
+
+    monkeypatch.setattr(calendar_mod, "get_settings", lambda: DummySettings())
+
+    closed = calendar_mod._parse_closed_days("Mon, wed, 5, invalid")
+    assert closed == {0, 2, 5}
+
+    # When close_hour <= open_hour, function returns empty closed_days to signal always-open.
+    open_hour, close_hour, closed_days = calendar_mod._get_business_hours("biz-1")
+    assert open_hour == 18 and close_hour == 8
+    assert closed_days == set()
+
+    max_jobs, reserve_mornings, buffer_minutes = calendar_mod._get_business_capacity(
+        business_id=None
+    )
+    assert max_jobs is None
+    assert reserve_mornings is False
+    assert buffer_minutes == 0
 
 
 @pytest.mark.anyio
