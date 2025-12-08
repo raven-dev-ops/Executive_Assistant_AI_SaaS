@@ -15,6 +15,7 @@ from app.services.conversation import (
     _normalize_lead_source,
     calendar_service,
 )
+from app.services.calendar import TimeSlot
 from app.services.sessions import CallSession
 from app.repositories import customers_repo
 

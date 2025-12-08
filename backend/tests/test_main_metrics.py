@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Response
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 import app.main as main

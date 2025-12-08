@@ -1,5 +1,4 @@
 import logging
-import os
 import warnings
 
 from app.config import AppSettings, QuickBooksSettings, get_settings

@@ -1,9 +1,7 @@
 import hmac
 import json
 from hashlib import sha256
-from datetime import UTC, datetime, timedelta
-
-import pytest
+from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.main import app, get_settings
