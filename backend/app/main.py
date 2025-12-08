@@ -4,6 +4,7 @@ import sys
 import time
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from sqlalchemy import text
 
 from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal, init_db
@@ -258,7 +259,7 @@ def create_app() -> FastAPI:
         if db_available:
             session = SessionLocal()
             try:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
                 db_healthy = True
             except Exception:
                 db_healthy = False
