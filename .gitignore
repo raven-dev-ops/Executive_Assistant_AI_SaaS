@@ -19,3 +19,13 @@ backend/app.db
 backend/.coverage
 env.dev.twilio
 secrets/
+
+# Local artifacts and external tools
+stripe-cli/
+stripe-cli.zip
+stripekey.txt
+stripepub.txt
+gcloud-armor-*.yaml
+gcloud-armor-*.txt
+ai_telephony_service_crm.wiki.local/
+docs/
