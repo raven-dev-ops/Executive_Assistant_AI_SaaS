@@ -12,13 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and install dependencies
+# Copy project metadata and application code, then install dependencies
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
-
-# Copy application code and utilities (seed script)
 COPY app ./app
 COPY seed_demo_data.py ./seed_demo_data.py
+RUN pip install --no-cache-dir .
 
 EXPOSE 8080
 
