@@ -87,7 +87,8 @@ def test_notify_owner_uses_business_owner_phone_override() -> None:
 
     original_owner_number = sms_service._settings.owner_number  # type: ignore[attr-defined]
     try:
-        sms_service._settings.owner_number = "+19999999999"  # type: ignore[attr-defined]
+        # Clear global owner number to ensure the per-business override is used.
+        sms_service._settings.owner_number = None  # type: ignore[attr-defined]
 
         run(
             sms_service.notify_owner(

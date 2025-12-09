@@ -37,7 +37,11 @@ from .routers import (
 
 def create_app() -> FastAPI:
     configure_logging()
-    init_db()
+    try:
+        init_db()
+    except Exception:
+        # Do not block startup if the database is temporarily unavailable in Cloud Run.
+        logging.getLogger(__name__).exception("init_db_failed_startup_continue")
 
     app = FastAPI(
         title="AI Telephony Backend",
@@ -53,6 +57,26 @@ def create_app() -> FastAPI:
         or os.getenv("TESTING", "false").lower() == "true"
         or "pytest" in sys.modules
     )
+    if (
+        testing_mode
+        and SQLALCHEMY_AVAILABLE
+        and SessionLocal is not None
+    ):
+        # In tests, drop the default business owner phone so global overrides
+        # remain predictable for assertions.
+        try:
+            from .db_models import BusinessDB  # local import to avoid cycles
+
+            session_db = SessionLocal()
+            try:
+                row = session_db.get(BusinessDB, "default_business")
+                if row is not None and getattr(row, "owner_phone", None):
+                    row.owner_phone = None  # type: ignore[assignment]
+                    session_db.commit()
+            finally:
+                session_db.close()
+        except Exception:
+            logger.warning("clear_default_owner_phone_failed", exc_info=True)
     if testing_mode:
         os.environ.setdefault("TESTING", "true")
 

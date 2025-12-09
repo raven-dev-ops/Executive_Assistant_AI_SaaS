@@ -89,7 +89,12 @@ class SmsService:
     async def notify_owner(self, body: str, business_id: str | None = None) -> None:
         # Resolve per-tenant owner phone override when possible.
         to_number = self.owner_number
-        if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        if (
+            business_id
+            and not to_number
+            and SQLALCHEMY_AVAILABLE
+            and SessionLocal is not None
+        ):
             session_db = SessionLocal()
             try:
                 row = session_db.get(BusinessDB, business_id)
