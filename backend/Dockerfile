@@ -21,5 +21,6 @@ RUN pip install --no-cache-dir .
 EXPOSE 8080
 
 # Use PORT provided by Cloud Run (defaults to 8080) for health checks.
-CMD ["bash", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Use POSIX sh (present in slim base) instead of bash.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
 
