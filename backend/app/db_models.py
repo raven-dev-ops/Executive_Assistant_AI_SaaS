@@ -83,6 +83,10 @@ if SQLALCHEMY_AVAILABLE:
         name = Column(String, nullable=True)  # type: ignore[call-arg]
         active_business_id = Column(String, nullable=True)  # type: ignore[call-arg]
         created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)  # type: ignore[call-arg]
+        failed_login_attempts = Column(Integer, nullable=False, default=0)  # type: ignore[call-arg]
+        lockout_until = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        reset_token_hash = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        reset_token_expires_at = Column(DateTime, nullable=True, index=True)  # type: ignore[call-arg]
 
     class BusinessUserDB(Base):  # type: ignore[misc]
         __tablename__ = "business_users"
@@ -91,6 +95,20 @@ if SQLALCHEMY_AVAILABLE:
         business_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
         user_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
         role = Column(String, nullable=False, default="owner")  # type: ignore[call-arg]
+
+    class BusinessInviteDB(Base):  # type: ignore[misc]
+        __tablename__ = "business_invites"
+
+        id = Column(String, primary_key=True, default=_new_id)  # type: ignore[call-arg]
+        business_id = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
+        email = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
+        role = Column(String, nullable=False, default="staff")  # type: ignore[call-arg]
+        token_hash = Column(String, nullable=False, index=True)  # type: ignore[call-arg]
+        created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)  # type: ignore[call-arg]
+        expires_at = Column(DateTime, nullable=True, index=True)  # type: ignore[call-arg]
+        accepted_at = Column(DateTime, nullable=True, index=True)  # type: ignore[call-arg]
+        accepted_by_user_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        created_by_user_id = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
 
     class CustomerDB(Base):  # type: ignore[misc]
         __tablename__ = "customers"
@@ -211,6 +229,19 @@ else:  # pragma: no cover - for environments without SQLAlchemy
         business_id: str
         user_id: str
         role: str
+
+    class BusinessInviteDB:  # type: ignore[misc]
+        __tablename__ = "business_invites"
+        id: str
+        business_id: str
+        email: str
+        role: str
+        token_hash: str
+        created_at: datetime
+        expires_at: datetime
+        accepted_at: datetime | None
+        accepted_by_user_id: str | None
+        created_by_user_id: str | None
 
     class CustomerDB:  # type: ignore[misc]
         __tablename__ = "customers"

@@ -11,15 +11,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ..deps import ensure_business_active, require_owner_dashboard_auth
+from ..deps import (
+    ensure_business_active,
+    require_owner_dashboard_auth,
+    require_subscription_active,
+)
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
 from ..services.owner_assistant import owner_assistant_service
-from ..metrics import metrics
+from ..services import subscription as subscription_service
+from ..metrics import metrics, BusinessTwilioMetrics
 
 
-router = APIRouter(dependencies=[Depends(require_owner_dashboard_auth)])
+router = APIRouter(
+    dependencies=[Depends(require_owner_dashboard_auth), Depends(require_subscription_active)]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -65,6 +72,7 @@ def _build_business_context(business_id: str) -> str:
     name, tier = _business_label(business_id)
     today = datetime.now(UTC).date()
     in_7_days = today + timedelta(days=7)
+    last_30 = today - timedelta(days=30)
 
     appointments = appointments_repo.list_for_business(business_id)
     customers = customers_repo.list_for_business(business_id)
@@ -80,15 +88,36 @@ def _build_business_context(business_id: str) -> str:
         if getattr(a, "start_time", None) and today <= a.start_time.date() <= in_7_days
     ]
     emergencies_week = sum(1 for a in next_week if getattr(a, "is_emergency", False))
+    last_30d = [
+        a
+        for a in appointments
+        if getattr(a, "start_time", None) and a.start_time.date() >= last_30
+    ]
+    emergencies_30d = sum(1 for a in last_30d if getattr(a, "is_emergency", False))
     upcoming_sorted = sorted(
         upcoming, key=lambda a: getattr(a, "start_time", datetime.max)
     )[:3]
+
+    # Enrich with usage/limits and callbacks.
+    state = subscription_service.compute_state(business_id)
+    twilio_stats = metrics.twilio_by_business.get(
+        business_id, BusinessTwilioMetrics()
+    )
+    callbacks = metrics.callbacks_by_business.get(business_id, {}) or {}
+    voice_usage = twilio_stats.voice_requests if twilio_stats else 0
+    sms_usage = twilio_stats.sms_requests if twilio_stats else 0
+    total_conversations = len(conversations_repo.list_for_business(business_id))
 
     context_lines = [
         f"Business: {name} (id={business_id})",
         f"Service tier: {tier or 'Unselected'}",
         f"Customers on file: {len(customers)}",
         f"Upcoming appointments (next 7 days): {len(next_week)}, emergencies: {emergencies_week}",
+        f"Appointments last 30d: {len(last_30d)}, emergencies: {emergencies_30d}",
+        f"Conversations recorded: {total_conversations}",
+        f"Subscription status: {state.status}",
+        f"Voice calls this period: {voice_usage}, SMS: {sms_usage}",
+        f"Callback queue size: {len(callbacks)}",
     ]
 
     if upcoming_sorted:

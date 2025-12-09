@@ -13,12 +13,18 @@ from ..deps import ensure_business_active, require_owner_dashboard_auth
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
 from ..metrics import metrics
+from ..services import subscription as subscription_service
 from ..services.stripe_webhook import (
     StripeReplayError,
     StripeSignatureError,
     check_replay,
     verify_stripe_signature,
 )
+
+try:
+    import stripe  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    stripe = None
 
 
 router = APIRouter(dependencies=[Depends(require_owner_dashboard_auth)])
@@ -47,6 +53,21 @@ class BillingPortalResponse(BaseModel):
 class BillingWebhookEvent(BaseModel):
     type: str
     data: dict
+
+
+class SubscriptionStatusResponse(BaseModel):
+    status: str
+    plan: str | None = None
+    current_period_end: datetime | None = None
+    in_grace: bool = False
+    grace_remaining_days: int = 0
+    blocked: bool = False
+    message: str | None = None
+    calls_used: int = 0
+    calls_limit: int | None = None
+    appointments_used: int = 0
+    appointments_limit: int | None = None
+    enforce_subscription: bool = False
 
 
 def _plans_from_settings() -> List[Plan]:
@@ -121,6 +142,37 @@ def _update_subscription(
         session.close()
 
 
+def _get_stripe_client():
+    settings = get_settings().stripe
+    if stripe is None:
+        raise HTTPException(status_code=503, detail="Stripe SDK not installed")
+    if not settings.api_key:
+        raise HTTPException(status_code=503, detail="Stripe API key not configured")
+    stripe.api_key = settings.api_key
+    return stripe
+
+
+def _get_or_create_customer(business_id: str, email: Optional[str]) -> str:
+    session = _require_db()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Business not found")
+        if row.stripe_customer_id:
+            return row.stripe_customer_id
+        client = _get_stripe_client()
+        customer = client.Customer.create(
+            email=email,
+            metadata={"business_id": business_id},
+        )
+        row.stripe_customer_id = customer["id"]
+        session.add(row)
+        session.commit()
+        return row.stripe_customer_id  # type: ignore[return-value]
+    finally:
+        session.close()
+
+
 @router.post("/create-checkout-session", response_model=CheckoutSessionResponse)
 def create_checkout_session(
     plan_id: str,
@@ -140,24 +192,95 @@ def create_checkout_session(
             url=stripe_cfg.payment_link_url, session_id="stripe_payment_link"
         )
 
-    if stripe_cfg.use_stub or not stripe_cfg.api_key or not plan.stripe_price_id:
+    if stripe_cfg.use_stub:
         url = f"https://example.com/checkout?plan={plan.id}&business_id={business_id}"
         return CheckoutSessionResponse(url=url, session_id=f"stub_{plan.id}")
 
-    # Real Stripe call would go here; returning a placeholder for now.
-    url = f"https://checkout.stripe.com/pay/{plan.stripe_price_id}"
-    return CheckoutSessionResponse(
-        url=url, session_id=f"session_{plan.stripe_price_id}"
-    )
+    if not stripe_cfg.api_key:
+        raise HTTPException(
+            status_code=503, detail="Stripe API key not configured for live checkout"
+        )
+
+    if not plan.stripe_price_id:
+        raise HTTPException(
+            status_code=503, detail="Stripe price not configured for this plan"
+        )
+
+    client = _get_stripe_client()
+
+    try:
+        customer_id = _get_or_create_customer(business_id, customer_email)
+        session = client.checkout.Session.create(
+            mode="subscription",
+            customer=customer_id,
+            line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+            success_url=stripe_cfg.checkout_success_url,
+            cancel_url=stripe_cfg.checkout_cancel_url,
+            metadata={"business_id": business_id, "plan_id": plan.id},
+            subscription_data={
+                "metadata": {"business_id": business_id, "plan_id": plan.id}
+            },
+        )
+        return CheckoutSessionResponse(url=session.url, session_id=session.id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("stripe_checkout_failed", extra={"business_id": business_id})
+        raise HTTPException(status_code=502, detail="Stripe checkout failed") from exc
 
 
 @router.get("/portal-link", response_model=BillingPortalResponse)
-def get_billing_portal_link() -> BillingPortalResponse:
+def get_billing_portal_link(
+    business_id: str = Depends(ensure_business_active),
+) -> BillingPortalResponse:
     """Return a pre-configured Stripe billing portal URL if available."""
     stripe_cfg = get_settings().stripe
-    if not stripe_cfg.billing_portal_url:
+    if stripe_cfg.billing_portal_url:
+        return BillingPortalResponse(url=stripe_cfg.billing_portal_url)
+
+    if stripe_cfg.use_stub:
         raise HTTPException(status_code=404, detail="Billing portal not configured")
-    return BillingPortalResponse(url=stripe_cfg.billing_portal_url)
+    if not stripe_cfg.api_key:
+        raise HTTPException(status_code=503, detail="Stripe API key not configured")
+
+    client = _get_stripe_client()
+    customer_id = _get_or_create_customer(business_id, None)
+    return_url = (
+        stripe_cfg.billing_portal_return_url or stripe_cfg.checkout_success_url
+    )
+    try:
+        session = client.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=return_url,
+        )
+        return BillingPortalResponse(url=session.url)
+    except Exception as exc:
+        logger.exception("stripe_portal_failed", extra={"business_id": business_id})
+        raise HTTPException(status_code=502, detail="Stripe portal failed") from exc
+
+
+@router.get("/subscription/status", response_model=SubscriptionStatusResponse)
+async def get_subscription_status(
+    business_id: str = Depends(ensure_business_active),
+) -> SubscriptionStatusResponse:
+    """Return the current subscription state plus usage/limits for the tenant."""
+    state = subscription_service.compute_state(business_id)
+    usage = state.usage or subscription_service.UsageSnapshot()
+    settings = get_settings()
+    return SubscriptionStatusResponse(
+        status=state.status,
+        plan=state.plan,
+        current_period_end=state.current_period_end,
+        in_grace=state.in_grace,
+        grace_remaining_days=state.grace_remaining_days,
+        blocked=state.blocked,
+        message=state.message,
+        calls_used=usage.calls,
+        calls_limit=usage.call_limit,
+        appointments_used=usage.appointments,
+        appointments_limit=usage.appointment_limit,
+        enforce_subscription=getattr(settings, "enforce_subscription", False),
+    )
 
 
 @router.post("/webhook")

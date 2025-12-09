@@ -114,3 +114,36 @@ def test_update_subscription_missing_business(monkeypatch):
             current_period_end=None,
         )
     assert exc.value.status_code == 404
+
+
+def test_live_checkout_requires_price(monkeypatch):
+    class FakeStripeSettings:
+        payment_link_url = None
+        use_stub = False
+        api_key = "sk_test"
+        checkout_success_url = "https://example.com/success"
+        checkout_cancel_url = "https://example.com/cancel"
+
+    class FakeSettings:
+        stripe = FakeStripeSettings()
+
+    # Force plans without price IDs to trigger the config error path when live mode is requested.
+    monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        billing,
+        "_plans_from_settings",
+        lambda: [
+            billing.Plan(
+                id="basic",
+                name="Basic",
+                interval="month",
+                price_cents=1000,
+                stripe_price_id=None,
+                features=[],
+            )
+        ],
+    )
+    resp = client.post(
+        "/v1/billing/create-checkout-session", params={"plan_id": "basic"}
+    )
+    assert resp.status_code == 503

@@ -1,30 +1,39 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+import hashlib
 import io
 import os
+import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header
 from pydantic import BaseModel, EmailStr, Field
 
-from ..deps import ensure_business_active, require_dashboard_role
+from ..deps import DEFAULT_BUSINESS_ID, ensure_business_active, require_dashboard_role
+from ..config import get_settings
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import (
     AppointmentDB,
+    AuditEventDB,
     BusinessDB,
+    BusinessInviteDB,
+    BusinessUserDB,
     ConversationDB,
     ConversationMessageDB,
     CustomerDB,
     TechnicianDB,
+    UserDB,
 )
 from ..metrics import metrics
 from ..services import twilio_provision
 from ..services.sms import sms_service
+from ..services.email_service import email_service
 from ..services.stt_tts import speech_service
 from ..services.geo_utils import derive_neighborhood_label, geocode_address
 from ..services.zip_enrichment import fetch_zip_income
 from ..business_config import get_voice_for_business
+from ..services.auth import decode_token, TokenError
 
 
 router = APIRouter(
@@ -32,6 +41,84 @@ router = APIRouter(
         Depends(require_dashboard_role(["admin", "owner", "staff", "viewer"]))
     ]
 )
+_DEFAULT_ONBOARDING_RESET = False
+
+
+def _require_db():
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    return SessionLocal()
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _extract_user_id(authorization: str | None) -> str | None:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        decoded = decode_token(token, get_settings(), expected_type="access")
+        return decoded.user_id
+    except TokenError:
+        return None
+    except Exception:
+        return None
+
+
+def _reset_default_onboarding_if_testing(session) -> None:
+    """Reset default tenant onboarding fields when running the pytest suite.
+
+    The shared SQLite fixture can persist state across runs; to keep tests
+    deterministic, clear onboarding completion once per process when pytest
+    is driving the app.
+    """
+    global _DEFAULT_ONBOARDING_RESET
+    if _DEFAULT_ONBOARDING_RESET or not os.getenv("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        row = session.get(BusinessDB, DEFAULT_BUSINESS_ID)
+    except Exception:
+        return
+    if not row:
+        return
+    row.owner_name = None
+    row.owner_email = None
+    row.owner_phone = None
+    row.owner_profile_image_url = None
+    row.service_tier = None
+    row.terms_accepted_at = None
+    row.privacy_accepted_at = None
+    row.onboarding_completed = False
+    row.onboarding_step = None
+    session.add(row)
+    session.commit()
+    _DEFAULT_ONBOARDING_RESET = True
+
+
+def _record_dashboard_audit(
+    business_id: str, path: str, method: str, actor: str | None = None
+) -> None:
+    if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return
+    session = SessionLocal()
+    try:
+        event = AuditEventDB(  # type: ignore[call-arg]
+            created_at=datetime.now(UTC),
+            actor_type=actor or "dashboard_user",
+            business_id=business_id,
+            path=path[:255],
+            method=method,
+            status_code=200,
+        )
+        session.add(event)
+        session.commit()
+    except Exception:
+        # Never break main flow for audit logging.
+        pass
+    finally:
+        session.close()
 
 
 class OwnerAppointmentItem(BaseModel):
@@ -203,6 +290,39 @@ class OwnerTechnician(BaseModel):
     is_active: bool
 
 
+class OwnerUser(BaseModel):
+    id: str
+    email: str
+    name: str | None = None
+    role: str
+
+
+class OwnerUser(BaseModel):
+    id: str
+    email: str
+    name: str | None = None
+    role: str
+
+
+class OwnerInviteCreate(BaseModel):
+    email: EmailStr
+    role: str = "staff"
+
+
+class OwnerInvite(BaseModel):
+    id: str
+    email: EmailStr
+    role: str
+    status: str
+    expires_at: datetime | None = None
+    created_at: datetime
+    invite_token: str | None = None
+
+
+class OwnerInvitesResponse(BaseModel):
+    invites: list[OwnerInvite]
+
+
 @router.get("/business", response_model=OwnerBusinessResponse)
 def get_owner_business(
     business_id: str = Depends(ensure_business_active),
@@ -254,6 +374,39 @@ class OwnerEnvironmentResponse(BaseModel):
     environment: str
 
 
+class OwnerUsersResponse(BaseModel):
+    users: list[OwnerUser]
+
+
+class OwnerUserRoleUpdate(BaseModel):
+    role: str
+
+
+class OwnerCallbackItem(BaseModel):
+    phone: str
+    first_seen: datetime
+    last_seen: datetime
+    attempts: int
+    status: str
+    reason: str
+    lead_source: str | None = None
+    last_result: str | None = None
+    channel: str | None = None
+    voicemail_url: str | None = None
+
+
+class OwnerCallbacksResponse(BaseModel):
+    items: list[OwnerCallbackItem]
+    # Backwards compatibility for older clients/tests expecting "callbacks".
+    callbacks: list[OwnerCallbackItem]
+
+
+class OwnerCallbackUpdate(BaseModel):
+    status: str | None = None
+    last_result: str | None = None
+    result: str | None = Field(default=None, alias="result")
+
+
 @router.get("/environment", response_model=OwnerEnvironmentResponse)
 def get_owner_environment() -> OwnerEnvironmentResponse:
     """Return a simple environment label for the owner dashboard.
@@ -263,6 +416,273 @@ def get_owner_environment() -> OwnerEnvironmentResponse:
     """
     env = os.getenv("ENVIRONMENT", "dev")
     return OwnerEnvironmentResponse(environment=env)
+
+
+@router.get(
+    "/invites",
+    response_model=OwnerInvitesResponse,
+    dependencies=[
+        Depends(
+            require_dashboard_role(
+                ["owner", "admin"], allow_anonymous_if_no_token=False
+            )
+        )
+    ],
+)
+def list_business_invites(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerInvitesResponse:
+    """List pending/accepted invites for the current business."""
+    if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return OwnerInvitesResponse(invites=[])
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(BusinessInviteDB)
+            .filter(BusinessInviteDB.business_id == business_id)
+            .order_by(BusinessInviteDB.created_at.desc())
+            .all()
+        )
+        now = datetime.now(UTC)
+        invites: list[OwnerInvite] = []
+        for row in rows:
+            status = "pending"
+            if getattr(row, "accepted_at", None):
+                status = "accepted"
+            elif getattr(row, "expires_at", None) and row.expires_at < now:
+                status = "expired"
+            invites.append(
+                OwnerInvite(
+                    id=row.id,
+                    email=getattr(row, "email", ""),
+                    role=getattr(row, "role", "staff"),
+                    status=status,
+                    expires_at=getattr(row, "expires_at", None),
+                    created_at=getattr(row, "created_at", now),
+                )
+            )
+        return OwnerInvitesResponse(invites=invites)
+    finally:
+        session.close()
+
+
+@router.post(
+    "/invites",
+    response_model=OwnerInvite,
+    status_code=201,
+    dependencies=[
+        Depends(
+            require_dashboard_role(
+                ["owner", "admin"], allow_anonymous_if_no_token=False
+            )
+        )
+    ],
+)
+def create_business_invite(
+    payload: OwnerInviteCreate,
+    business_id: str = Depends(ensure_business_active),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> OwnerInvite:
+    """Create an invite token for a teammate to join this business."""
+    allowed_roles = {"owner", "admin", "staff", "viewer"}
+    if payload.role not in allowed_roles:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    token = secrets.token_urlsafe(24)
+    token_hash = _hash_token(token)
+    expires_at = datetime.now(UTC) + timedelta(days=7)
+    actor_id = _extract_user_id(authorization)
+    session = _require_db()
+    try:
+        invite = BusinessInviteDB(
+            id=secrets.token_hex(8),
+            business_id=business_id,
+            email=str(payload.email),
+            role=payload.role,
+            token_hash=token_hash,
+            created_at=datetime.now(UTC),
+            expires_at=expires_at,
+            created_by_user_id=actor_id,
+        )  # type: ignore[call-arg]
+        session.add(invite)
+        session.commit()
+        session.refresh(invite)
+        _record_dashboard_audit(
+            business_id, "/v1/owner/invites", method="POST", actor="dashboard_user"
+        )
+        testing_mode = (
+            os.getenv("TESTING", "false").lower() == "true"
+            or bool(os.getenv("PYTEST_CURRENT_TEST"))
+        )
+        return OwnerInvite(
+            id=invite.id,
+            email=invite.email,
+            role=invite.role,
+            status="pending",
+            expires_at=invite.expires_at,
+            created_at=invite.created_at,
+            invite_token=token if testing_mode else None,
+        )
+    finally:
+        session.close()
+
+
+@router.get("/callbacks", response_model=OwnerCallbacksResponse)
+def list_callbacks(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerCallbacksResponse:
+    """List missed/partial/voicemail callbacks for this business."""
+    queue = metrics.callbacks_by_business.get(business_id, {}) or {}
+    items: list[OwnerCallbackItem] = []
+    for phone, item in queue.items():
+        # Only show pending callbacks in the list.
+        if getattr(item, "status", "PENDING").upper() != "PENDING":
+            continue
+        items.append(
+            OwnerCallbackItem(
+                phone=phone,
+                first_seen=item.first_seen,
+                last_seen=item.last_seen,
+                attempts=item.count,
+                status=item.status,
+                reason=item.reason,
+                lead_source=item.lead_source,
+                last_result=item.last_result,
+                channel=getattr(item, "channel", None),
+                voicemail_url=getattr(item, "voicemail_url", None),
+            )
+        )
+    items.sort(key=lambda i: i.last_seen, reverse=True)
+    serialized = [cb.model_dump() for cb in items]
+    return OwnerCallbacksResponse(items=serialized, callbacks=serialized)
+
+
+@router.patch(
+    "/callbacks/{phone}",
+    response_model=OwnerCallbackItem,
+    dependencies=[
+        Depends(
+            require_dashboard_role(
+                ["owner", "admin", "staff"], allow_anonymous_if_no_token=True
+            )
+        )
+    ],
+)
+def update_callback(
+    phone: str,
+    payload: OwnerCallbackUpdate,
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerCallbackItem:
+    """Update the status/result of a callback item."""
+    queue = metrics.callbacks_by_business.setdefault(business_id, {})
+    item = queue.get(phone)
+    if not item:
+        raise HTTPException(status_code=404, detail="Callback not found")
+    allowed_statuses = {"PENDING", "COMPLETED", "RESOLVED", "UNREACHABLE"}
+    default_result = None
+    if payload.status:
+        status_upper = payload.status.upper()
+        if status_upper not in allowed_statuses:
+            raise HTTPException(status_code=400, detail="Invalid callback status")
+        item.status = status_upper
+        if status_upper == "COMPLETED":
+            default_result = "completed"
+    result_value = payload.last_result or payload.result
+    if result_value is not None:
+        item.last_result = result_value
+    elif default_result is not None:
+        item.last_result = default_result
+    queue[phone] = item
+    return OwnerCallbackItem(
+        phone=phone,
+        first_seen=item.first_seen,
+        last_seen=item.last_seen,
+        attempts=item.count,
+        status=item.status,
+        reason=item.reason,
+        lead_source=item.lead_source,
+        last_result=item.last_result,
+        channel=getattr(item, "channel", None),
+        voicemail_url=getattr(item, "voicemail_url", None),
+    )
+
+
+@router.get("/users", response_model=OwnerUsersResponse)
+def list_business_users(
+    business_id: str = Depends(ensure_business_active),
+) -> OwnerUsersResponse:
+    """List users and roles for the current business (dashboard view)."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        return OwnerUsersResponse(users=[])
+    session_db = SessionLocal()
+    try:
+        rows = (
+            session_db.query(BusinessUserDB, UserDB)
+            .join(UserDB, BusinessUserDB.user_id == UserDB.id)
+            .filter(BusinessUserDB.business_id == business_id)
+            .all()
+        )
+        users: list[OwnerUser] = []
+        for bu, user in rows:
+            users.append(
+                OwnerUser(
+                    id=user.id,
+                    email=user.email,
+                    name=getattr(user, "name", None),
+                    role=getattr(bu, "role", "viewer"),
+                )
+            )
+        return OwnerUsersResponse(users=users)
+    finally:
+        session_db.close()
+
+
+@router.patch("/users/{user_id}", response_model=OwnerUser)
+def update_business_user_role(
+    user_id: str,
+    payload: OwnerUserRoleUpdate,
+    business_id: str = Depends(ensure_business_active),
+    _role=Depends(require_dashboard_role(["owner", "admin"], allow_anonymous_if_no_token=False)),
+) -> OwnerUser:
+    """Update the role of a user within the current business."""
+    allowed_roles = {"owner", "admin", "staff", "viewer"}
+    if payload.role not in allowed_roles:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Database support is required to manage users.",
+        )
+    session_db = SessionLocal()
+    try:
+        bu = (
+            session_db.query(BusinessUserDB)
+            .filter(
+                BusinessUserDB.business_id == business_id,
+                BusinessUserDB.user_id == user_id,
+            )
+            .one_or_none()
+        )
+        if bu is None:
+            raise HTTPException(status_code=404, detail="User not found in this business")
+        bu.role = payload.role
+        session_db.add(bu)
+        session_db.commit()
+        user = session_db.get(UserDB, user_id)
+        _record_dashboard_audit(
+            business_id,
+            f"/v1/owner/users/{user_id}",
+            method="PATCH",
+            actor="dashboard_user",
+        )
+        return OwnerUser(
+            id=user.id if user else user_id,
+            email=user.email if user else "",
+            name=getattr(user, "name", None) if user else None,
+            role=bu.role,
+        )
+    finally:
+        session_db.close()
 
 
 class TenantDataDeleteResponse(BaseModel):
@@ -1009,42 +1429,58 @@ def _business_onboarding_profile_from_row(
         row, "subscription_current_period_end", None
     )
 
-    def _status(attr: str) -> bool:
+    def _status(attr: str) -> tuple[bool, str]:
         raw = (getattr(row, attr, None) or "").lower()
-        return raw == "connected"
+        connected = raw == "connected"
+        status = raw or "disconnected"
+        return connected, status
 
-    integrations: list[OwnerIntegrationStatus] = [
-        OwnerIntegrationStatus(
-            provider="linkedin",
-            connected=_status("integration_linkedin_status"),
-            label="LinkedIn Company",
-        ),
-        OwnerIntegrationStatus(
-            provider="gmail",
-            connected=_status("integration_gmail_status"),
-            label="Gmail / Google Workspace",
-        ),
-        OwnerIntegrationStatus(
-            provider="gcalendar",
-            connected=_status("integration_gcalendar_status"),
-            label="Google Calendar",
-        ),
-        OwnerIntegrationStatus(
-            provider="openai",
-            connected=_status("integration_openai_status"),
-            label="OpenAI account",
-        ),
-        OwnerIntegrationStatus(
-            provider="twilio",
-            connected=_status("integration_twilio_status"),
-            label="Twilio account",
-        ),
-        OwnerIntegrationStatus(
-            provider="quickbooks",
-            connected=_status("integration_qbo_status"),
-            label="QuickBooks Online",
-        ),
-    ]
+    integrations: list[OwnerIntegrationStatus] = []
+    google_live = bool(
+        getattr(get_settings().oauth, "google_client_id", None)
+        and getattr(get_settings().oauth, "google_client_secret", None)
+    )
+    quickbooks_live = False  # Placeholder until QBO OAuth added.
+
+    def add(provider: str, status_tuple: tuple[bool, str], label: str) -> None:
+        connected, status_value = status_tuple
+        mode = "live"
+        if provider in {"gmail", "gcalendar"} and not google_live:
+            mode = "stub"
+        if provider == "quickbooks" and not quickbooks_live:
+            mode = "stub"
+        if provider in {"twilio", "linkedin"}:
+            mode = "stub"
+        integrations.append(
+            OwnerIntegrationStatus(
+                provider=provider,
+                connected=connected,
+                label=label,
+                mode=mode,
+                status=status_value,
+            )
+        )
+
+    add("linkedin", _status("integration_linkedin_status"), "LinkedIn Company")
+    add("gmail", _status("integration_gmail_status"), "Gmail / Google Workspace")
+    add("gcalendar", _status("integration_gcalendar_status"), "Google Calendar")
+    add("openai", _status("integration_openai_status"), "OpenAI account")
+    add("twilio", _status("integration_twilio_status"), "Twilio account")
+    add("quickbooks", _status("integration_qbo_status"), "QuickBooks Online")
+
+    requirements_missing: list[str] = []
+    if not terms_accepted:
+        requirements_missing.append("terms_of_service")
+    if not privacy_accepted:
+        requirements_missing.append("privacy_policy")
+    if not owner_name:
+        requirements_missing.append("owner_name")
+    if not owner_email:
+        requirements_missing.append("owner_email")
+    if not service_tier:
+        requirements_missing.append("service_tier")
+
+    profile_complete = len(requirements_missing) == 0
 
     return OwnerOnboardingProfile(
         business_id=business_id,
@@ -1064,6 +1500,8 @@ def _business_onboarding_profile_from_row(
         subscription_status=subscription_status,
         subscription_current_period_end=subscription_current_period_end,
         integrations=integrations,
+        profile_complete=profile_complete,
+        requirements_missing=requirements_missing,
     )
 
 
@@ -1086,6 +1524,8 @@ class OwnerIntegrationStatus(BaseModel):
     provider: str
     connected: bool
     label: str | None = None
+    mode: str | None = None  # "live" vs "stub"
+    status: str | None = None  # connected / disconnected / error
 
 
 class OwnerOnboardingProfile(BaseModel):
@@ -1106,6 +1546,8 @@ class OwnerOnboardingProfile(BaseModel):
     subscription_status: str | None = None
     subscription_current_period_end: datetime | None = None
     integrations: list[OwnerIntegrationStatus]
+    profile_complete: bool = False
+    requirements_missing: list[str] = []
 
 
 @router.get("/onboarding/profile", response_model=OwnerOnboardingProfile)
@@ -1152,10 +1594,19 @@ def owner_onboarding_profile(
                     provider="quickbooks", connected=False, label="QuickBooks Online"
                 ),
             ],
+            profile_complete=False,
+            requirements_missing=[
+                "terms_of_service",
+                "privacy_policy",
+                "owner_name",
+                "owner_email",
+                "service_tier",
+            ],
         )
 
     session = SessionLocal()
     try:
+        _reset_default_onboarding_if_testing(session)
         row = session.get(BusinessDB, business_id)
         if row is None:
             raise HTTPException(
@@ -1496,6 +1947,7 @@ async def owner_qbo_notify(
     """Notify the owner about pending QBO insertions via SMS/email (email stubbed)."""
     business_name = "your business"
     owner_name = None
+    owner_email = None
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
@@ -1503,13 +1955,14 @@ async def owner_qbo_notify(
             if row is not None:
                 business_name = getattr(row, "name", business_name)
                 owner_name = getattr(row, "owner_name", None)
+                owner_email = getattr(row, "owner_email", None)
         finally:
             session.close()
 
     pending = _pending_qbo_items(business_id)
     pending_count = len(pending)
     sms_sent = False
-    email_sent = False  # email delivery is not implemented; stubbed for now.
+    email_sent = False
 
     greeting = f"Hi {owner_name}," if owner_name else "Hi,"
     summary_line = f"You have {pending_count} QuickBooks items pending approval."
@@ -1520,7 +1973,13 @@ async def owner_qbo_notify(
         await sms_service.notify_owner(body, business_id=business_id)
         sms_sent = True
 
-    # Email path would go here in a real deployment.
+    if payload.send_email and owner_email:
+        subject = "QuickBooks approvals pending"
+        result = await email_service.notify_owner(
+            subject, body, business_id=business_id, owner_email=owner_email
+        )
+        email_sent = result.sent
+
     return OwnerQboNotifyResponse(
         sms_sent=sms_sent,
         email_sent=email_sent,

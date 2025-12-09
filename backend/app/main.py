@@ -142,6 +142,21 @@ def create_app() -> FastAPI:
                 "multi_tenant_weak_auth_configuration",
                 extra=extra,
             )
+    env_label = os.getenv("ENVIRONMENT", "").lower()
+    if env_label in {"prod", "production"}:
+        errors: list[str] = []
+        if not getattr(settings, "owner_dashboard_token", None):
+            errors.append("OWNER_DASHBOARD_TOKEN missing in prod")
+        if not getattr(settings, "admin_api_key", None):
+            errors.append("ADMIN_API_KEY missing in prod")
+        if not getattr(settings, "require_business_api_key", False):
+            errors.append("REQUIRE_BUSINESS_API_KEY must be true in prod")
+        for err in errors:
+            logger.error("prod_config_error", extra={"detail": err})
+        if errors:
+            raise RuntimeError(
+                "Production configuration requirements not met: " + "; ".join(errors)
+            )
 
     purge_interval_hours = getattr(settings, "retention_purge_interval_hours", 24)
     if (

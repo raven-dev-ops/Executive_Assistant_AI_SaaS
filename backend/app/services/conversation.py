@@ -9,7 +9,8 @@ from .calendar import TimeSlot, calendar_service
 from .stt_tts import speech_service  # noqa: F401  (re-exported for voice router)
 from .sessions import CallSession
 from .sms import sms_service
-from .nlu import parse_address, parse_name
+from .nlu import parse_address, parse_name, classify_intent
+from . import subscription as subscription_service
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
 from ..metrics import metrics
@@ -282,6 +283,13 @@ class ConversationManager:
         session.updated_at = datetime.now(UTC)
         normalized = (text or "").strip()
         lower = normalized.lower()
+        if normalized:
+            try:
+                session.intent = await classify_intent(normalized)
+                if session.intent == "emergency":
+                    session.is_emergency = True
+            except Exception:
+                session.intent = session.intent or None
 
         # Resolve language and business context up-front.
         business_id = (
@@ -655,12 +663,16 @@ class ConversationManager:
             if session.is_emergency:
                 description_parts.append("EMERGENCY: true")
             description = "\n".join(part for part in description_parts if part)
+            await subscription_service.check_access(
+                business_id, feature="appointments", upcoming_appointments=1
+            )
             calendar_id = get_calendar_id_for_business(business_id)
             event_id = await calendar_service.create_event(
                 summary=summary,
                 slot=slot,
                 description=description,
                 calendar_id=calendar_id,
+                business_id=business_id,
             )
 
             quoted_min, quoted_max = _infer_quote_for_service_type(

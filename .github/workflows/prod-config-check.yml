@@ -1,0 +1,39 @@
+name: Prod Config Check
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  prod-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run app startup in prod mode (expect failure without secrets)
+        working-directory: backend
+        env:
+          ENVIRONMENT: prod
+        run: |
+          python - <<'PY'
+import sys
+try:
+    from app.main import create_app
+    create_app()
+except RuntimeError as exc:
+    # Expected failure when prod env vars are missing
+    print("Expected failure:", exc)
+    sys.exit(0)
+print("ERROR: app started in prod mode without required config")
+sys.exit(1)
+PY

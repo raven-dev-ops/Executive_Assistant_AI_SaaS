@@ -7,6 +7,8 @@ from typing import cast
 from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal
 from .db_models import BusinessDB, BusinessUserDB
+from .services.auth import TokenError, decode_token
+from .services import subscription as subscription_service
 
 DEFAULT_BUSINESS_ID = "default_business"
 
@@ -15,10 +17,12 @@ async def get_business_id(
     x_business_id: str | None = Header(default=None, alias="X-Business-ID"),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     x_widget_token: str | None = Header(default=None, alias="X-Widget-Token"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> str:
     """Resolve the current business/tenant ID from the request.
 
     Precedence:
+    - If Authorization bearer token is provided, prefer its business claim.
     - If X-API-Key is provided and SQLAlchemy is available, look up the Business in the DB.
       - If not found, return 401 Unauthorized.
     - Else, if X-Business-ID is provided, trust it (for legacy/single-tenant scenarios).
@@ -32,6 +36,30 @@ async def get_business_id(
     is_testing = bool(os.getenv("PYTEST_CURRENT_TEST")) or (
         os.getenv("TESTING", "false").lower() == "true"
     )
+
+    token_business_id = None
+    # FastAPI injects Header objects when not bound through dependency
+    # injection during direct function calls in tests; normalize to str.
+    if not isinstance(authorization, str):
+        authorization = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        try:
+            decoded = decode_token(token, settings, expected_type="access")
+            token_business_id = decoded.business_id
+        except TokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+
+    if token_business_id:
+        if x_business_id and x_business_id != token_business_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Business mismatch",
+            )
+        return token_business_id
 
     if (
         SQLALCHEMY_AVAILABLE
@@ -107,6 +135,26 @@ async def ensure_business_active(
     return business_id
 
 
+async def require_subscription_active(
+    business_id: str = Depends(get_business_id),
+):
+    """Optionally enforce an active subscription when configured.
+
+    Controlled by ENFORCE_SUBSCRIPTION (default false). When enabled, rejects
+    requests for tenants whose subscription_status is not "active".
+    """
+    settings = get_settings()
+    if not getattr(settings, "enforce_subscription", False):
+        return business_id
+    if not business_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing business context"
+        )
+    # Delegate the heavy lifting (grace period, limits) to the subscription service.
+    await subscription_service.check_access(business_id, feature="core")
+    return business_id
+
+
 async def require_admin_auth(
     x_admin_api_key: str | None = Header(default=None, alias="X-Admin-API-Key"),
 ) -> None:
@@ -174,21 +222,41 @@ def require_dashboard_role(
         x_owner_token: str | None = Header(default=None, alias="X-Owner-Token"),
         x_admin_api_key: str | None = Header(default=None, alias="X-Admin-API-Key"),
         x_user_id: str | None = Header(default=None, alias="X-User-ID"),
+        authorization: str | None = Header(default=None, alias="Authorization"),
         business_id: str = Depends(get_business_id),
     ) -> None:
         settings = get_settings()
         roles: list[str] = []
+        token_user_id = None
+        token_business_id = None
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1].strip()
+            try:
+                decoded = decode_token(token, settings, expected_type="access")
+            except TokenError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                )
+            token_user_id = decoded.user_id
+            token_business_id = decoded.business_id
+        if token_business_id and token_business_id != business_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Business mismatch",
+            )
+        user_id = token_user_id or x_user_id
 
         if settings.admin_api_key and x_admin_api_key == settings.admin_api_key:
             roles.append("admin")
 
-        if x_user_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        if user_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
             session = SessionLocal()
             try:
                 memberships = (
                     session.query(BusinessUserDB)
                     .filter(
-                        BusinessUserDB.user_id == x_user_id,
+                        BusinessUserDB.user_id == user_id,
                         BusinessUserDB.business_id == business_id,
                     )
                     .all()
@@ -203,7 +271,7 @@ def require_dashboard_role(
                 )
             finally:
                 session.close()
-        elif x_user_id and (not SQLALCHEMY_AVAILABLE or SessionLocal is None):
+        elif user_id and (not SQLALCHEMY_AVAILABLE or SessionLocal is None):
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="User-based access requires database support",

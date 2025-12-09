@@ -13,7 +13,7 @@ def test_signup_billing_webhook_and_onboarding_resume():
     email = f"flow-{uuid.uuid4().hex[:8]}@example.com"
     resp_reg = client.post(
         "/v1/auth/register",
-        params={"email": email, "password": "pw123"},
+        json={"email": email, "password": "pw123456!"},
     )
     assert resp_reg.status_code == 200
     user = resp_reg.json()

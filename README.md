@@ -69,6 +69,10 @@ Secret Management & Safety
   - `RATE_LIMIT_PER_MINUTE` (default 120), `RATE_LIMIT_BURST` (default 20)
   - `RATE_LIMIT_WHITELIST_IPS` for trusted sources (comma-separated).
   - Exempt paths: `/healthz`, `/readyz`, `/metrics`, `/metrics/prometheus`.
+- Authentication: passwords are bcrypt-hashed; JWT access/refresh tokens guard protected APIs; lockout + reset flows:
+  - Lockout after `AUTH_FAILED_ATTEMPT_LIMIT` (default 5) bad logins for `AUTH_LOCKOUT_MINUTES` (default 15); `Retry-After` header returned when locked.
+  - Password reset endpoints: `/v1/auth/reset/init` (issues a token; surfaced in test mode) and `/v1/auth/reset/confirm`.
+  - Token lifetimes: `AUTH_ACCESS_TOKEN_EXPIRES_MINUTES`, `AUTH_REFRESH_TOKEN_EXPIRES_MINUTES`, reset TTL `AUTH_RESET_TOKEN_EXPIRES_MINUTES` (default 30).
 - Security headers/CSP:
   - Enabled by default; override with `SECURITY_HEADERS_ENABLED=false` or custom `SECURITY_CSP`.
   - HSTS enabled by default (`SECURITY_HSTS_ENABLED`, `SECURITY_HSTS_MAX_AGE`).
@@ -336,3 +340,10 @@ Testing (key flows)
 
 - Twilio admin health coverage: `python -m pytest tests/test_business_admin.py::test_admin_twilio_health_reflects_config_and_metrics`
 - Stripe admin health coverage: `python -m pytest tests/test_business_admin.py::test_admin_stripe_health_includes_config_and_usage`
+
+
+## New in this iteration
+- Dashboard shows a Callbacks & Voicemails card populated from missed/partial calls and voicemail captures.
+- Invite flow uses tokens; login has an invite acceptance form.
+- Perf smoke tests run in CI (`.github/workflows/perf-smoke.yml`).
+- Production safety: app now raises at startup in `ENVIRONMENT=prod` without `OWNER_DASHBOARD_TOKEN`, `ADMIN_API_KEY`, and `REQUIRE_BUSINESS_API_KEY=true`.

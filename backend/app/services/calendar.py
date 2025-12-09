@@ -8,11 +8,13 @@ from typing import List, Optional
 try:  # Optional Google Calendar dependencies.
     from google.auth.transport.requests import Request
     from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+    from google.oauth2.credentials import Credentials as UserCredentials
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
 except Exception:  # pragma: no cover - fallback when google libs are absent.
     Request = None  # type: ignore[assignment]
     ServiceAccountCredentials = None  # type: ignore[assignment]
+    UserCredentials = None  # type: ignore[assignment]
     build = None  # type: ignore[assignment]
 
     class HttpError(Exception):
@@ -28,6 +30,7 @@ except Exception:  # pragma: no cover - fallback when google libs are absent.
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
+from ..services.oauth_tokens import oauth_store
 
 
 @dataclass
@@ -234,6 +237,46 @@ class CalendarService:
             # Fallback to stub behaviour if credentials are invalid/misconfigured.
             return None
 
+    def _build_user_client(self, business_id: str | None):
+        """Build a Google Calendar client using per-tenant OAuth tokens when available."""
+        if not business_id:
+            return None
+        if not (UserCredentials and Request and build):
+            return None
+        settings = get_settings()
+        tok = oauth_store.get_tokens("gcalendar", business_id)
+        if not tok:
+            return None
+        client_id = settings.oauth.google_client_id
+        client_secret = settings.oauth.google_client_secret
+        creds = UserCredentials(
+            token=tok.access_token,
+            refresh_token=tok.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+        try:
+            if creds and getattr(creds, "expired", False):
+                creds.refresh(Request())
+            return build("calendar", "v3", credentials=creds, cache_discovery=False)
+        except Exception:
+            # If refresh fails, fall back to stored tokens and stub/service account.
+            return None
+
+    def _resolve_calendar_id(self, business_id: str | None, calendar_id: str | None):
+        if calendar_id:
+            return calendar_id
+        if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+            session = SessionLocal()
+            try:
+                row = session.get(BusinessDB, business_id)
+                if row is not None and getattr(row, "calendar_id", None):
+                    return row.calendar_id  # type: ignore[return-value]
+            finally:
+                session.close()
+        return self._settings.calendar_id
+
     async def find_slots(
         self,
         duration_minutes: int,
@@ -243,7 +286,9 @@ class CalendarService:
         technician_id: str | None = None,
         address: str | None = None,
     ) -> List[TimeSlot]:
-        if not self._client:
+        # Choose client: tenant OAuth > service account > stub.
+        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        if not client:
             # Stub implementation with basic capacity and routing constraints.
             now = datetime.now(UTC)
             open_hour, close_hour, closed_days = _get_business_hours(business_id)
@@ -432,7 +477,7 @@ class CalendarService:
         )
         time_min = now.isoformat().replace("+00:00", "Z")
         time_max = (now + timedelta(days=7)).isoformat().replace("+00:00", "Z")
-        cal_id = calendar_id or self._settings.calendar_id
+        cal_id = self._resolve_calendar_id(business_id, calendar_id)
 
         busy_ranges: List[tuple[datetime, datetime]] = []
         try:
@@ -441,7 +486,7 @@ class CalendarService:
                 "timeMax": time_max,
                 "items": [{"id": cal_id}],
             }
-            freebusy = self._client.freebusy().query(body=body).execute()
+            freebusy = client.freebusy().query(body=body).execute()
             cal_busy = freebusy["calendars"][cal_id]["busy"]
             for item in cal_busy:
                 start = datetime.fromisoformat(item["start"].replace("Z", "+00:00"))
@@ -512,8 +557,10 @@ class CalendarService:
         slot: TimeSlot,
         description: str = "",
         calendar_id: str | None = None,
+        business_id: str | None = None,
     ) -> str:
-        if not self._client:
+        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        if not client:
             # Stub behaviour.
             return f"event_placeholder_{slot.start.isoformat()}"
 
@@ -524,9 +571,9 @@ class CalendarService:
             "end": {"dateTime": slot.end.isoformat(), "timeZone": "UTC"},
         }
         try:
-            cal_id = calendar_id or self._settings.calendar_id
+            cal_id = self._resolve_calendar_id(business_id, calendar_id)
             created = (
-                self._client.events().insert(calendarId=cal_id, body=event).execute()
+                client.events().insert(calendarId=cal_id, body=event).execute()
             )
             return created.get("id", f"event_placeholder_{slot.start.isoformat()}")
         except HttpError:
@@ -539,11 +586,13 @@ class CalendarService:
         summary: str | None = None,
         description: str | None = None,
         calendar_id: str | None = None,
+        business_id: str | None = None,
     ) -> bool:
-        if not self._client:
+        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        if not client:
             return False
 
-        cal_id = calendar_id or self._settings.calendar_id
+        cal_id = self._resolve_calendar_id(business_id, calendar_id)
         body: dict = {
             "start": {"dateTime": slot.start.isoformat(), "timeZone": "UTC"},
             "end": {"dateTime": slot.end.isoformat(), "timeZone": "UTC"},
@@ -555,7 +604,7 @@ class CalendarService:
 
         try:
             (
-                self._client.events()
+                client.events()
                 .patch(calendarId=cal_id, eventId=event_id, body=body)
                 .execute()
             )
@@ -567,13 +616,15 @@ class CalendarService:
         self,
         event_id: str,
         calendar_id: str | None = None,
+        business_id: str | None = None,
     ) -> bool:
-        if not self._client:
+        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        if not client:
             return False
 
-        cal_id = calendar_id or self._settings.calendar_id
+        cal_id = self._resolve_calendar_id(business_id, calendar_id)
         try:
-            self._client.events().delete(calendarId=cal_id, eventId=event_id).execute()
+            client.events().delete(calendarId=cal_id, eventId=event_id).execute()
             return True
         except HttpError:
             return False

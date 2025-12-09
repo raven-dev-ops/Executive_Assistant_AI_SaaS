@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import httpx
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -30,6 +31,7 @@ class AuthCallbackResponse(BaseModel):
     connected: bool
     redirect_url: str | None = None
     access_token: str | None = None
+    message: str | None = None
 
 
 def _ensure_db_session():
@@ -45,6 +47,38 @@ def _is_testing_mode() -> bool:
     return bool(os.getenv("PYTEST_CURRENT_TEST")) or (
         os.getenv("TESTING", "false").lower() == "true"
     )
+
+
+async def _exchange_google_code_for_tokens(
+    code: str, redirect_uri: str, scopes: str
+) -> tuple[str, str, int]:
+    settings = get_settings()
+    client_id = settings.oauth.google_client_id
+    client_secret = settings.oauth.google_client_secret
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.post(token_url, data=payload)
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google token exchange failed ({resp.status_code})",
+        )
+    data = resp.json()
+    access_token = data.get("access_token")
+    refresh_token = data.get("refresh_token") or ""
+    expires_in = int(data.get("expires_in") or 3600)
+    if not access_token:
+        raise HTTPException(status_code=502, detail="Google token missing")
+    return access_token, refresh_token, expires_in
 
 
 @router.get("/{provider}/start", response_model=AuthStartResponse)
@@ -110,12 +144,16 @@ def auth_start(
 
 
 @router.get("/{provider}/callback", response_model=AuthCallbackResponse)
-def auth_callback(
+async def auth_callback(
     provider: str,
     state: str = Query(..., description="Opaque state that encodes the business_id."),
     code: str | None = Query(
         default=None,
         description="OAuth authorization code (unused in this stub implementation).",
+    ),
+    error: str | None = Query(
+        default=None,
+        description="Optional provider error code returned during OAuth failure.",
     ),
 ) -> AuthCallbackResponse:
     """Handle provider callback, validate state, and persist tokens (simulated)."""
@@ -149,17 +187,55 @@ def auth_callback(
             "twilio": "integration_twilio_status",
         }
         attr = attr_map.get(provider_norm)
+        if error and attr:
+            setattr(row, attr, "error")
+            session.add(row)
+            session.commit()
+            return AuthCallbackResponse(
+                provider=provider_norm,
+                business_id=business_id,
+                connected=False,
+                redirect_url="/dashboard/onboarding.html",
+                message=f"Provider returned error: {error}",
+            )
+
         if attr:
             setattr(row, attr, "connected")
             session.add(row)
             session.commit()
 
-        # Simulate exchanging code for access/refresh tokens.
         access_token = f"{provider_norm}_access_{code or 'stub'}"
         refresh_token = f"{provider_norm}_refresh_{business_id}"
-        tok = oauth_store.save_tokens(
-            provider_norm, business_id, access_token, refresh_token, expires_in=3600
-        )
+        expires_in = 3600
+        try:
+            if (
+                provider_norm in {"gmail", "gcalendar"}
+                and code
+                and oauth.google_client_id
+            ):
+                redirect_uri = f"{oauth.redirect_base}/{provider_norm}/callback"
+                # Google uses space-delimited scopes; reuse provider-specific default.
+                scopes = (
+                    oauth.gmail_scopes
+                    if provider_norm == "gmail"
+                    else oauth.gcalendar_scopes
+                )
+                access_token, refresh_token, expires_in = (
+                    await _exchange_google_code_for_tokens(code, redirect_uri, scopes)
+                )
+            tok = oauth_store.save_tokens(
+                provider_norm,
+                business_id,
+                access_token,
+                refresh_token,
+                expires_in=expires_in,
+            )
+        except HTTPException as exc:
+            if attr:
+                setattr(row, attr, "error")
+                session.add(row)
+                session.commit()
+            raise exc
 
         redirect_url = "/dashboard/onboarding.html"
         return AuthCallbackResponse(

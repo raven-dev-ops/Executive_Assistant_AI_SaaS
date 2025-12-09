@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Login | AI Telephony Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap");
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.18), transparent 28%),
+          radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.2), transparent 30%),
+          linear-gradient(135deg, #0b1224 0%, #0f172a 40%, #0b1224 100%);
+        color: #e2e8f0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .shell {
+        width: min(960px, 100%);
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1rem;
+      }
+      .panel {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 18px;
+        padding: 1.5rem;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .panel h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        color: #f8fafc;
+      }
+      .panel p {
+        margin: 0.3rem 0 1rem 0;
+        color: #cbd5e1;
+      }
+      .logo-mark {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #667eea 0%, #7c3aed 100%);
+        display: grid;
+        place-items: center;
+        color: white;
+        box-shadow: 0 10px 20px rgba(102, 126, 234, 0.35);
+      }
+      label {
+        display: block;
+        color: #cbd5e1;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 0.65rem 0.8rem;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.7);
+        color: #e2e8f0;
+        font-size: 0.95rem;
+      }
+      input:focus,
+      select:focus {
+        outline: 2px solid #22c55e;
+        border-color: #22c55e;
+      }
+      .button {
+        width: 100%;
+        padding: 0.75rem;
+        border-radius: 12px;
+        border: none;
+        background: linear-gradient(135deg, #22c55e 0%, #10b981 100%);
+        color: #0b1224;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.1s ease, box-shadow 0.2s ease;
+      }
+      .button.secondary {
+        background: transparent;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        color: #e2e8f0;
+      }
+      .button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(16, 185, 129, 0.35);
+      }
+      .form-group {
+        margin-bottom: 1rem;
+      }
+      .status {
+        min-height: 20px;
+        font-size: 0.9rem;
+        color: #cbd5e1;
+      }
+      .status.error {
+        color: #fca5a5;
+      }
+      .status.success {
+        color: #86efac;
+      }
+      .footer {
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+        color: #cbd5e1;
+        text-align: center;
+      }
+      .footer a {
+        color: #a5b4fc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="panel">
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+          <div class="logo-mark">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 15.5c-1.25 0-2.45-.2-3.57-.57-.35-.11-.74-.03-1.02.24l-2.2 2.2c-2.83-1.44-5.15-3.75-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/>
+            </svg>
+          </div>
+          <div>
+            <h1>AI Telephony Dashboard</h1>
+            <p>Secure sign-in for owners and staff.</p>
+          </div>
+        </div>
+        <form id="login-form" novalidate>
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input id="login-email" name="email" type="email" placeholder="you@example.com" required />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input id="login-password" name="password" type="password" placeholder="Enter your password" required />
+          </div>
+          <div class="form-group">
+            <label for="login-business">Business ID (optional)</label>
+            <input id="login-business" name="business" type="text" placeholder="e.g. default_business" />
+          </div>
+          <button class="button" type="submit">Login</button>
+          <div id="login-status" class="status" role="status" aria-live="polite"></div>
+        </form>
+        <div class="footer">
+          <button id="to-dashboard" class="button secondary" type="button">Back to dashboard</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h1 style="margin-bottom: 0.25rem;">Register owner</h1>
+        <p style="margin-bottom: 0.75rem;">Create an owner account, then we’ll log you in.</p>
+        <form id="register-form" novalidate>
+          <div class="form-group">
+            <label for="reg-email">Email</label>
+            <input id="reg-email" name="email" type="email" placeholder="owner@example.com" required />
+          </div>
+          <div class="form-group">
+            <label for="reg-name">Name (optional)</label>
+            <input id="reg-name" name="name" type="text" placeholder="Your name" />
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input id="reg-password" name="password" type="password" placeholder="At least 8 characters" required />
+          </div>
+          <button class="button" type="submit">Register & Login</button>
+          <div id="register-status" class="status" role="status" aria-live="polite"></div>
+        </form>
+        <div class="footer" style="margin-top: 1rem;">
+          Staff? Ask your owner/admin for an invite, then log in with your email.
+        </div>
+      </div>
+      <div class="panel">
+        <h1 style="margin-bottom: 0.25rem;">Accept invite</h1>
+        <p style="margin-bottom: 0.75rem;">Join your team by pasting the invite token.</p>
+        <form id="invite-form" novalidate>
+          <div class="form-group">
+            <label for="invite-token">Invite token</label>
+            <input id="invite-token" name="token" type="text" placeholder="paste your invite token" required />
+          </div>
+          <div class="form-group">
+            <label for="invite-name">Name</label>
+            <input id="invite-name" name="name" type="text" placeholder="Your name" />
+          </div>
+          <div class="form-group">
+            <label for="invite-password">Password</label>
+            <input id="invite-password" name="password" type="password" placeholder="Choose a password" required />
+          </div>
+          <button class="button" type="submit">Accept invite & Login</button>
+          <div id="invite-status" class="status" role="status" aria-live="polite"></div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module">
+      const DEFAULT_BACKEND_BASE = "http://localhost:8000";
+      const backendBase = DEFAULT_BACKEND_BASE;
+
+      function persistSession(data) {
+        if (!data) return;
+        const user = data.user || {};
+        localStorage.setItem("owner_access_token", data.access_token || "");
+        localStorage.setItem("owner_refresh_token", data.refresh_token || "");
+        if (user.email) localStorage.setItem("owner_user_email", user.email);
+        localStorage.setItem("owner_user_roles", JSON.stringify(user.roles || []));
+        if (user.id) localStorage.setItem("owner_user_id", user.id);
+        if (user.active_business_id) {
+          localStorage.setItem("owner_business_id", user.active_business_id);
+          localStorage.setItem("owner_active_business_id", user.active_business_id);
+        }
+      }
+
+      function redirectToDashboard() {
+        window.location.href = "index.html";
+      }
+
+      async function login(email, password, businessId) {
+        const res = await fetch(`${backendBase}/v1/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password,
+            business_id: businessId || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.detail || `Login failed (${res.status})`);
+        }
+        persistSession(data);
+        return data;
+      }
+
+      async function acceptInvite(token, password, name) {
+        const res = await fetch(`${backendBase}/v1/auth/invite/accept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, password, name: name || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.detail || `Invite failed (${res.status})`);
+        }
+        persistSession(data);
+        return data;
+      }
+
+      function setStatus(el, message, cls = "") {
+        if (!el) return;
+        el.textContent = message || "";
+        el.className = `status ${cls}`.trim();
+      }
+
+      document.getElementById("login-form")?.addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        const email = document.getElementById("login-email").value.trim();
+        const password = document.getElementById("login-password").value;
+        const businessId = document.getElementById("login-business").value.trim();
+        const statusEl = document.getElementById("login-status");
+        try {
+          setStatus(statusEl, "Signing in...");
+          await login(email, password, businessId);
+          setStatus(statusEl, "Signed in. Redirecting...", "success");
+          redirectToDashboard();
+        } catch (err) {
+          setStatus(statusEl, err?.message || "Unable to login.", "error");
+        }
+      });
+
+      document.getElementById("register-form")?.addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        const email = document.getElementById("reg-email").value.trim();
+        const password = document.getElementById("reg-password").value;
+        const name = document.getElementById("reg-name").value.trim();
+        const statusEl = document.getElementById("register-status");
+        try {
+          setStatus(statusEl, "Creating account...");
+          const res = await fetch(`${backendBase}/v1/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password, name: name || undefined, role: "owner" }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Register failed (${res.status})`);
+          }
+          setStatus(statusEl, "Account created. Signing in...", "success");
+          await login(email, password, data?.active_business_id);
+          redirectToDashboard();
+        } catch (err) {
+          setStatus(statusEl, err?.message || "Unable to register.", "error");
+        }
+      });
+
+      document.getElementById("invite-form")?.addEventListener("submit", async (evt) => {
+        evt.preventDefault();
+        const token = document.getElementById("invite-token").value.trim();
+        const password = document.getElementById("invite-password").value;
+        const name = document.getElementById("invite-name").value.trim();
+        const statusEl = document.getElementById("invite-status");
+        try {
+          setStatus(statusEl, "Accepting invite...");
+          await acceptInvite(token, password, name);
+          setStatus(statusEl, "Invite accepted. Redirecting...", "success");
+          redirectToDashboard();
+        } catch (err) {
+          setStatus(statusEl, err?.message || "Unable to accept invite.", "error");
+        }
+      });
+
+      document.getElementById("to-dashboard")?.addEventListener("click", redirectToDashboard);
+
+      if (localStorage.getItem("owner_access_token")) {
+        redirectToDashboard();
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const inviteToken = params.get("invite");
+      if (inviteToken) {
+        const tokenInput = document.getElementById("invite-token");
+        if (tokenInput) tokenInput.value = inviteToken;
+      }
+    </script>
+  </body>
+</html>

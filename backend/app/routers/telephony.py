@@ -3,14 +3,15 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..deps import ensure_business_active
+from ..deps import ensure_business_active, require_subscription_active
 from ..metrics import BusinessVoiceSessionMetrics, metrics
 from ..repositories import conversations_repo, customers_repo
 from ..services import conversation, sessions
+from ..services import subscription as subscription_service
 from ..business_config import get_voice_for_business
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_subscription_active)])
 logger = logging.getLogger(__name__)
 
 
@@ -56,6 +57,9 @@ async def inbound_call(
 
     A real telephony provider (e.g., Twilio) would POST here when a call starts.
     """
+    await subscription_service.check_access(
+        business_id, feature="calls", upcoming_calls=1
+    )
     # Track voice/telephony session usage.
     metrics.voice_session_requests += 1
     per_tenant = metrics.voice_sessions_by_business.setdefault(

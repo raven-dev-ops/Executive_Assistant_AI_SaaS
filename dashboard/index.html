@@ -126,6 +126,44 @@
         background: currentColor;
         animation: pulse 2s infinite;
       }
+
+      .user-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #0f172a;
+        font-weight: 600;
+        font-size: 0.85rem;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .user-chip .user-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #22c55e;
+      }
+
+      .user-chip.muted {
+        background: #f1f5f9;
+        color: #64748b;
+      }
+
+      .ghost-button {
+        background: transparent;
+        color: #1f2937;
+        border: 1px solid #e2e8f0;
+        padding: 0.45rem 0.9rem;
+        border-radius: 10px;
+      }
+
+      .ghost-button:hover {
+        background: #edf2f7;
+        color: #111827;
+      }
       
       @keyframes pulse {
         0%, 100% { opacity: 1; }
@@ -1017,6 +1055,16 @@
             <span class="status-dot"></span>
             <span data-i18n="status_connecting">Connecting...</span>
           </div>
+          <div id="user-chip" class="user-chip muted" aria-live="polite">
+            <div class="user-dot"></div>
+            <div class="user-chip-text">Signed out</div>
+          </div>
+          <div id="business-switcher" class="ghost-button" style="display: none; align-items: center; gap: 0.35rem;">
+            <span style="font-size: 0.8rem; color: #475569;">Business</span>
+            <select id="business-select" class="locale-select" style="min-width: 170px;"></select>
+          </div>
+          <button id="logout-btn" class="ghost-button" type="button" style="display: none;">Logout</button>
+          <a id="login-link-header" class="ghost-button" href="login.html">Login</a>
           <div class="controls">
             <label for="locale-select" style="font-size:0.8rem; color:#475569;" data-i18n="locale_label">Language</label>
             <select id="locale-select" class="locale-select" aria-label="Select language">
@@ -1076,6 +1124,111 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
           <small id="owner-auth-status" class="muted"></small>
           <span id="owner-plan-label" class="pill" style="display: none;">Plan: Starter</span>
+        </div>
+      </div>
+
+      <div class="card" id="user-management-card">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v1h16v-1c0-2.66-5.33-4-8-4z"/>
+            </svg>
+          </div>
+          <h2>User Management & Session</h2>
+        </div>
+        <div class="form-group">
+          <div id="user-session-summary" class="muted">Signed out. Use login to continue.</div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+            <a class="ghost-button" href="login.html">Login</a>
+            <button id="logout-btn-inline" class="ghost-button" type="button" style="display: none;">Logout</button>
+          </div>
+        </div>
+        <div class="form-group" id="staff-invite-form-wrapper">
+          <label style="font-weight: 700;">Invite staff to this business</label>
+          <form id="staff-invite-form">
+            <div class="form-group">
+              <label>
+                <small>Email</small>
+                <input id="invite-email" type="email" placeholder="crew@example.com" required />
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <small>Role</small>
+                <select id="invite-role" required>
+                  <option value="staff">Staff</option>
+                  <option value="viewer">Viewer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button type="submit" style="flex: 1; min-width: 160px;">Send Invite</button>
+              <small class="muted">Creates an invite token. Teammates set their own password.</small>
+            </div>
+            <div id="staff-invite-status" class="muted" style="margin-top: 0.35rem;"></div>
+          </form>
+        </div>
+        <div id="staff-invite-list" class="muted" style="margin-top: 0.75rem;">No invites sent yet.</div>
+        </div>
+      <div class="card" id="subscription-card">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2a5 5 0 00-5 5c0 3.5 5 9 5 9s5-5.5 5-9a5 5 0 00-5-5zm0 7a2 2 0 110-4 2 2 0 010 4z"/>
+            </svg>
+          </div>
+          <h2>Subscription & Billing</h2>
+        </div>
+        <div class="form-group">
+          <span id="subscription-pill" class="pill muted">Subscription: unknown</span>
+        </div>
+        <div class="form-group">
+          <label><small>Plan</small></label>
+          <select id="plan-select">
+            <option value="basic">Starter</option>
+            <option value="growth">Growth</option>
+            <option value="scale">Scale</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button id="start-subscription" type="button" style="min-width: 160px;">Start/Resume Subscription</button>
+          <button id="manage-billing" type="button" class="ghost-button" style="min-width: 160px;">Manage Billing</button>
+        </div>
+        <div id="subscription-status-text" class="muted" style="margin-top: 0.35rem;"></div>
+        <div id="subscription-warning" class="pill muted" style="margin-top: 0.35rem; display: none;"></div>
+        <div id="subscription-usage" class="muted" style="margin-top: 0.35rem;"></div>
+      </div>
+
+      <div class="card" id="team-card">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5C23 14.17 18.33 13 16 13z"/>
+            </svg>
+          </div>
+          <h2>Team & Roles</h2>
+        </div>
+        <div id="team-content">
+          <div class="loading">Loading team...</div>
+        </div>
+      </div>
+
+      <div class="card" id="callbacks-card">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.32.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.07 21 3 13.93 3 5c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.24 1.02l-2.21 2.2z"/>
+            </svg>
+          </div>
+          <h2>Callbacks & Voicemails</h2>
+        </div>
+        <div id="callbacks-list">
+          <div class="loading">Loading callbacks...</div>
+        </div>
+        <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button id="refresh-callbacks" type="button">Refresh</button>
+          <small class="muted">Missed/partial calls and voicemails appear here for follow-up.</small>
         </div>
       </div>
 
@@ -1407,7 +1560,15 @@
       const backendBase = DEFAULT_BACKEND_BASE;
       let apiKey = localStorage.getItem("owner_api_key") || "";
       let ownerToken = localStorage.getItem("owner_owner_token") || "";
-      let businessId = localStorage.getItem("owner_business_id") || "";
+      let businessId =
+        localStorage.getItem("owner_active_business_id") ||
+        localStorage.getItem("owner_business_id") ||
+        "";
+      let accessToken = localStorage.getItem("owner_access_token") || "";
+      let refreshToken = localStorage.getItem("owner_refresh_token") || "";
+      let userEmail = localStorage.getItem("owner_user_email") || "";
+      let userRoles = JSON.parse(localStorage.getItem("owner_user_roles") || "[]");
+      let userId = localStorage.getItem("owner_user_id") || "";
       let calendar90dData = null;
       let ownerAssistantOpen = false;
       let ownerAssistantBusy = false;
@@ -1416,6 +1577,10 @@
       let ownerServiceTier = null;
       let locale = localStorage.getItem("owner_locale") || "en";
       let connectionState = "connecting";
+      let recentInvites = [];
+      let subscriptionStatus = "unknown";
+      let subscriptionPlan = "basic";
+      let businessMemberships = [];
 
       const i18nStrings = {
         en: {
@@ -1856,17 +2021,225 @@
         }
       }
 
+      function persistSessionFromTokens(data) {
+        if (!data) return;
+        accessToken = data.access_token || "";
+        refreshToken = data.refresh_token || "";
+        const user = data.user || {};
+        userEmail = user.email || userEmail || "";
+        userRoles = Array.isArray(user.roles) ? user.roles : [];
+        userId = user.id || userId || "";
+        if (user.active_business_id) {
+          businessId = user.active_business_id;
+          localStorage.setItem("owner_business_id", businessId);
+          localStorage.setItem("owner_active_business_id", businessId);
+        }
+        localStorage.setItem("owner_access_token", accessToken);
+        localStorage.setItem("owner_refresh_token", refreshToken);
+        localStorage.setItem("owner_user_email", userEmail);
+        localStorage.setItem("owner_user_roles", JSON.stringify(userRoles || []));
+        if (userId) localStorage.setItem("owner_user_id", userId);
+      }
+
+      function clearSession(redirect = false) {
+        accessToken = "";
+        refreshToken = "";
+        userEmail = "";
+        userRoles = [];
+        userId = "";
+        businessId = "";
+        localStorage.removeItem("owner_access_token");
+        localStorage.removeItem("owner_refresh_token");
+        localStorage.removeItem("owner_user_email");
+        localStorage.removeItem("owner_user_roles");
+        localStorage.removeItem("owner_user_id");
+        localStorage.removeItem("owner_business_id");
+        localStorage.removeItem("owner_active_business_id");
+        updateUserUi();
+        if (redirect) {
+          window.location.href = "login.html";
+        }
+      }
+
+      function hasOwnerPrivileges() {
+        return userRoles.some((r) => ["owner", "admin"].includes(String(r).toLowerCase()));
+      }
+
+      function renderBusinessSwitcher() {
+        const switcher = document.getElementById("business-switcher");
+        const select = document.getElementById("business-select");
+        if (!switcher || !select) return;
+        if (!businessMemberships.length) {
+          switcher.style.display = "none";
+          select.innerHTML = "";
+          return;
+        }
+        switcher.style.display = "inline-flex";
+        select.innerHTML = businessMemberships
+          .map(
+            (m) =>
+              `<option value="${escapeHtml(m.business_id)}">${escapeHtml(m.business_name || m.business_id)} (${escapeHtml(m.role)})</option>`
+          )
+          .join("");
+        if (businessId) {
+          select.value = businessId;
+        }
+      }
+
+      function updateUserUi() {
+        const chip = document.getElementById("user-chip");
+        const logoutBtn = document.getElementById("logout-btn");
+        const logoutInline = document.getElementById("logout-btn-inline");
+        const loginLink = document.getElementById("login-link-header");
+        const sessionInfo = document.getElementById("user-session-summary");
+        const inviteWrapper = document.getElementById("staff-invite-form-wrapper");
+        const staffList = document.getElementById("staff-invite-list");
+        const subBadge = document.getElementById("subscription-pill");
+
+        const signedIn = !!accessToken;
+        const rolesLabel = userRoles.length ? `(${userRoles.join(", ")})` : "";
+        const chipText = signedIn
+          ? `Signed in as ${userEmail || "user"} ${rolesLabel}`.trim()
+          : "Signed out";
+
+        if (chip) {
+          chip.querySelector(".user-chip-text").textContent = chipText;
+          chip.classList.toggle("muted", !signedIn);
+        }
+        if (logoutBtn) logoutBtn.style.display = signedIn ? "inline-flex" : "none";
+        if (logoutInline) logoutInline.style.display = signedIn ? "inline-flex" : "none";
+        if (loginLink) loginLink.style.display = signedIn ? "none" : "inline-flex";
+        if (sessionInfo) {
+          const activeBiz = businessMemberships.find((m) => m.business_id === businessId);
+          const businessLabel = activeBiz
+            ? `${activeBiz.business_name || activeBiz.business_id} (${activeBiz.role})`
+            : businessId || "unset";
+          sessionInfo.textContent = signedIn
+            ? `Active business: ${businessLabel}`
+            : "Signed out. Use login to continue.";
+        }
+        if (inviteWrapper) inviteWrapper.style.display = hasOwnerPrivileges()
+          ? "block"
+          : "none";
+        if (staffList && !hasOwnerPrivileges()) {
+          staffList.textContent = "Staff invites require owner or admin.";
+        }
+        if (subBadge) {
+          const statusLabel = subscriptionStatus || "unknown";
+          subBadge.textContent = `Subscription: ${statusLabel}`;
+          subBadge.className = "pill";
+          if (statusLabel === "active") {
+            subBadge.classList.add("connected");
+          } else if (statusLabel === "past_due" || statusLabel === "canceled") {
+            subBadge.classList.add("disconnected");
+          } else {
+            subBadge.classList.add("muted");
+          }
+        }
+        renderBusinessSwitcher();
+      }
+
+      async function refreshAccessToken() {
+        if (!refreshToken) return false;
+        try {
+          const res = await fetch(`${backendBase}/v1/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              refresh_token: refreshToken,
+              business_id: businessId || undefined,
+            }),
+          });
+          if (!res.ok) {
+            clearSession();
+            return false;
+          }
+          const data = await res.json();
+          persistSessionFromTokens(data);
+          updateUserUi();
+          return true;
+        } catch (err) {
+          clearSession();
+          return false;
+        }
+      }
+
+      async function loadBusinesses() {
+        try {
+          const res = await authorizedFetch("/v1/auth/me/businesses");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Unable to load businesses (${res.status})`);
+          }
+          businessMemberships = Array.isArray(data?.memberships) ? data.memberships : [];
+          renderBusinessSwitcher();
+        } catch (err) {
+          businessMemberships = [];
+          renderBusinessSwitcher();
+        }
+      }
+
+      async function switchBusiness(newBusinessId) {
+        if (!newBusinessId || newBusinessId === businessId) return;
+        if (!refreshToken) return;
+        const sessionInfo = document.getElementById("user-session-summary");
+        try {
+          if (sessionInfo) sessionInfo.textContent = "Switching business...";
+          const res = await fetch(`${backendBase}/v1/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              refresh_token: refreshToken,
+              business_id: newBusinessId,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || "Unable to switch business");
+          }
+          persistSessionFromTokens(data);
+          businessId = data?.user?.active_business_id || newBusinessId;
+          updateUserUi();
+          loadTeam();
+          loadInvites();
+          loadSubscriptionStatus();
+          refreshAllData();
+        } catch (err) {
+          if (sessionInfo) sessionInfo.textContent = err?.message || "Unable to switch business.";
+        }
+      }
+
       function authHeaders() {
         const headers = {};
+        if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
         if (apiKey) headers["X-API-Key"] = apiKey;
         if (ownerToken) headers["X-Owner-Token"] = ownerToken;
         if (businessId) headers["X-Business-ID"] = businessId;
         return headers;
       }
 
-      async function fetchJson(path) {
+      async function authorizedFetch(path, init = {}) {
+        const baseInit = {
+          ...init,
+          headers: { ...(init.headers || {}), ...authHeaders() },
+        };
+        let res = await fetch(backendBase + path, baseInit);
+        if (res.status === 401 && refreshToken) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            const retryInit = {
+              ...init,
+              headers: { ...(init.headers || {}), ...authHeaders() },
+            };
+            res = await fetch(backendBase + path, retryInit);
+          }
+        }
+        return res;
+      }
+
+      async function fetchJson(path, init = {}) {
         try {
-          const res = await fetch(backendBase + path, { headers: authHeaders() });
+          const res = await authorizedFetch(path, init);
           if (!res.ok) {
             updateConnectionStatus("error");
             throw new Error("Request failed: " + res.status);
@@ -1887,6 +2260,15 @@
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#39;");
+      }
+
+      function generateTempPassword() {
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+        let pwd = "";
+        for (let i = 0; i < 12; i += 1) {
+          pwd += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return pwd;
       }
 
       function formatPercent(value) {
@@ -2449,6 +2831,8 @@
         loadServiceMetrics();
         loadGeoMarkers();
         loadConversations();
+        loadInvites();
+        loadCallbacks();
       }
 
       async function loadServiceMetrics() {
@@ -2971,17 +3355,20 @@
           if (businessInput) businessInput.value = businessId;
           if (businessId) {
             localStorage.setItem("owner_business_id", businessId);
+            localStorage.setItem("owner_active_business_id", businessId);
             if (statusEl) {
               statusEl.textContent = formatTemplate(t("business_set"), { id: businessId });
               statusEl.className = "success";
             }
           } else {
             localStorage.removeItem("owner_business_id");
+            localStorage.removeItem("owner_active_business_id");
             if (statusEl) {
               statusEl.textContent = t("business_cleared");
               statusEl.className = "muted";
             }
           }
+          updateUserUi();
         }
 
         if (businessInput) {
@@ -3045,6 +3432,331 @@
         }
       }
 
+      function renderRecentInvites() {
+        const list = document.getElementById("staff-invite-list");
+        if (!list) return;
+        if (!recentInvites.length) {
+          list.textContent = hasOwnerPrivileges()
+            ? "No invites sent yet."
+            : "Staff invites require owner or admin.";
+          return;
+        }
+        list.innerHTML = recentInvites
+          .map(
+            (invite) => `
+              <div class="metric-row">
+                <div>
+                  <div style="font-weight: 600;">${escapeHtml(invite.email)}</div>
+                  <div style="font-size: 0.75rem; color: #64748b;">${escapeHtml(invite.role)}</div>
+                  ${
+                    invite.invite_token
+                      ? `<div class="muted" style="font-size: 0.75rem; word-break: break-all;">Token: ${escapeHtml(invite.invite_token)}</div>`
+                      : ""
+                  }
+                </div>
+                <div class="pill ${invite.status === "accepted" ? "connected" : invite.status === "expired" ? "disconnected" : "muted"}" style="font-size: 0.7rem;">
+                  ${escapeHtml(invite.status || "pending")}
+                </div>
+                <div class="pill muted" style="font-size: 0.7rem;">
+                  ${invite.expires_at ? new Date(invite.expires_at).toLocaleString() : "no expiry"}
+                </div>
+              </div>`
+          )
+          .join("");
+      }
+
+      async function loadInvites() {
+        const list = document.getElementById("staff-invite-list");
+        if (list) {
+          list.textContent = hasOwnerPrivileges()
+            ? "Loading invites..."
+            : "Staff invites require owner or admin.";
+        }
+        try {
+          const res = await authorizedFetch("/v1/owner/invites");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Unable to load invites (${res.status})`);
+          }
+          recentInvites = Array.isArray(data?.invites) ? data.invites : [];
+          renderRecentInvites();
+        } catch (err) {
+          if (list) list.textContent = err?.message || "Unable to load invites.";
+        }
+      }
+
+      function renderCallbacks(items = []) {
+        const list = document.getElementById("callbacks-list");
+        if (!list) return;
+        if (!items.length) {
+          list.innerHTML = '<div class="muted">No callbacks yet.</div>';
+          return;
+        }
+        list.innerHTML = items
+          .map(
+            (cb) => `
+              <div class="metric-row" style="align-items: center; gap: 0.5rem;">
+                <div>
+                  <div style="font-weight: 700;">${escapeHtml(cb.phone || "unknown")}</div>
+                  <div class="muted" style="font-size: 0.8rem;">
+                    ${escapeHtml(cb.reason || "callback")} • Seen ${new Date(cb.last_seen).toLocaleString()}
+                  </div>
+                  ${
+                    cb.voicemail_url
+                      ? `<a href="${escapeHtml(cb.voicemail_url)}" target="_blank" class="pill">Voicemail</a>`
+                      : ""
+                  }
+                </div>
+                <div class="pill ${cb.status === "RESOLVED" ? "connected" : "muted"}">${escapeHtml(cb.status || "PENDING")}</div>
+                <button class="ghost-button" data-callback-phone="${escapeHtml(cb.phone)}">Mark resolved</button>
+              </div>
+            `
+          )
+          .join("");
+        list.querySelectorAll("[data-callback-phone]").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            const phone = e.target.getAttribute("data-callback-phone");
+            try {
+              const res = await authorizedFetch(`/v1/owner/callbacks/${encodeURIComponent(phone)}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "RESOLVED", last_result: "Handled" }),
+              });
+              if (!res.ok) {
+                throw new Error("Update failed");
+              }
+              loadCallbacks();
+            } catch (err) {
+              e.target.classList.add("error");
+            }
+          });
+        });
+      }
+
+      async function loadCallbacks() {
+        const list = document.getElementById("callbacks-list");
+        if (list) list.innerHTML = '<div class="loading">Loading callbacks...</div>';
+        try {
+          const res = await authorizedFetch("/v1/owner/callbacks");
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.detail || `Unable to load callbacks (${res.status})`);
+          const items = Array.isArray(data?.callbacks) ? data.callbacks : [];
+          renderCallbacks(items);
+        } catch (err) {
+          if (list) list.innerHTML = `<div class="error">${escapeHtml(err?.message || "Unable to load callbacks")}</div>`;
+        }
+      }
+
+      async function loadSubscriptionStatus() {
+        const statusText = document.getElementById("subscription-status-text");
+        const warning = document.getElementById("subscription-warning");
+        const usage = document.getElementById("subscription-usage");
+        try {
+          const res = await authorizedFetch("/v1/billing/subscription/status");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Unable to load subscription (${res.status})`);
+          }
+          subscriptionStatus = data?.status || "unknown";
+          subscriptionPlan = data?.plan || subscriptionPlan || "basic";
+          const select = document.getElementById("plan-select");
+          if (select && subscriptionPlan) {
+            select.value = subscriptionPlan;
+          }
+          if (statusText) {
+            const endLabel = data?.current_period_end ? new Date(data.current_period_end).toLocaleString() : "n/a";
+            statusText.textContent = `Status: ${subscriptionStatus} ? Period end: ${endLabel}`;
+          }
+          if (usage) {
+            const parts = [];
+            if (data?.calls_limit) {
+              parts.push(`Calls ${data.calls_used || 0}/${data.calls_limit}`);
+            }
+            if (data?.appointments_limit) {
+              parts.push(`Appointments ${data.appointments_used || 0}/${data.appointments_limit}`);
+            }
+            usage.textContent = parts.join(" ? ");
+          }
+          if (warning) {
+            warning.style.display = "none";
+            warning.className = "pill muted";
+            if (data?.blocked) {
+              warning.style.display = "inline-flex";
+              warning.classList.add("disconnected");
+              warning.textContent = data?.message || "Subscription inactive. Upgrade to use voice/chat.";
+            } else if (data?.in_grace) {
+              warning.style.display = "inline-flex";
+              warning.textContent = `In grace period (${data?.grace_remaining_days || 0} days remaining).`;
+            }
+          }
+        } catch (err) {
+          if (statusText) statusText.textContent = err?.message || "Unable to load subscription.";
+        } finally {
+          updateUserUi();
+        }
+      }
+
+async function loadTeam() {
+        const container = document.getElementById("team-content");
+        if (!container) return;
+        container.innerHTML = '<div class="loading">Loading team...</div>';
+        try {
+          const res = await fetchJson("/v1/owner/users");
+          const users = Array.isArray(res?.users) ? res.users : [];
+          if (!users.length) {
+            container.innerHTML = '<div class="muted">No users found for this business.</div>';
+            return;
+          }
+          const canEdit = hasOwnerPrivileges();
+          container.innerHTML = users
+            .map((u) => {
+              const role = escapeHtml(u.role || "");
+              const email = escapeHtml(u.email || "");
+              const name = escapeHtml(u.name || "");
+              const roleControls = canEdit
+                ? `<select data-user-role="${u.id}" class="pill">
+                    <option value="owner" ${role === "owner" ? "selected" : ""}>Owner</option>
+                    <option value="admin" ${role === "admin" ? "selected" : ""}>Admin</option>
+                    <option value="staff" ${role === "staff" ? "selected" : ""}>Staff</option>
+                    <option value="viewer" ${role === "viewer" ? "selected" : ""}>Viewer</option>
+                  </select>`
+                : `<span class="pill muted">${role}</span>`;
+              return `
+                <div class="metric-row" style="align-items: center; gap: 0.5rem;">
+                  <div>
+                    <div style="font-weight: 600;">${name || email}</div>
+                    <div class="muted" style="font-size: 0.8rem;">${email}</div>
+                  </div>
+                  ${roleControls}
+                </div>
+              `;
+            })
+            .join("");
+          if (canEdit) {
+            container.querySelectorAll("[data-user-role]").forEach((el) => {
+              el.addEventListener("change", async (e) => {
+                const userId = e.target.getAttribute("data-user-role");
+                const role = e.target.value;
+                try {
+                  await authorizedFetch(`/v1/owner/users/${userId}`, {
+                    method: "PATCH",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ role }),
+                  });
+                } catch (err) {
+                  e.target.classList.add("error");
+                }
+              });
+            });
+          }
+        } catch (err) {
+          container.innerHTML = `<div class="error">Unable to load team.</div>`;
+        }
+      }
+
+      async function startSubscription() {
+        const select = document.getElementById("plan-select");
+        const planId = select ? select.value : "basic";
+        const statusText = document.getElementById("subscription-status-text");
+        try {
+          if (statusText) {
+            statusText.textContent = "Starting checkout session...";
+          }
+          const res = await authorizedFetch("/v1/billing/create-checkout-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", ...authHeaders() },
+            body: new URLSearchParams({ plan_id: planId }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Checkout failed (${res.status})`);
+          }
+          if (statusText) statusText.textContent = "Redirecting to checkout...";
+          if (data.url) {
+            window.open(data.url, "_blank");
+          }
+        } catch (err) {
+          if (statusText) {
+            statusText.textContent = err?.message || "Unable to start subscription.";
+          }
+        }
+      }
+
+      async function openBillingPortal() {
+        const statusText = document.getElementById("subscription-status-text");
+        try {
+          if (statusText) {
+            statusText.textContent = "Opening billing portal...";
+          }
+          const res = await authorizedFetch("/v1/billing/portal-link");
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || `Portal unavailable (${res.status})`);
+          }
+          if (data.url) {
+            window.open(data.url, "_blank");
+          }
+        } catch (err) {
+          if (statusText) {
+            statusText.textContent = err?.message || "Billing portal unavailable.";
+          }
+        }
+      }
+
+      async function handleStaffInvite(event) {
+        event.preventDefault();
+        const emailInput = document.getElementById("invite-email");
+        const roleInput = document.getElementById("invite-role");
+        const statusEl = document.getElementById("staff-invite-status");
+        if (!emailInput || !roleInput) return;
+        if (!hasOwnerPrivileges()) {
+          if (statusEl) statusEl.textContent = "Invites require owner or admin.";
+          return;
+        }
+        const email = (emailInput.value || "").trim();
+        const role = (roleInput.value || "staff").trim();
+        if (!email) {
+          if (statusEl) statusEl.textContent = "Email is required.";
+          return;
+        }
+        if (statusEl) {
+          statusEl.textContent = "Sending invite...";
+          statusEl.className = "muted";
+        }
+        try {
+          const res = await authorizedFetch("/v1/owner/invites", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email,
+              role,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data?.detail || "Invite failed");
+          }
+          recentInvites.unshift(data);
+          renderRecentInvites();
+          emailInput.value = "";
+          if (statusEl) {
+            statusEl.textContent = data?.invite_token
+              ? `Invite created. Share this token with your teammate: ${data.invite_token}`
+              : "Invite created. We will email or share the link.";
+            statusEl.className = "success";
+          }
+        } catch (err) {
+          if (statusEl) {
+            statusEl.textContent = err?.message || "Unable to send invite.";
+            statusEl.className = "error";
+          }
+        }
+      }
+
       function initButtons() {
         document.getElementById("refresh-owner-kpis")?.addEventListener("click", loadOwnerKpis);
         document.getElementById("owner-qbo-refresh")?.addEventListener("click", loadOwnerQbo);
@@ -3077,6 +3789,22 @@
             chatCard.scrollIntoView({ behavior: "smooth", block: "start" });
           }
         });
+
+        document.getElementById("logout-btn")?.addEventListener("click", () => {
+          clearSession(true);
+        });
+        document.getElementById("logout-btn-inline")?.addEventListener("click", () => {
+          clearSession(true);
+        });
+        document.getElementById("staff-invite-form")?.addEventListener("submit", handleStaffInvite);
+        document.getElementById("start-subscription")?.addEventListener("click", startSubscription);
+        document.getElementById("manage-billing")?.addEventListener("click", openBillingPortal);
+        document.getElementById("team-card")?.addEventListener("mouseenter", loadTeam);
+        document.getElementById("business-select")?.addEventListener("change", (e) => {
+          const value = e.target.value;
+          switchBusiness(value);
+        });
+        document.getElementById("refresh-callbacks")?.addEventListener("click", loadCallbacks);
       }
 
       function initMobileNav() {
@@ -3118,13 +3846,23 @@
         initLocale();
         applyLocale();
         updateConnectionStatus("connecting");
+        updateUserUi();
+        if (!accessToken && !apiKey && !ownerToken) {
+          window.location.href = "login.html";
+          return;
+        }
         initAuth();
         initThemeToggle();
         initButtons();
+        loadBusinesses();
+        loadTeam();
+        loadInvites();
+        loadCallbacks();
         initMobileNav();
         initCalendarModal();
         initOwnerAssistant();
         loadOwnerOnboardingProfile();
+        loadSubscriptionStatus();
         refreshAllData();
       });
     </script>

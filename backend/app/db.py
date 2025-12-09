@@ -101,6 +101,31 @@ def init_db() -> None:
                         "ALTER TABLE businesses "
                         "ADD COLUMN IF NOT EXISTS twilio_phone_number VARCHAR(255)"
                     )
+                # Patch users table for new auth fields when using Postgres.
+                result_users = conn.exec_driver_sql(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name='users'
+                    """
+                )
+                user_cols = {row[0] for row in result_users}
+                if "failed_login_attempts" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0"
+                    )
+                if "lockout_until" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS lockout_until TIMESTAMP NULL"
+                    )
+                if "reset_token_hash" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash VARCHAR(255)"
+                    )
+                if "reset_token_expires_at" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMP NULL"
+                    )
                 conn.commit()
     except Exception:
         logging.getLogger(__name__).warning(
@@ -231,6 +256,27 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN subscription_current_period_end TIMESTAMP NULL"
                     )
+                # Patch users table for new auth fields.
+                user_cols = []
+                user_result = conn.exec_driver_sql("PRAGMA table_info(users)")
+                for row in user_result:
+                    user_cols.append(str(row[1]))
+                if "failed_login_attempts" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"
+                    )
+                if "lockout_until" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN lockout_until TIMESTAMP NULL"
+                    )
+                if "reset_token_hash" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN reset_token_hash VARCHAR(255) NULL"
+                    )
+                if "reset_token_expires_at" not in user_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN reset_token_expires_at TIMESTAMP NULL"
+                    )
                 conn.commit()
             # Create user and business_users tables if missing (SQLite only).
             existing_tables = {
@@ -248,7 +294,11 @@ def init_db() -> None:
                         password_hash VARCHAR(255) NULL,
                         name VARCHAR(255) NULL,
                         active_business_id VARCHAR(255) NULL,
-                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+                        lockout_until TIMESTAMP NULL,
+                        reset_token_hash VARCHAR(255) NULL,
+                        reset_token_expires_at TIMESTAMP NULL
                     )
                     """
                 )

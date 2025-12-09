@@ -442,6 +442,26 @@ def test_twilio_owner_voice_menu_and_schedule():
     assert per_tenant.voice_errors == 0
 
 
+def test_twilio_voicemail_records_callback(monkeypatch):
+    metrics.callbacks_by_business.clear()
+    resp = client.post(
+        "/twilio/voicemail",
+        data={
+            "CallSid": "CA_VM1",
+            "From": "+15557778888",
+            "RecordingUrl": "https://example.com/voicemail.wav",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 200
+    queue = metrics.callbacks_by_business.get(DEFAULT_BUSINESS_ID, {})
+    assert "+15557778888" in queue
+    item = queue["+15557778888"]
+    assert item.reason == "VOICEMAIL"
+    assert item.voicemail_url == "https://example.com/voicemail.wav"
+    assert item.status == "PENDING"
+
+
 def _build_twilio_signature(path: str, params: dict[str, str], auth_token: str) -> str:
     # Mirror the signature algorithm in _maybe_verify_twilio_signature.
     url = f"http://testserver{path}"
@@ -690,6 +710,55 @@ def test_twilio_owner_voice_pipeline_summary_option_3() -> None:
     # Verify that the summary mentions pipeline and total estimated value.
     assert "Your pipeline over the last thirty days" in body
     assert "estimated total value" in body
+
+
+def test_twilio_voice_persists_session_and_conversation_messages():
+    # Reset conversations for clean assertions.
+    from app.repositories import conversations_repo as repo  # local import
+
+    if hasattr(repo, "_by_id"):
+        repo._by_id.clear()  # type: ignore[attr-defined]
+        if hasattr(repo, "_by_session"):
+            repo._by_session.clear()  # type: ignore[attr-defined]
+
+    call_sid = "CA_SESSION_TEST"
+    phone = "+15551234567"
+
+    # Initial call should create a session and conversation.
+    resp1 = client.post(
+        "/twilio/voice",
+        data={"CallSid": call_sid, "From": phone},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp1.status_code == 200
+    # Resolve the session created for this CallSid.
+    from app.services.twilio_state import twilio_state_store  # local import
+
+    link = twilio_state_store.get_call_session(call_sid)
+    assert link is not None
+    conv = repo.get_by_session(link.session_id)
+    assert conv is not None
+    # Initial greeting from the assistant should be recorded.
+    assert len(conv.messages) >= 1
+
+    # Next Gather post with speech should append user + assistant messages.
+    resp2 = client.post(
+        "/twilio/voice",
+        data={
+            "CallSid": call_sid,
+            "From": phone,
+            "CallStatus": "in-progress",
+            "SpeechResult": "I need help with a leak",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp2.status_code == 200
+    link_after = twilio_state_store.get_call_session(call_sid)
+    assert link_after is not None
+    conv_after = repo.get_by_session(link_after.session_id)
+    assert conv_after is not None
+    # Expect at least the user message to be captured.
+    assert any(m.text == "I need help with a leak" for m in conv_after.messages)
 
 
 @pytest.mark.skipif(

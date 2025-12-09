@@ -7,6 +7,16 @@ import logging
 from pydantic import BaseModel
 
 
+class AuthSettings(BaseModel):
+    secret: str = "dev-auth-secret"
+    algorithm: str = "HS256"
+    access_token_expires_minutes: int = 60
+    refresh_token_expires_minutes: int = 60 * 24 * 7
+    failed_attempt_limit: int = 5
+    lockout_minutes: int = 15
+    reset_token_expires_minutes: int = 30
+
+
 class CalendarSettings(BaseModel):
     calendar_id: str = "primary"
     credentials_file: str | None = None
@@ -40,7 +50,7 @@ class OAuthSettings(BaseModel):
     google_client_secret: str | None = os.getenv("GOOGLE_CLIENT_SECRET")
     gmail_scopes: str = os.getenv(
         "GMAIL_SCOPES",
-        "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+        "openid email profile https://www.googleapis.com/auth/gmail.send",
     )
     gcalendar_scopes: str = os.getenv(
         "GCALENDAR_SCOPES",
@@ -55,6 +65,7 @@ class SmsSettings(BaseModel):
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     verify_twilio_signatures: bool = False
+    enable_voicemail: bool = True
     # Optional TwiML <Say> language codes for voice prompts.
     # When unset, Twilio's default language for the chosen voice is used.
     twilio_say_language_default: str | None = None
@@ -94,12 +105,16 @@ class StripeSettings(BaseModel):
     price_scale: str | None = None
     payment_link_url: str | None = None
     billing_portal_url: str | None = None
+    billing_portal_return_url: str | None = None
+    checkout_success_url: str = "https://example.com/billing/success?session_id={CHECKOUT_SESSION_ID}"
+    checkout_cancel_url: str = "https://example.com/billing/canceled"
     use_stub: bool = True
     verify_signatures: bool = True
     replay_protection_seconds: int = 300
 
 
 class AppSettings(BaseModel):
+    auth: AuthSettings = AuthSettings()
     calendar: CalendarSettings = CalendarSettings()
     speech: SpeechSettings = SpeechSettings()
     oauth: OAuthSettings = OAuthSettings()
@@ -112,6 +127,9 @@ class AppSettings(BaseModel):
     owner_dashboard_token: str | None = None
     session_store_backend: str = "memory"
     default_language_code: str = "en"
+    enforce_subscription: bool = False
+    subscription_grace_days: int = 5
+    subscription_reminder_hours: int = 12
     rate_limit_per_minute: int = 120
     rate_limit_burst: int = 20
     rate_limit_whitelist_ips: list[str] = []
@@ -132,6 +150,23 @@ class AppSettings(BaseModel):
     @classmethod
     def from_env(cls) -> "AppSettings":
         """Load settings from environment variables with safe defaults."""
+        auth = AuthSettings(
+            secret=os.getenv("AUTH_SECRET", "dev-auth-secret"),
+            algorithm=os.getenv("AUTH_ALGORITHM", "HS256"),
+            access_token_expires_minutes=int(
+                os.getenv("AUTH_ACCESS_TOKEN_EXPIRES_MINUTES", "60")
+            ),
+            refresh_token_expires_minutes=int(
+                os.getenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", str(60 * 24 * 7))
+            ),
+            failed_attempt_limit=int(
+                os.getenv("AUTH_FAILED_ATTEMPT_LIMIT", "5")
+            ),
+            lockout_minutes=int(os.getenv("AUTH_LOCKOUT_MINUTES", "15")),
+            reset_token_expires_minutes=int(
+                os.getenv("AUTH_RESET_TOKEN_EXPIRES_MINUTES", "30")
+            ),
+        )
         # Calendar and business-hours defaults.
         raw_open = os.getenv("BUSINESS_OPEN_HOUR", "8")
         raw_close = os.getenv("BUSINESS_CLOSE_HOUR", "17")
@@ -176,7 +211,7 @@ class AppSettings(BaseModel):
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
             gmail_scopes=os.getenv(
                 "GMAIL_SCOPES",
-                "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+                "openid email profile https://www.googleapis.com/auth/gmail.send",
             ),
             gcalendar_scopes=os.getenv(
                 "GCALENDAR_SCOPES",
@@ -192,6 +227,8 @@ class AppSettings(BaseModel):
             verify_twilio_signatures=os.getenv(
                 "VERIFY_TWILIO_SIGNATURES", "false"
             ).lower()
+            == "true",
+            enable_voicemail=os.getenv("TWILIO_ENABLE_VOICEMAIL", "true").lower()
             == "true",
             twilio_say_language_default=os.getenv("TWILIO_SAY_LANGUAGE_DEFAULT"),
             twilio_say_language_es=os.getenv("TWILIO_SAY_LANGUAGE_ES", "es-US"),
@@ -215,6 +252,15 @@ class AppSettings(BaseModel):
             price_scale=os.getenv("STRIPE_PRICE_SCALE"),
             payment_link_url=os.getenv("STRIPE_PAYMENT_LINK_URL"),
             billing_portal_url=os.getenv("STRIPE_BILLING_PORTAL_URL"),
+            billing_portal_return_url=os.getenv("STRIPE_BILLING_PORTAL_RETURN_URL"),
+            checkout_success_url=os.getenv(
+                "STRIPE_CHECKOUT_SUCCESS_URL",
+                "https://example.com/billing/success?session_id={CHECKOUT_SESSION_ID}",
+            ),
+            checkout_cancel_url=os.getenv(
+                "STRIPE_CHECKOUT_CANCEL_URL",
+                "https://example.com/billing/canceled",
+            ),
             use_stub=os.getenv("STRIPE_USE_STUB", "true").lower() != "false",
             verify_signatures=os.getenv("STRIPE_VERIFY_SIGNATURES", "true").lower()
             == "true",
@@ -227,6 +273,13 @@ class AppSettings(BaseModel):
         default_language_code = os.getenv("DEFAULT_LANGUAGE_CODE", "en")
         require_business_api_key = (
             os.getenv("REQUIRE_BUSINESS_API_KEY", "false").lower() == "true"
+        )
+        enforce_subscription = (
+            os.getenv("ENFORCE_SUBSCRIPTION", "false").lower() == "true"
+        )
+        subscription_grace_days = int(os.getenv("SUBSCRIPTION_GRACE_DAYS", "5"))
+        subscription_reminder_hours = int(
+            os.getenv("SUBSCRIPTION_REMINDER_HOURS", "12")
         )
         # OWNER_DASHBOARD_TOKEN is the canonical env var; DASHBOARD_OWNER_TOKEN
         # is accepted as a legacy alias for backward compatibility.
@@ -262,6 +315,7 @@ class AppSettings(BaseModel):
         )
         security_hsts_max_age = int(os.getenv("SECURITY_HSTS_MAX_AGE", "31536000"))
         return cls(
+            auth=auth,
             calendar=calendar,
             speech=speech,
             oauth=oauth,
@@ -274,6 +328,9 @@ class AppSettings(BaseModel):
             owner_dashboard_token=owner_dashboard_token,
             session_store_backend=session_store_backend,
             default_language_code=default_language_code,
+            enforce_subscription=enforce_subscription,
+            subscription_grace_days=subscription_grace_days,
+            subscription_reminder_hours=subscription_reminder_hours,
             rate_limit_per_minute=rate_limit_per_minute,
             rate_limit_burst=rate_limit_burst,
             rate_limit_whitelist_ips=rate_limit_whitelist_ips,

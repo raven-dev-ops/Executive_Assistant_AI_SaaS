@@ -14,11 +14,17 @@ from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
 from ..deps import DEFAULT_BUSINESS_ID
-from ..metrics import BusinessSmsMetrics, BusinessTwilioMetrics, metrics
+from ..metrics import (
+    BusinessSmsMetrics,
+    BusinessTwilioMetrics,
+    CallbackItem,
+    metrics,
+)
 from ..repositories import conversations_repo, customers_repo, appointments_repo
 from ..services import conversation, sessions
 from ..services.calendar import calendar_service
 from ..services.sms import sms_service
+from ..services.email_service import email_service
 from ..business_config import get_calendar_id_for_business, get_language_for_business
 from ..services.twilio_state import twilio_state_store
 from . import owner as owner_routes
@@ -275,6 +281,20 @@ def _owner_summary_for_selection(
     )
 
 
+def _build_gather_twiml(
+    reply_text: str,
+    action: str,
+    say_language_attr: str,
+) -> str:
+    safe_reply = escape(reply_text)
+    return f"""
+<Response>
+  <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
+  <Gather input="speech" action="{action}" method="POST" speechTimeout="auto" />
+</Response>
+""".strip()
+
+
 @router.post("/voice", response_class=Response)
 async def twilio_voice(
     request: Request,
@@ -319,6 +339,8 @@ async def twilio_voice(
     language_code = get_language_for_business(business_id)
     say_language_attr = _twilio_say_language_attr(language_code)
 
+    owner_phone = None
+    owner_email = None
     # If the business is suspended, reject early.
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
@@ -339,6 +361,9 @@ async def twilio_voice(
                 media_type="text/xml",
                 status_code=status.HTTP_403_FORBIDDEN,
             )
+        if business_row is not None:
+            owner_phone = getattr(business_row, "owner_phone", None)
+            owner_email = getattr(business_row, "owner_email", None)
 
     # Optional signature verification.
     form_params: Dict[str, str] = {"CallSid": CallSid}
@@ -422,6 +447,37 @@ async def twilio_voice(
                         if getattr(existing, "status", "PENDING").upper() != "PENDING":
                             existing.status = "PENDING"
                             existing.last_result = None
+
+                    # Notify owner about missed/partial calls.
+                    reason = "Partial intake" if is_partial_lead else "Missed call"
+                    when_str = now.strftime("%Y-%m-%d %H:%M UTC")
+                    owner_message = f"{reason} from {phone} at {when_str}."
+                    if owner_phone:
+                        try:
+                            await sms_service.notify_owner(
+                                owner_message,
+                                business_id=business_id,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "owner_notify_failed",
+                                exc_info=True,
+                                extra={"business_id": business_id, "reason": reason},
+                            )
+                    if owner_email:
+                        try:
+                            await email_service.notify_owner(
+                                subject="Missed call alert",
+                                body=owner_message,
+                                business_id=business_id,
+                                owner_email=owner_email,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "owner_email_notify_failed",
+                                exc_info=True,
+                                extra={"business_id": business_id, "reason": reason},
+                            )
 
                     # For partial leads where the assistant answered but the caller
                     # dropped before intake completed, send a gentle SMS asking
@@ -548,9 +604,20 @@ async def twilio_voice(
                 "If this is a life-threatening emergency, hang up now and call 911 or your local emergency number."
             )
         safe_reply = escape(message)
+        settings = get_settings()
+        allow_voicemail = getattr(settings.sms, "enable_voicemail", True)
+        record_block = ""
+        if allow_voicemail:
+            action = "/twilio/voicemail"
+            if business_id_param:
+                action = f"{action}?business_id={business_id}"
+            record_block = (
+                f'<Record action="{action}" method="POST" playBeep="true" timeout="5" />'
+            )
         twiml = f"""
 <Response>
   <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
+  {record_block}
   <Hangup/>
 </Response>
 """.strip()
@@ -836,6 +903,127 @@ async def twilio_owner_voice(
         return Response(content=twiml, media_type="text/xml")
 
 
+@router.post("/voice-assistant", response_class=Response)
+async def twilio_voice_assistant(
+    request: Request,
+    CallSid: str = Form(...),
+    From: str | None = Form(default=None),
+    CallStatus: str | None = Form(default=None),
+    SpeechResult: str | None = Form(default=None),
+    business_id_param: str | None = Query(default=None, alias="business_id"),
+    lead_source_param: str | None = Query(default=None, alias="lead_source"),
+) -> Response:
+    """Twilio voice webhook that bridges live calls into the conversation manager.
+
+    Uses Twilio <Gather input="speech"> for a simple streaming-lite loop:
+    - On first hit, create a conversation session and prompt the assistant reply.
+    - On subsequent hits with SpeechResult, route text into the assistant and
+      return another Gather with the reply spoken via <Say>.
+    """
+    business_id = business_id_param or DEFAULT_BUSINESS_ID
+    metrics.twilio_voice_requests += 1
+    per_tenant = metrics.twilio_by_business.setdefault(
+        business_id, BusinessTwilioMetrics()
+    )
+    per_tenant.voice_requests += 1
+
+    # Optional signature verification.
+    form_params: Dict[str, str] = {"CallSid": CallSid}
+    if From is not None:
+        form_params["From"] = From
+    if CallStatus is not None:
+        form_params["CallStatus"] = CallStatus
+    if SpeechResult is not None:
+        form_params["SpeechResult"] = SpeechResult
+    await _maybe_verify_twilio_signature(request, form_params)
+
+    # Handle call completion quickly.
+    if CallStatus and CallStatus.lower() in {"completed", "canceled", "busy", "failed", "no-answer"}:
+        link = twilio_state_store.clear_call_session(CallSid)
+        if link:
+            sessions.session_store.end(link.session_id)
+        return Response(content="<Response/>", media_type="text/xml")
+
+    # Resolve language for <Say>.
+    language_code = get_language_for_business(business_id)
+    say_language_attr = _twilio_say_language_attr(language_code)
+
+    # Get or create the assistant session for this call.
+    link = twilio_state_store.get_call_session(CallSid)
+    session = None
+    if link:
+        session = sessions.session_store.get(link.session_id)
+    if not session:
+        session = sessions.session_store.create(
+            caller_phone=From,
+            business_id=business_id,
+            lead_source=lead_source_param,
+        )
+        twilio_state_store.set_call_session(CallSid, session.id)
+        customer = (
+            customers_repo.get_by_phone(From, business_id=business_id)
+            if From
+            else None
+        )
+        conversations_repo.create(
+            channel="phone",
+            customer_id=customer.id if customer else None,
+            session_id=session.id,
+            business_id=business_id,
+        )
+
+    # Route speech input into the assistant.
+    text = SpeechResult.strip() if SpeechResult else None
+    conv = conversations_repo.get_by_session(session.id)
+    if conv and text:
+        conversations_repo.append_message(conv.id, role="user", text=text)
+
+    try:
+        result = await conversation.conversation_manager.handle_input(session, text)
+        reply_text = result.reply_text
+        if conv:
+            conversations_repo.append_message(conv.id, role="assistant", text=reply_text)
+            # Notify the owner when a new appointment gets booked via voice.
+            appointments = getattr(result, "appointments", []) or []
+            if appointments:
+                appt = appointments[0]
+                when = _format_appointment_time(appt)
+                cust = customers_repo.get(appt.customer_id) if appt.customer_id else None
+                cust_name = cust.name if cust else "Customer"
+                service = getattr(appt, "service_type", None) or "service"
+                body = f"New voice booking: {cust_name} on {when} ({service})."
+                try:
+                    await sms_service.notify_owner(body, business_id=business_id)
+                except Exception:
+                    logger.warning("owner_notify_failed", exc_info=True, extra={"business_id": business_id})
+        if business_id_param:
+            gather_action = f"/twilio/voice-assistant?business_id={business_id}"
+        else:
+            gather_action = "/twilio/voice-assistant"
+        twiml = _build_gather_twiml(reply_text, gather_action, say_language_attr)
+        return Response(content=twiml, media_type="text/xml")
+    except Exception:  # pragma: no cover - defensive
+        metrics.twilio_voice_errors += 1
+        per_err = metrics.twilio_by_business.setdefault(
+            business_id, BusinessTwilioMetrics()
+        )
+        per_err.voice_errors += 1
+        logger.exception(
+            "twilio_voice_assistant_unhandled_error",
+            extra={"business_id": business_id, "call_sid": CallSid},
+        )
+        safe_reply = escape(
+            "Sorry, something went wrong while handling your call. "
+            "Please hang up and try again later."
+        )
+        twiml = f"""
+<Response>
+  <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
+</Response>
+""".strip()
+        return Response(content=twiml, media_type="text/xml")
+
+
 @router.post("/sms", response_class=Response)
 async def twilio_sms(
     request: Request,
@@ -986,6 +1174,7 @@ async def twilio_sms(
                         await calendar_service.delete_event(
                             event_id=appt.calendar_event_id,
                             calendar_id=calendar_id,
+                            business_id=business_id,
                         )
                     current_stage = getattr(appt, "job_stage", None)
                     new_stage = current_stage or "Cancelled"
@@ -1188,6 +1377,93 @@ async def twilio_fallback(request: Request) -> Response:
     twiml = """
 <Response>
   <Say voice="Polly.Joanna">We are unable to take your call at the moment. We will call you back shortly.</Say>
+</Response>
+""".strip()
+    return Response(content=twiml, media_type="text/xml")
+
+
+@router.post("/voicemail", response_class=Response)
+async def twilio_voicemail(
+    request: Request,
+    CallSid: str = Form(...),
+    From: str | None = Form(default=None),
+    RecordingUrl: str | None = Form(default=None),
+    RecordingDuration: str | None = Form(default=None),
+    business_id_param: str | None = Query(default=None, alias="business_id"),
+) -> Response:
+    """Capture voicemail recordings when the assistant is unavailable."""
+    business_id = business_id_param or DEFAULT_BUSINESS_ID
+    # Optional signature verification.
+    form_params: Dict[str, str] = {"CallSid": CallSid}
+    if From is not None:
+        form_params["From"] = From
+    if RecordingUrl is not None:
+        form_params["RecordingUrl"] = RecordingUrl
+    await _maybe_verify_twilio_signature(request, form_params)
+
+    phone = From or ""
+    now = datetime.now(UTC)
+    queue = metrics.callbacks_by_business.setdefault(business_id, {})
+    existing = queue.get(phone)
+    if existing is None:
+        existing = CallbackItem(
+            phone=phone,
+            first_seen=now,
+            last_seen=now,
+            count=1,
+            channel="phone",
+            reason="VOICEMAIL",
+        )
+    else:
+        existing.last_seen = now
+        existing.count += 1
+        existing.reason = "VOICEMAIL"
+    if RecordingUrl:
+        existing.voicemail_url = RecordingUrl
+    existing.status = "PENDING"
+    queue[phone] = existing
+
+    # Best-effort owner notification with a callback link.
+    owner_message = f"New voicemail from {phone or 'unknown'} at {now.strftime('%Y-%m-%d %H:%M UTC')}."
+    business_row = None
+    if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session_db = SessionLocal()
+        try:
+            business_row = session_db.get(BusinessDB, business_id)
+        finally:
+            session_db.close()
+    owner_phone = getattr(business_row, "owner_phone", None) if business_row else None
+    owner_email = getattr(business_row, "owner_email", None) if business_row else None
+    callback_hint = " Check dashboard callback queue to return the call."
+    owner_message = owner_message + callback_hint
+    if owner_phone:
+        try:
+            await sms_service.notify_owner(owner_message, business_id=business_id)
+        except Exception:
+            logger.warning(
+                "voicemail_owner_sms_failed",
+                exc_info=True,
+                extra={"business_id": business_id, "call_sid": CallSid},
+            )
+    if owner_email:
+        try:
+            await email_service.notify_owner(
+                subject="New voicemail",
+                body=owner_message,
+                business_id=business_id,
+                owner_email=owner_email,
+            )
+        except Exception:
+            logger.warning(
+                "voicemail_owner_email_failed",
+                exc_info=True,
+                extra={"business_id": business_id, "call_sid": CallSid},
+            )
+
+    safe_reply = escape("Thank you. We received your message and will call you back shortly.")
+    twiml = f"""
+<Response>
+  <Say voice="alice">{safe_reply}</Say>
 </Response>
 """.strip()
     return Response(content=twiml, media_type="text/xml")

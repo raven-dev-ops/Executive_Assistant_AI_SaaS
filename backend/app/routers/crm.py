@@ -13,6 +13,7 @@ from ..deps import ensure_business_active, require_dashboard_role
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..business_config import get_calendar_id_for_business
 from ..services.calendar import TimeSlot, calendar_service
+from ..services import subscription as subscription_service
 
 
 READ_ROLES = ["admin", "owner", "staff", "viewer"]
@@ -415,11 +416,14 @@ def search_customers(
 
 
 @router.post("/appointments", response_model=AppointmentResponse)
-def create_appointment(
+async def create_appointment(
     payload: AppointmentCreateRequest,
     business_id: str = Depends(ensure_business_active),
     _: None = Depends(require_dashboard_role(WRITE_ROLES)),
 ) -> AppointmentResponse:
+    await subscription_service.check_access(
+        business_id, feature="appointments", upcoming_appointments=1
+    )
     customer = customers_repo.get(payload.customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -595,6 +599,7 @@ async def update_appointment(
             summary=None,
             description=payload.description or appt.description,
             calendar_id=calendar_id,
+            business_id=business_id,
         )
 
     updated = appointments_repo.update(
@@ -737,6 +742,7 @@ async def cancel_appointment(
         await calendar_service.delete_event(
             event_id=appt.calendar_event_id,
             calendar_id=calendar_id,
+            business_id=business_id,
         )
 
     appointments_repo.update(appointment_id, status="CANCELLED")

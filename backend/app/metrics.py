@@ -52,6 +52,7 @@ class CallbackItem:
     status: str = "PENDING"
     last_result: str | None = None
     reason: str = "MISSED_CALL"
+    voicemail_url: str | None = None
 
 
 @dataclass

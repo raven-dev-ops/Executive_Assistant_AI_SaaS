@@ -15,6 +15,7 @@ class DummyQuickBooks:
         self.scopes = "com.intuit.quickbooks.accounting"
         self.sandbox = True
         self.authorize_base = "https://sandbox.qbo.intuit.com/connect/oauth2"
+        self.token_base = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 
 
 class DummySettings:
@@ -45,6 +46,8 @@ def test_qbo_authorize_and_sync(monkeypatch):
         params={"code": "abc123", "realmId": "realm-1", "state": "default_business"},
     )
     assert cb_resp.status_code == 200
+    cb_data = cb_resp.json()
+    assert cb_data["connected"] is True
 
     status_resp = client.get("/v1/integrations/qbo/status")
     assert status_resp.status_code == 200
@@ -88,3 +91,29 @@ def test_qbo_sync_refreshes_expired_token(monkeypatch):
     sync_resp = client.post("/v1/integrations/qbo/sync")
     assert sync_resp.status_code == 200
     assert "Stubbed sync" in sync_resp.json()["note"]
+
+
+def test_qbo_callback_stub_when_not_configured(monkeypatch):
+    from app.routers import qbo_integration
+
+    class NoCreds:
+        def __init__(self) -> None:
+            self.client_id = None
+            self.client_secret = None
+            self.redirect_uri = None
+            self.scopes = "scope"
+            self.sandbox = True
+            self.authorize_base = "https://example.com/auth"
+            self.token_base = "https://example.com/token"
+
+    class SettingsNoCreds:
+        def __init__(self) -> None:
+            self.quickbooks = NoCreds()
+
+    monkeypatch.setattr(qbo_integration, "get_settings", lambda: SettingsNoCreds())
+    resp = client.get(
+        "/v1/integrations/qbo/callback",
+        params={"code": "stubcode", "state": "default_business"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["connected"] is True

@@ -572,6 +572,21 @@
         }
       }
 
+      function requirementLabels(missing) {
+        const labels = {
+          terms_of_service: "Accept Terms of Service",
+          privacy_policy: "Accept Privacy Policy",
+          owner_name: "Owner name",
+          owner_email: "Owner email",
+          service_tier: "Plan selection",
+        };
+        return missing.map((key) => labels[key] || key);
+      }
+
+      function isProfileComplete() {
+        return !!(onboardingProfile && Array.isArray(onboardingProfile.requirements_missing) && onboardingProfile.requirements_missing.length === 0);
+      }
+
       function hydrateProfileFields() {
         if (!onboardingProfile) return;
         const label = $("onboarding-business-label");
@@ -611,7 +626,14 @@
           setStep(5);
           setStatus("step5-status", "Onboarding marked complete. You can open the owner dashboard.", "success");
         } else if (savedStep) {
-          setStep(stepCodeToNumber(savedStep));
+          const target = stepCodeToNumber(savedStep);
+          if (target >= 4 && !isProfileComplete()) {
+            setStep(3);
+            const missing = requirementLabels(onboardingProfile.requirements_missing || []);
+            setStatus("step3-status", `Complete required items first: ${missing.join(", ")}`, "error");
+          } else {
+            setStep(target);
+          }
         }
       }
 
@@ -629,9 +651,22 @@
             const provider = item.provider;
             const connected = !!item.connected;
             const label = item.label || provider;
-            const badgeClass = connected ? "badge connected" : "badge disconnected";
-            const badgeText = connected ? "Connected" : "Not connected";
+            const mode = item.mode || "stub";
+            const status = (item.status || (connected ? "connected" : "disconnected")).toLowerCase();
+            let badgeClass = "badge disconnected";
+            let badgeText = "Not connected";
+            if (status === "connected") {
+              badgeClass = "badge connected";
+              badgeText = "Connected";
+            } else if (status === "error") {
+              badgeClass = "badge disconnected";
+              badgeText = "Error";
+            }
             const buttonLabel = connected ? "Mark as disconnected" : "Mark as connected";
+            const modeBadge =
+              mode === "stub"
+                ? '<span class="badge pill disconnected" style="margin-left: 0.35rem;">Demo only</span>'
+                : '<span class="badge pill connected" style="margin-left: 0.35rem;">Live</span>';
             const twilioMeta =
               provider === "twilio"
                 ? `<div class="muted" style="font-size: 0.75rem;">Number: ${
@@ -642,8 +677,12 @@
               <div class="integration-card" data-provider="${provider}">
                 <div class="integration-header">
                   <div>
-                    <div style="font-weight: 600; font-size: 0.9rem;">${label}</div>
-                    <div class="muted" style="font-size: 0.75rem;">Business account only -- OAuth handled by your deployment.</div>
+                    <div style="font-weight: 600; font-size: 0.9rem;">${label} ${modeBadge}</div>
+                    <div class="muted" style="font-size: 0.75rem;">${
+                      mode === "stub"
+                        ? "Demo flow only. Connect for real via your deployment's OAuth."
+                        : "Live OAuth flow."
+                    }</div>
                   </div>
                   <span class="${badgeClass}">${badgeText}</span>
                 </div>
@@ -1108,6 +1147,12 @@
 
         $("step4-back")?.addEventListener("click", () => setStep(3));
         $("step4-next")?.addEventListener("click", async () => {
+          if (!isProfileComplete()) {
+            const missing = requirementLabels(onboardingProfile?.requirements_missing || []);
+            setStatus("step4-status", "Complete required items first: " + missing.join(", "), "error");
+            setStep(3);
+            return;
+          }
           await markOnboardingStep("ai");
           setStep(5);
         });
@@ -1120,7 +1165,15 @@
         $("csv-upload-btn")?.addEventListener("click", importCsvFile);
 
         $("step5-back")?.addEventListener("click", () => setStep(4));
-        $("step5-finish")?.addEventListener("click", finishOnboarding);
+        $("step5-finish")?.addEventListener("click", () => {
+          if (!isProfileComplete()) {
+            const missing = requirementLabels(onboardingProfile?.requirements_missing || []);
+            setStatus("step5-status", "Complete required items first: " + missing.join(", "), "error");
+            setStep(3);
+            return;
+          }
+          finishOnboarding();
+        });
       }
 
       window.addEventListener("DOMContentLoaded", () => {
