@@ -7,7 +7,8 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter()
 
-PLANNER_PATH = Path(__file__).resolve().parents[3] / "PLANNER.md"
+# In the container this resolves to /app/PLANNER.md (repo root is one level up from app/)
+PLANNER_PATH = Path(__file__).resolve().parents[2] / "PLANNER.md"
 
 
 def _load_planner_html() -> str:
