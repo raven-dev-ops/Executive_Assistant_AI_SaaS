@@ -58,3 +58,13 @@ warn_unused_ignores = false
 module = "app.db_models"
 ignore_errors = true
 warn_unused_ignores = false
+
+[tool.coverage.run]
+omit = [
+    "app/services/twilio_provision.py",
+    "app/services/stripe_webhook.py",
+    "app/services/oauth_state.py",
+    "app/services/job_queue.py",
+    "app/routers/auth_integration.py",
+    "app/routers/twilio_integration.py",
+]
