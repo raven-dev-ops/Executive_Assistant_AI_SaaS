@@ -84,6 +84,125 @@ def test_webhook_invalid_payload_increments_failure(monkeypatch):
     assert metrics.billing_webhook_failures >= 1
 
 
+def test_webhook_uses_stripe_construct_event(monkeypatch):
+    now = datetime.now(UTC)
+    captured = {}
+
+    class FakeWebhook:
+        @staticmethod
+        def construct_event(payload, sig_header, secret):
+            captured["sig"] = (payload, sig_header, secret)
+            return {
+                "id": "evt_123",
+                "type": "customer.subscription.updated",
+                "data": {
+                    "object": {
+                        "id": "sub_123",
+                        "status": "active",
+                        "customer": "cus_123",
+                        "current_period_end": int((now + timedelta(days=3)).timestamp()),
+                        "metadata": {"business_id": "default_business"},
+                    }
+                },
+            }
+
+    class FakeStripe:
+        Webhook = FakeWebhook
+
+    class FakeStripeSettings:
+        verify_signatures = True
+        use_stub = False
+        webhook_secret = "whsec_test"
+        replay_protection_seconds = 0
+        api_key = "sk_test"
+
+    class FakeSettings:
+        stripe = FakeStripeSettings()
+
+    monkeypatch.setattr(billing, "stripe", FakeStripe)
+    monkeypatch.setattr(billing, "check_replay", lambda *_a, **_k: None)
+    monkeypatch.setattr(billing, "_update_subscription", lambda *args, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
+
+    resp = client.post(
+        "/v1/billing/webhook",
+        data="{}",
+        headers={"Stripe-Signature": "t=123,v1=fake"},
+    )
+    assert resp.status_code == 200
+    assert captured["status"] == "active"
+    assert captured["subscription_id"] == "sub_123"
+    assert captured["customer_id"] == "cus_123"
+    assert captured["sig"][1] == "t=123,v1=fake"
+
+
+def test_webhook_bad_signature_rejected(monkeypatch):
+    metrics.billing_webhook_failures = 0
+
+    class FakeStripe:
+        class Webhook:
+            @staticmethod
+            def construct_event(payload, sig_header, secret):
+                raise Exception("bad sig")
+
+    class FakeStripeSettings:
+        verify_signatures = True
+        use_stub = False
+        webhook_secret = "whsec_test"
+        replay_protection_seconds = 0
+        api_key = "sk_test"
+
+    class FakeSettings:
+        stripe = FakeStripeSettings()
+
+    monkeypatch.setattr(billing, "stripe", FakeStripe)
+    monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
+
+    resp = client.post(
+        "/v1/billing/webhook",
+        data="{}",
+        headers={"Stripe-Signature": "t=123,v1=fake"},
+    )
+    assert resp.status_code == 400
+    assert metrics.billing_webhook_failures >= 1
+
+
+def test_billing_portal_live_creates_session(monkeypatch):
+    class FakePortalSession:
+        @staticmethod
+        def create(customer, return_url):
+            FakePortalSession.customer = customer
+            FakePortalSession.return_url = return_url
+            return type("obj", (), {"url": "https://portal.example.com/session"})()
+
+    class FakePortal:
+        Session = FakePortalSession
+
+    class FakeClient:
+        billing_portal = FakePortal
+
+    class FakeStripeSettings:
+        billing_portal_url = None
+        use_stub = False
+        api_key = "sk_test"
+        billing_portal_return_url = "https://app.example.com/billing"
+        checkout_success_url = "https://app.example.com/success"
+
+    class FakeSettings:
+        stripe = FakeStripeSettings()
+
+    monkeypatch.setattr(billing, "_get_stripe_client", lambda: FakeClient)
+    monkeypatch.setattr(billing, "_get_or_create_customer", lambda _bid, _e: "cus_portal")
+    monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
+
+    resp = client.get("/v1/billing/portal-link")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["url"] == "https://portal.example.com/session"
+    assert FakePortalSession.customer == "cus_portal"
+    assert FakePortalSession.return_url == "https://app.example.com/billing"
+
+
 def test_require_db_raises_when_unavailable(monkeypatch):
     monkeypatch.setattr(billing, "SQLALCHEMY_AVAILABLE", False)
     monkeypatch.setattr(billing, "SessionLocal", None)

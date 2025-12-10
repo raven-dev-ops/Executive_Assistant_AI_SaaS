@@ -20,6 +20,7 @@ from ..services.stripe_webhook import (
     check_replay,
     verify_stripe_signature,
 )
+from ..services.subscription import SubscriptionState
 
 try:
     import stripe  # type: ignore
@@ -259,6 +260,17 @@ def get_billing_portal_link(
         raise HTTPException(status_code=502, detail="Stripe portal failed") from exc
 
 
+def _status_from_subscription(event_type: str, obj: dict[str, object]) -> SubscriptionState:
+    status = str(obj.get("status") or "").lower() if isinstance(obj, dict) else ""
+    if event_type == "customer.subscription.deleted":
+        status = "canceled"
+    elif event_type == "invoice.payment_failed":
+        status = "past_due"
+    elif event_type in {"invoice.payment_succeeded", "checkout.session.completed"}:
+        status = status or "active"
+    return SubscriptionState(status=status or "active")
+
+
 @router.get("/subscription/status", response_model=SubscriptionStatusResponse)
 async def get_subscription_status(
     business_id: str = Depends(ensure_business_active),
@@ -297,6 +309,7 @@ async def billing_webhook(
     event_id = ""
     business_id = "default_business"
     try:
+        event_payload: dict = {}
         if settings.verify_signatures and not settings.use_stub:
             if not stripe_signature:
                 raise HTTPException(
@@ -306,30 +319,48 @@ async def billing_webhook(
                 raise HTTPException(
                     status_code=503, detail="Stripe webhook secret not configured"
                 )
+            if stripe is not None:
+                try:
+                    event_payload = stripe.Webhook.construct_event(
+                        payload=raw_body,
+                        sig_header=stripe_signature,
+                        secret=settings.webhook_secret,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "billing_webhook_signature_invalid",
+                        extra={"error": str(exc)},
+                    )
+                    raise HTTPException(
+                        status_code=400, detail="Invalid webhook signature"
+                    ) from exc
+            else:
+                # Fallback to local verifier if Stripe SDK is not installed.
+                try:
+                    verify_stripe_signature(
+                        raw_body, stripe_signature, settings.webhook_secret
+                    )
+                except (StripeSignatureError, StripeReplayError) as exc:
+                    logger.warning(
+                        "billing_webhook_signature_invalid",
+                        extra={"error": str(exc)},
+                    )
+                    raise HTTPException(
+                        status_code=400, detail="Invalid webhook signature"
+                    ) from exc
+
+        if not event_payload:
             try:
-                verify_stripe_signature(
-                    raw_body, stripe_signature, settings.webhook_secret
+                event_payload = await request.json()
+            except Exception as exc:  # pragma: no cover - defensive log path
+                logger.exception(
+                    "billing_webhook_invalid_payload", extra={"error": str(exc)}
                 )
-            except (StripeSignatureError, StripeReplayError) as exc:
-                logger.warning(
-                    "billing_webhook_signature_invalid",
-                    extra={"error": str(exc)},
-                )
-                raise HTTPException(
-                    status_code=400, detail="Invalid webhook signature"
-                ) from exc
+                raise HTTPException(status_code=400, detail="Invalid payload") from exc
 
-        try:
-            payload = await request.json()
-        except Exception as exc:  # pragma: no cover - defensive log path
-            logger.exception(
-                "billing_webhook_invalid_payload", extra={"error": str(exc)}
-            )
-            raise HTTPException(status_code=400, detail="Invalid payload") from exc
-
-        event_type = payload.get("type", "")
-        event_id = payload.get("id", "")
-        data_obj = payload.get("data", {}).get("object", {})
+        event_type = event_payload.get("type", "")
+        event_id = event_payload.get("id", "")
+        data_obj = event_payload.get("data", {}).get("object", {})
         business_id = (
             data_obj.get("metadata", {}).get("business_id") or "default_business"
         )
@@ -370,6 +401,20 @@ async def billing_webhook(
                     ),
                 },
             )
+            return {"status": "ok"}
+        elif event_type in {
+            "customer.subscription.updated",
+            "invoice.payment_succeeded",
+        }:
+            state = _status_from_subscription(event_type, data_obj)
+            _update_subscription(
+                business_id,
+                status=state.status,
+                customer_id=customer_id,
+                subscription_id=subscription_id,
+                current_period_end=current_period_end,
+            )
+            metrics.subscription_activations += 1
             return {"status": "ok"}
         elif event_type in {"invoice.payment_failed", "customer.subscription.deleted"}:
             _update_subscription(
