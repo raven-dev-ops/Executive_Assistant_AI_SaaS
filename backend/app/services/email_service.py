@@ -5,7 +5,7 @@ import logging
 import time
 from dataclasses import dataclass
 import asyncio
-from typing import List, Optional
+from typing import List
 
 import httpx
 

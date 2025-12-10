@@ -12,7 +12,6 @@ from .sms import sms_service
 from .nlu import (
     parse_address,
     parse_name,
-    classify_intent,
     classify_intent_with_metadata,
 )
 from . import subscription as subscription_service

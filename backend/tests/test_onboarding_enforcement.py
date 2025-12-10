@@ -1,4 +1,3 @@
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -69,7 +68,6 @@ async def test_onboarding_required_for_voice(monkeypatch):
 
 
 def test_auth_integration_error_then_success(monkeypatch):
-    from app.routers import auth_integration
     _reset_business_defaults()
     # Use stub settings but enforce onboarding env flags for clarity.
     monkeypatch.setenv("ENFORCE_ONBOARDING", "false")

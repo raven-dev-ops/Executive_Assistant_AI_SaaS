@@ -439,14 +439,12 @@ async def twilio_voice(
         # Per-tenant configuration of which Twilio call statuses count as
         # "missed" (and should be enqueued for callbacks). When not
         # configured, fall back to a conservative default set.
-        default_missed = {"canceled", "busy", "failed", "no-answer"}
-        missed_statuses = set(default_missed)
         if business_row is not None:
             raw = getattr(business_row, "twilio_missed_statuses", None)
             if raw:
                 parts = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
                 if parts:
-                    missed_statuses = set(parts)
+                    ended_statuses.update(parts)
         if CallStatus and CallStatus.lower() in ended_statuses:
             link = twilio_state_store.clear_call_session(CallSid)
             session = None

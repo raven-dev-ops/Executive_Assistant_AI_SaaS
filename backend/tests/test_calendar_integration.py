@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.repositories import appointments_repo, customers_repo
 from app.deps import DEFAULT_BUSINESS_ID
-from app.services import calendar as cal_mod
 from app.services.calendar import calendar_service
 from app.services.oauth_tokens import oauth_store
 

@@ -1,16 +1,14 @@
 from datetime import UTC, datetime
 
-from app.services.nlu import classify_intent, classify_intent_with_metadata
+import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
+from app.metrics import CallbackItem, BusinessTwilioMetrics, metrics
+from app.routers.chat_api import _build_business_context
+from app.services.nlu import classify_intent, classify_intent_with_metadata
 
 client = TestClient(app)
-from app.routers.chat_api import _build_business_context
-from app.metrics import metrics, BusinessTwilioMetrics, CallbackItem
-
-
-import pytest
-import anyio
 
 
 @pytest.mark.anyio

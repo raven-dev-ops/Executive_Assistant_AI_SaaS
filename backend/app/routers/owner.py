@@ -297,13 +297,6 @@ class OwnerUser(BaseModel):
     role: str
 
 
-class OwnerUser(BaseModel):
-    id: str
-    email: str
-    name: str | None = None
-    role: str
-
-
 class OwnerInviteCreate(BaseModel):
     email: EmailStr
     role: str = "staff"

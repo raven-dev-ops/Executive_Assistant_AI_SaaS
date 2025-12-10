@@ -192,7 +192,7 @@ def _push_customer_and_receipt(
     access_token: str,
 ) -> tuple[int, int, int]:
     """Push latest appointment as a customer + sales receipt. Returns (customers, receipts, skipped)."""
-    from ..repositories import appointments_repo, customers_repo  # local import
+    from ..repositories import appointments_repo  # local import
 
     appts = appointments_repo.list_for_business(business_id)
     if not appts:
@@ -330,7 +330,7 @@ def callback_qbo(
             _mark_connected(business_id, realmId, access_token, refresh_token, expires_in=expires_in)
         except HTTPException:
             raise
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "qbo_callback_unexpected_error", extra={"business_id": business_id}
             )

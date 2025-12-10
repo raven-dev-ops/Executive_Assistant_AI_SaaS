@@ -58,8 +58,14 @@ def create_app() -> FastAPI:
     # Log a brief configuration summary for operational visibility.
     settings = get_settings()
     logger = logging.getLogger(__name__)
-    # In the container, app lives at /app/app, so parents[1] points to repo root (/app).
+    # Try to locate the repo root to mount static assets. Prefer the immediate
+    # parent (/app) in containers; fall back to the grandparent when running
+    # from the backend package during local tests.
     repo_root = Path(__file__).resolve().parents[1]
+    if not (repo_root / "dashboard").exists() and len(Path(__file__).resolve().parents) > 2:
+        candidate = Path(__file__).resolve().parents[2]
+        if (candidate / "dashboard").exists():
+            repo_root = candidate
     testing_mode = (
         bool(os.getenv("PYTEST_CURRENT_TEST"))
         or os.getenv("TESTING", "false").lower() == "true"

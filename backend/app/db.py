@@ -80,6 +80,8 @@ def _should_reset_default_business() -> bool:
 
 def _reset_default_business(session) -> None:
     """Ensure the reference tenant starts from a clean slate in dev/test."""
+    from .db_models import BusinessDB
+
     try:
         row = session.get(BusinessDB, "default_business")
     except Exception:

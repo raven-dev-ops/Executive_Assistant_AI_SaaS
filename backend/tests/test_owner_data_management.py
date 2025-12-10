@@ -168,7 +168,7 @@ def test_owner_qbo_summary_pending_and_notify() -> None:
         name="QBO Customer", phone="555-QBO", business_id="default_business"
     )
     start = datetime.now(UTC) + timedelta(days=1)
-    appt_model = appointments_repo.create(
+    appointments_repo.create(
         customer_id=cust_model.id,
         start_time=start,
         end_time=start + timedelta(hours=1),

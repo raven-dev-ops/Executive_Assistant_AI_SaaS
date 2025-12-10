@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from app import config
 from app.main import app
-from app.repositories import appointments_repo, customers_repo
 from app.deps import DEFAULT_BUSINESS_ID
 from app.db_models import BusinessDB
 from app.db import SessionLocal
