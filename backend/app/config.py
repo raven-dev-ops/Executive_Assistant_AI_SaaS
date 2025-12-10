@@ -41,7 +41,7 @@ class SpeechSettings(BaseModel):
 class NluSettings(BaseModel):
     intent_provider: str = os.getenv("NLU_PROVIDER", "heuristic")
     intent_confidence_threshold: float = float(
-        os.getenv("NLU_INTENT_THRESHOLD", "0.35")
+        os.getenv("NLU_INTENT_THRESHOLD", "0.4")
     )
 
 
@@ -83,7 +83,10 @@ class TelephonySettings(BaseModel):
     twilio_streaming_enabled: bool = (
         os.getenv("TWILIO_STREAMING_ENABLED", "false").lower() == "true"
     )
-    twilio_stream_base_url: str | None = os.getenv("TWILIO_STREAM_BASE_URL")
+    twilio_stream_base_url: str | None = os.getenv(
+        "TWILIO_STREAM_BASE_URL",
+        "wss://ai-telephony-backend-tcmgy2pf2a-uc.a.run.app/v1/twilio/voice-stream",
+    )
 
 
 class QuickBooksSettings(BaseModel):
