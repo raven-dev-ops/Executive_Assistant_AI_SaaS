@@ -226,7 +226,7 @@ class AppSettings(BaseModel):
         nlu = NluSettings(
             intent_provider=os.getenv("NLU_PROVIDER", "heuristic"),
             intent_confidence_threshold=float(
-                os.getenv("NLU_INTENT_THRESHOLD", "0.35")
+                os.getenv("NLU_INTENT_THRESHOLD") or "0.35"
             ),
         )
         oauth = OAuthSettings(

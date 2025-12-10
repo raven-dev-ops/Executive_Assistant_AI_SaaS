@@ -57,7 +57,9 @@ async def _exchange_google_code_for_tokens(
     client_secret = settings.oauth.google_client_secret
     if not client_id or not client_secret:
         raise HTTPException(status_code=503, detail="Google OAuth not configured")
-    token_url = "https://oauth2.googleapis.com/token"
+    token_url = (
+        "https://oauth2.googleapis.com/token"  # nosec B105 - public OAuth endpoint
+    )
     payload = {
         "code": code,
         "client_id": client_id,

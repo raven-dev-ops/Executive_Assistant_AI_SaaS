@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 import hashlib
 import io
 import os
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header
@@ -42,6 +43,7 @@ router = APIRouter(
     ]
 )
 _DEFAULT_ONBOARDING_RESET = False
+logger = logging.getLogger(__name__)
 
 
 def _require_db():
@@ -115,8 +117,8 @@ def _record_dashboard_audit(
         session.add(event)
         session.commit()
     except Exception:
-        # Never break main flow for audit logging.
-        pass
+        # Never break main flow for audit logging, but record the failure.
+        logger.warning("audit_log_failed", exc_info=True)
     finally:
         session.close()
 

@@ -252,7 +252,7 @@ class CalendarService:
         creds = UserCredentials(
             token=tok.access_token,
             refresh_token=tok.refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
+            token_uri="https://oauth2.googleapis.com/token",  # nosec B106 - OAuth endpoint
             client_id=client_id,
             client_secret=client_secret,
         )

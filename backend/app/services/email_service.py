@@ -68,7 +68,9 @@ class EmailService:
             return tok
         # Try real refresh if credentials are available; otherwise fall back to stub refresh.
         if client_id and client_secret and tok.refresh_token:
-            token_url = "https://oauth2.googleapis.com/token"
+            token_url = (
+                "https://oauth2.googleapis.com/token"  # nosec B105 - OAuth endpoint
+            )
             data = {
                 "client_id": client_id,
                 "client_secret": client_secret,

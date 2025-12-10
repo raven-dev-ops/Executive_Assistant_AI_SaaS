@@ -125,7 +125,11 @@ def decode_token(
     return DecodedToken(
         user_id=str(user_id),
         business_id=payload.get("biz"),
-        roles=list(payload.get("roles", [])) if token_type == "access" else [],
+        roles=(
+            list(payload.get("roles", []))
+            if token_type == "access"  # nosec B105 - token type marker
+            else []
+        ),
         token_type=token_type or "unknown",
         expires_at=expires_at,
     )
