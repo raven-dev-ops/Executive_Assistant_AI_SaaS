@@ -13,6 +13,7 @@ from .metrics import RouteMetrics, metrics
 from .services.audit import record_audit_event
 from .services.retention_purge import start_retention_scheduler
 from .services.rate_limit import RateLimiter, RateLimitError
+from .services.job_queue import job_queue
 from .routers import (
     business_admin,
     chat_widget,
@@ -171,6 +172,10 @@ def create_app() -> FastAPI:
         except Exception:
             metrics.background_job_errors += 1
             logger.exception("retention_purge_scheduler_failed")
+    try:
+        job_queue.start()
+    except Exception:
+        logger.warning("job_queue_start_failed", exc_info=True)
 
     @app.middleware("http")
     async def metrics_middleware(request: Request, call_next):
@@ -246,6 +251,13 @@ def create_app() -> FastAPI:
                 response, security_csp, security_hsts_enabled, security_hsts_max_age
             )
         return response
+
+    @app.on_event("shutdown")
+    async def _shutdown_services() -> None:  # pragma: no cover - wiring only
+        try:
+            job_queue.stop()
+        except Exception:
+            logger.warning("job_queue_stop_failed", exc_info=True)
 
     app.include_router(voice.router, prefix="/v1/voice", tags=["voice"])
     # Support both legacy and versioned prefixes for telephony and Twilio

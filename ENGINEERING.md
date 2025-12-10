@@ -56,6 +56,10 @@ System Architecture (Code)
     - In-memory call session store and Twilio CallSid / SMS conversation maps.
     - These are suitable for early development and single-process deployments; see notes below for
       scaling considerations.
+  - `services/job_queue.py`:
+    - Lightweight in-process background job runner used for async tasks like QuickBooks sync.
+    - Starts on app startup; errors are counted in `metrics.background_job_errors`.
+    - Can be swapped for Celery/RQ later while keeping the `enqueue` interface.
 
 - **Dashboard (`dashboard/`)**
   - `index.html`:
@@ -182,6 +186,19 @@ For a production deployment behind multiple processes or instances, a shared sto
   connection fails, the backend logs a warning and falls back to `InMemorySessionStore`. This
   keeps requests serving but does not provide cross-process/session sharing, so production clusters
   should ensure a healthy Redis deployment.
+
+Background Jobs & Service Boundaries
+------------------------------------
+
+- Background jobs run through a lightweight in-process queue (`services/job_queue.py`), started on
+  app startup. It is used for tasks like QuickBooks sync; job failures increment
+  `metrics.background_job_errors`.
+- For production, swap this queue for Celery/RQ while keeping the `enqueue` interface, and move
+  long-running tasks (QBO exports, audio processing, reminder sends) off the request thread.
+- Telephony vs. CRM/API boundaries: the current app hosts both Twilio webhooks and CRM APIs. If load
+  grows, split into two services (telephony edge with Twilio webhooks and streaming, and a CRM/API
+  core) communicating over authenticated HTTP/queue with shared metrics/logging. Ensure shared state
+  (sessions, Twilio state) lives in Redis/DB when split.
 - For full multi-instance resilience, move CallSid→session and `(business_id, From)`→conversation
   mappings into the shared store as well, with explicit TTLs and cleanup policies, and keep all
   Twilio entry points and `/v1/voice/session/*` flows routing through that abstraction so scaling

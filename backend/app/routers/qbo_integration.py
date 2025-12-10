@@ -16,6 +16,7 @@ from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
 from ..repositories import customers_repo
 from ..metrics import metrics
+from ..services.job_queue import job_queue
 
 
 router = APIRouter(dependencies=[Depends(require_owner_dashboard_auth)])
@@ -369,6 +370,9 @@ def qbo_status(business_id: str = Depends(ensure_business_active)) -> QboStatusR
 @router.post("/sync", response_model=QboSyncResponse)
 def qbo_sync_contacts(
     business_id: str = Depends(ensure_business_active),
+    enqueue: bool | None = Query(
+        default=True, description="Run sync in background when true."
+    ),
 ) -> QboSyncResponse:
     """Push customers/appointments into QuickBooks as customers + sales receipts."""
     status = _get_status(business_id)
@@ -407,6 +411,21 @@ def qbo_sync_contacts(
         metrics.qbo_sync_errors += 1
         raise HTTPException(
             status_code=400, detail="QuickBooks tokens are missing; reconnect."
+        )
+
+    # Optionally enqueue for background processing.
+    if enqueue:
+        job_queue.enqueue(
+            _background_sync,
+            business_id,
+            realm_id,
+            access_token,
+        )
+        return QboSyncResponse(
+            customers_pushed=0,
+            receipts_pushed=0,
+            skipped=0,
+            note="QuickBooks sync enqueued.",
         )
 
     attempts = 0
@@ -455,3 +474,33 @@ def qbo_sync_contacts(
 
     metrics.qbo_sync_errors += 1
     raise HTTPException(status_code=502, detail=last_error or "QuickBooks sync failed")
+
+
+def _background_sync(business_id: str, realm_id: str, access_token: str) -> None:
+    try:
+        customers_pushed, receipts_pushed, skipped = _push_customer_and_receipt(
+            business_id=business_id,
+            realm_id=realm_id,
+            access_token=access_token,
+        )
+        logger.info(
+            "qbo_async_sync_completed",
+            extra={
+                "business_id": business_id,
+                "customers_pushed": customers_pushed,
+                "receipts_pushed": receipts_pushed,
+                "skipped": skipped,
+            },
+        )
+    except HTTPException as exc:
+        metrics.qbo_sync_errors += 1
+        logger.warning(
+            "qbo_async_sync_failed", extra={"business_id": business_id, "detail": exc.detail}
+        )
+    except Exception as exc:
+        metrics.qbo_sync_errors += 1
+        metrics.background_job_errors += 1
+        logger.exception(
+            "qbo_async_sync_exception",
+            extra={"business_id": business_id, "error": str(exc)},
+        )
