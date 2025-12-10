@@ -264,7 +264,9 @@ class CalendarService:
                 expires_in = 3600
                 if expiry:
                     try:
-                        expires_in = max(60, int((expiry - datetime.now(UTC)).total_seconds()))
+                        expires_in = max(
+                            60, int((expiry - datetime.now(UTC)).total_seconds())
+                        )
                     except Exception:
                         expires_in = 3600
                 oauth_store.save_tokens(
@@ -302,7 +304,11 @@ class CalendarService:
         address: str | None = None,
     ) -> List[TimeSlot]:
         # Choose client: tenant OAuth > service account > stub.
-        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        client = (
+            None
+            if self._settings.use_stub
+            else self._build_user_client(business_id) or self._client
+        )
         if not client:
             # Stub implementation with basic capacity and routing constraints.
             now = datetime.now(UTC)
@@ -574,7 +580,11 @@ class CalendarService:
         calendar_id: str | None = None,
         business_id: str | None = None,
     ) -> str:
-        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        client = (
+            None
+            if self._settings.use_stub
+            else self._build_user_client(business_id) or self._client
+        )
         if not client:
             # Stub behaviour.
             return f"event_placeholder_{slot.start.isoformat()}"
@@ -587,9 +597,7 @@ class CalendarService:
         }
         try:
             cal_id = self._resolve_calendar_id(business_id, calendar_id)
-            created = (
-                client.events().insert(calendarId=cal_id, body=event).execute()
-            )
+            created = client.events().insert(calendarId=cal_id, body=event).execute()
             return created.get("id", f"event_placeholder_{slot.start.isoformat()}")
         except HttpError:
             return f"event_placeholder_{slot.start.isoformat()}"
@@ -603,7 +611,11 @@ class CalendarService:
         calendar_id: str | None = None,
         business_id: str | None = None,
     ) -> bool:
-        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        client = (
+            None
+            if self._settings.use_stub
+            else self._build_user_client(business_id) or self._client
+        )
         if not client:
             return False
 
@@ -690,7 +702,11 @@ class CalendarService:
         calendar_id: str | None = None,
         business_id: str | None = None,
     ) -> bool:
-        client = None if self._settings.use_stub else self._build_user_client(business_id) or self._client
+        client = (
+            None
+            if self._settings.use_stub
+            else self._build_user_client(business_id) or self._client
+        )
         if not client:
             return False
 

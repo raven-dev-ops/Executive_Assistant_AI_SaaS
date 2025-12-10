@@ -40,9 +40,7 @@ class SpeechSettings(BaseModel):
 
 class NluSettings(BaseModel):
     intent_provider: str = os.getenv("NLU_PROVIDER", "heuristic")
-    intent_confidence_threshold: float = float(
-        os.getenv("NLU_INTENT_THRESHOLD", "0.4")
-    )
+    intent_confidence_threshold: float = float(os.getenv("NLU_INTENT_THRESHOLD", "0.4"))
 
 
 class OAuthSettings(BaseModel):
@@ -129,7 +127,9 @@ class StripeSettings(BaseModel):
     payment_link_url: str | None = None
     billing_portal_url: str | None = None
     billing_portal_return_url: str | None = None
-    checkout_success_url: str = "https://example.com/billing/success?session_id={CHECKOUT_SESSION_ID}"
+    checkout_success_url: str = (
+        "https://example.com/billing/success?session_id={CHECKOUT_SESSION_ID}"
+    )
     checkout_cancel_url: str = "https://example.com/billing/canceled"
     use_stub: bool = False
     verify_signatures: bool = True
@@ -185,9 +185,7 @@ class AppSettings(BaseModel):
             refresh_token_expires_minutes=int(
                 os.getenv("AUTH_REFRESH_TOKEN_EXPIRES_MINUTES", str(60 * 24 * 7))
             ),
-            failed_attempt_limit=int(
-                os.getenv("AUTH_FAILED_ATTEMPT_LIMIT", "5")
-            ),
+            failed_attempt_limit=int(os.getenv("AUTH_FAILED_ATTEMPT_LIMIT", "5")),
             lockout_minutes=int(os.getenv("AUTH_LOCKOUT_MINUTES", "15")),
             reset_token_expires_minutes=int(
                 os.getenv("AUTH_RESET_TOKEN_EXPIRES_MINUTES", "30")
@@ -271,7 +269,9 @@ class AppSettings(BaseModel):
             twilio_say_language_es=os.getenv("TWILIO_SAY_LANGUAGE_ES", "es-US"),
         )
         telephony = TelephonySettings(
-            twilio_streaming_enabled=os.getenv("TWILIO_STREAMING_ENABLED", "false").lower()
+            twilio_streaming_enabled=os.getenv(
+                "TWILIO_STREAMING_ENABLED", "false"
+            ).lower()
             == "true",
             twilio_stream_base_url=os.getenv("TWILIO_STREAM_BASE_URL"),
         )

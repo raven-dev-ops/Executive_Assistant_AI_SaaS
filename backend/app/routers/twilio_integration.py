@@ -530,9 +530,7 @@ async def twilio_voice(
                 if not customer or not getattr(customer, "sms_opt_out", False):
                     language_code = _get_language_for_business(business_id)
                     business_name = conversation.DEFAULT_BUSINESS_NAME
-                    if business_row is not None and getattr(
-                        business_row, "name", None
-                    ):
+                    if business_row is not None and getattr(business_row, "name", None):
                         business_name = business_row.name  # type: ignore[assignment]
                     if language_code == "es":
                         body = (
@@ -649,9 +647,7 @@ async def twilio_voice(
             action = "/twilio/voicemail"
             if business_id_param:
                 action = f"{action}?business_id={business_id}"
-            record_block = (
-                f'<Record action="{action}" method="POST" playBeep="true" timeout="5" />'
-            )
+            record_block = f'<Record action="{action}" method="POST" playBeep="true" timeout="5" />'
         twiml = f"""
 <Response>
   <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
@@ -960,7 +956,9 @@ async def twilio_voice_assistant(
     """
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     settings = get_settings()
-    stream_enabled = bool(getattr(settings.telephony, "twilio_streaming_enabled", False))
+    stream_enabled = bool(
+        getattr(settings.telephony, "twilio_streaming_enabled", False)
+    )
 
     await subscription_service.check_access(
         business_id, feature="calls", upcoming_calls=1
@@ -984,7 +982,13 @@ async def twilio_voice_assistant(
     await _maybe_verify_twilio_signature(request, form_params)
 
     # Handle call completion quickly and enqueue a callback follow-up.
-    if CallStatus and CallStatus.lower() in {"completed", "canceled", "busy", "failed", "no-answer"}:
+    if CallStatus and CallStatus.lower() in {
+        "completed",
+        "canceled",
+        "busy",
+        "failed",
+        "no-answer",
+    }:
         link = twilio_state_store.clear_call_session(CallSid)
         if link:
             sessions.session_store.end(link.session_id)
@@ -1026,9 +1030,7 @@ async def twilio_voice_assistant(
         )
         twilio_state_store.set_call_session(CallSid, session.id)
         customer = (
-            customers_repo.get_by_phone(From, business_id=business_id)
-            if From
-            else None
+            customers_repo.get_by_phone(From, business_id=business_id) if From else None
         )
         conversations_repo.create(
             channel="phone",
@@ -1047,20 +1049,28 @@ async def twilio_voice_assistant(
         result = await conversation.conversation_manager.handle_input(session, text)
         reply_text = result.reply_text
         if conv:
-            conversations_repo.append_message(conv.id, role="assistant", text=reply_text)
+            conversations_repo.append_message(
+                conv.id, role="assistant", text=reply_text
+            )
             # Notify the owner when a new appointment gets booked via voice.
             appointments = getattr(result, "appointments", []) or []
             if appointments:
                 appt = appointments[0]
                 when = _format_appointment_time(appt)
-                cust = customers_repo.get(appt.customer_id) if appt.customer_id else None
+                cust = (
+                    customers_repo.get(appt.customer_id) if appt.customer_id else None
+                )
                 cust_name = cust.name if cust else "Customer"
                 service = getattr(appt, "service_type", None) or "service"
                 body = f"New voice booking: {cust_name} on {when} ({service})."
                 try:
                     await sms_service.notify_owner(body, business_id=business_id)
                 except Exception:
-                    logger.warning("owner_notify_failed", exc_info=True, extra={"business_id": business_id})
+                    logger.warning(
+                        "owner_notify_failed",
+                        exc_info=True,
+                        extra={"business_id": business_id},
+                    )
         if stream_enabled:
             stream_url = _build_stream_url(
                 request, CallSid, business_id, lead_source_param
@@ -1162,7 +1172,11 @@ async def twilio_voice_stream(
     event = (payload.event or "").lower()
     if event == "stop":
         status_val = (getattr(session_obj, "status", "") or "").upper()
-        is_partial_lead = status_val not in {"SCHEDULED", "PENDING_FOLLOWUP", "COMPLETED"}
+        is_partial_lead = status_val not in {
+            "SCHEDULED",
+            "PENDING_FOLLOWUP",
+            "COMPLETED",
+        }
         phone = payload.from_number or ""
         lead_source = getattr(session_obj, "lead_source", None) or payload.lead_source
         if phone and (is_partial_lead or not session_obj):
@@ -1194,12 +1208,17 @@ async def twilio_voice_stream(
             owner_message = f"{'Partial intake' if is_partial_lead else 'Missed call'} from {phone} at {now.strftime('%Y-%m-%d %H:%M UTC')}."
             if owner_phone:
                 try:
-                    await sms_service.notify_owner(owner_message, business_id=business_id)
+                    await sms_service.notify_owner(
+                        owner_message, business_id=business_id
+                    )
                 except Exception:
                     logger.warning(
                         "twilio_stream_owner_sms_failed",
                         exc_info=True,
-                        extra={"business_id": business_id, "call_sid": payload.call_sid},
+                        extra={
+                            "business_id": business_id,
+                            "call_sid": payload.call_sid,
+                        },
                     )
             if owner_email:
                 try:
@@ -1213,7 +1232,10 @@ async def twilio_voice_stream(
                     logger.warning(
                         "twilio_stream_owner_email_failed",
                         exc_info=True,
-                        extra={"business_id": business_id, "call_sid": payload.call_sid},
+                        extra={
+                            "business_id": business_id,
+                            "call_sid": payload.call_sid,
+                        },
                     )
 
             if is_partial_lead and phone:
@@ -1251,9 +1273,7 @@ async def twilio_voice_stream(
     transcript = (payload.transcript or "").strip()
     reply_text: str | None = None
     if event in {"start", "connected"} and not transcript:
-        result = await conversation.conversation_manager.handle_input(
-            session_obj, None
-        )
+        result = await conversation.conversation_manager.handle_input(session_obj, None)
         reply_text = result.reply_text
         if conv:
             conversations_repo.append_message(
@@ -1261,9 +1281,7 @@ async def twilio_voice_stream(
             )
     elif transcript:
         if conv:
-            conversations_repo.append_message(
-                conv.id, role="user", text=transcript
-            )
+            conversations_repo.append_message(conv.id, role="user", text=transcript)
         result = await conversation.conversation_manager.handle_input(
             session_obj, transcript
         )
@@ -1716,7 +1734,9 @@ async def twilio_voicemail(
                 extra={"business_id": business_id, "call_sid": CallSid},
             )
 
-    safe_reply = escape("Thank you. We received your message and will call you back shortly.")
+    safe_reply = escape(
+        "Thank you. We received your message and will call you back shortly."
+    )
     twiml = f"""
 <Response>
   <Say voice="alice">{safe_reply}</Say>

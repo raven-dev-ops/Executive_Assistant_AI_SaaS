@@ -61,6 +61,7 @@ def _intent_threshold_for_business(business_id: str | None) -> float:
     except Exception:
         return float(default_threshold)
 
+
 DEFAULT_BUSINESS_NAME = "Bristol Plumbing"
 
 

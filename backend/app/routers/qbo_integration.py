@@ -122,16 +122,26 @@ def _refresh_tokens(business_id: str) -> None:
                     resp = client.post(token_url, data=data, auth=auth)
                 if resp.status_code == 200:
                     payload = resp.json()
-                    row.qbo_access_token = payload.get("access_token", row.qbo_access_token)
-                    row.qbo_refresh_token = payload.get("refresh_token", row.qbo_refresh_token)
+                    row.qbo_access_token = payload.get(
+                        "access_token", row.qbo_access_token
+                    )
+                    row.qbo_refresh_token = payload.get(
+                        "refresh_token", row.qbo_refresh_token
+                    )
                     expires_in = int(payload.get("expires_in") or 3600)
-                    row.qbo_token_expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+                    row.qbo_token_expires_at = datetime.now(UTC) + timedelta(
+                        seconds=expires_in
+                    )
                     session.add(row)
                     session.commit()
                     return
                 logger.warning(
                     "qbo_refresh_failed_http",
-                    extra={"business_id": business_id, "status": resp.status_code, "body": resp.text},
+                    extra={
+                        "business_id": business_id,
+                        "status": resp.status_code,
+                        "body": resp.text,
+                    },
                 )
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.warning(
@@ -179,7 +189,9 @@ def _qbo_headers(token: str) -> dict[str, str]:
     }
 
 
-def _qbo_request(method: str, url: str, headers: dict, json: dict | None = None) -> httpx.Response:
+def _qbo_request(
+    method: str, url: str, headers: dict, json: dict | None = None
+) -> httpx.Response:
     with httpx.Client(timeout=10.0) as client:
         resp = client.request(method, url, headers=headers, json=json)
     return resp
@@ -199,7 +211,11 @@ def _push_customer_and_receipt(
         return (0, 0, 1)
     appts.sort(key=lambda a: getattr(a, "start_time", datetime.min))
     appt = appts[-1]
-    customer = customers_repo.get(appt.customer_id) if getattr(appt, "customer_id", None) else None
+    customer = (
+        customers_repo.get(appt.customer_id)
+        if getattr(appt, "customer_id", None)
+        else None
+    )
     display_name = getattr(customer, "name", None) or "QBO Customer"
     email = getattr(customer, "email", None)
     phone = getattr(customer, "phone", None)
@@ -217,7 +233,11 @@ def _push_customer_and_receipt(
     if resp_customer.status_code not in {200, 201}:
         logger.warning(
             "qbo_customer_push_failed",
-            extra={"business_id": business_id, "status": resp_customer.status_code, "body": resp_customer.text},
+            extra={
+                "business_id": business_id,
+                "status": resp_customer.status_code,
+                "body": resp_customer.text,
+            },
         )
         raise HTTPException(status_code=502, detail="QuickBooks customer push failed")
     customer_id = None
@@ -244,9 +264,15 @@ def _push_customer_and_receipt(
     if resp_receipt.status_code not in {200, 201}:
         logger.warning(
             "qbo_receipt_push_failed",
-            extra={"business_id": business_id, "status": resp_receipt.status_code, "body": resp_receipt.text},
+            extra={
+                "business_id": business_id,
+                "status": resp_receipt.status_code,
+                "body": resp_receipt.text,
+            },
         )
-        raise HTTPException(status_code=502, detail="QuickBooks sales receipt push failed")
+        raise HTTPException(
+            status_code=502, detail="QuickBooks sales receipt push failed"
+        )
 
     return (1, 1, 0)
 
@@ -307,7 +333,11 @@ def callback_qbo(
             if resp.status_code != 200:
                 logger.warning(
                     "qbo_token_exchange_failed",
-                    extra={"business_id": business_id, "status": resp.status_code, "body": resp.text},
+                    extra={
+                        "business_id": business_id,
+                        "status": resp.status_code,
+                        "body": resp.text,
+                    },
                 )
                 # In non-configured environments, fall back to stub tokens.
                 fake_access = f"access_{code}"
@@ -323,11 +353,15 @@ def callback_qbo(
             if not access_token or not refresh_token:
                 fake_access = f"access_{code}"
                 fake_refresh = f"refresh_{code}"
-                _mark_connected(business_id, realmId, fake_access, fake_refresh, expires_in=None)
+                _mark_connected(
+                    business_id, realmId, fake_access, fake_refresh, expires_in=None
+                )
                 return QboCallbackResponse(
                     connected=True, business_id=business_id, realm_id=realmId
                 )
-            _mark_connected(business_id, realmId, access_token, refresh_token, expires_in=expires_in)
+            _mark_connected(
+                business_id, realmId, access_token, refresh_token, expires_in=expires_in
+            )
         except HTTPException:
             raise
         except Exception:
@@ -336,7 +370,9 @@ def callback_qbo(
             )
             fake_access = f"access_{code}"
             fake_refresh = f"refresh_{code}"
-            _mark_connected(business_id, realmId, fake_access, fake_refresh, expires_in=None)
+            _mark_connected(
+                business_id, realmId, fake_access, fake_refresh, expires_in=None
+            )
             return QboCallbackResponse(
                 connected=True, business_id=business_id, realm_id=realmId
             )
@@ -344,7 +380,9 @@ def callback_qbo(
         # Stub path when not configured.
         fake_access = f"access_{code}"
         fake_refresh = f"refresh_{code}"
-        _mark_connected(business_id, realmId, fake_access, fake_refresh, expires_in=None)
+        _mark_connected(
+            business_id, realmId, fake_access, fake_refresh, expires_in=None
+        )
 
     metrics.qbo_connections += 1
     logger.info(
@@ -496,7 +534,8 @@ def _background_sync(business_id: str, realm_id: str, access_token: str) -> None
     except HTTPException as exc:
         metrics.qbo_sync_errors += 1
         logger.warning(
-            "qbo_async_sync_failed", extra={"business_id": business_id, "detail": exc.detail}
+            "qbo_async_sync_failed",
+            extra={"business_id": business_id, "detail": exc.detail},
         )
     except Exception as exc:
         metrics.qbo_sync_errors += 1

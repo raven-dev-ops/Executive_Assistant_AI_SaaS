@@ -92,7 +92,9 @@ class EmailService:
                         )
             except Exception:
                 logger.warning(
-                    "email_refresh_failed", exc_info=True, extra={"business_id": business_id}
+                    "email_refresh_failed",
+                    exc_info=True,
+                    extra={"business_id": business_id},
                 )
         # Stub refresh path.
         return oauth_store.refresh("gmail", business_id)
@@ -153,7 +155,9 @@ class EmailService:
         settings = get_settings()
         email_cfg = getattr(settings, "email", None)
         provider = (getattr(email_cfg, "provider", "stub") or "stub").lower()
-        from_default = from_email or (getattr(email_cfg, "from_email", None) if email_cfg else None)
+        from_default = from_email or (
+            getattr(email_cfg, "from_email", None) if email_cfg else None
+        )
         # Always record locally for observability.
         self._sent.append(
             SentEmail(
@@ -169,7 +173,9 @@ class EmailService:
             return EmailResult(sent=False, detail="Missing recipient", provider="stub")
 
         if provider == "sendgrid":
-            api_key = getattr(email_cfg, "sendgrid_api_key", None) if email_cfg else None
+            api_key = (
+                getattr(email_cfg, "sendgrid_api_key", None) if email_cfg else None
+            )
             if not api_key:
                 return EmailResult(
                     sent=False, detail="SendGrid API key missing", provider="stub"
@@ -186,13 +192,17 @@ class EmailService:
             # Pull tokens and refresh if close to expiry.
             try:
                 tok = await self._refresh_token_if_needed(
-                    business_id, gmail_cfg.google_client_id, gmail_cfg.google_client_secret
+                    business_id,
+                    gmail_cfg.google_client_id,
+                    gmail_cfg.google_client_secret,
                 )
             except KeyError:
                 tok = None
             if not tok:
                 return EmailResult(
-                    sent=False, detail="Gmail tokens not found for tenant", provider="stub"
+                    sent=False,
+                    detail="Gmail tokens not found for tenant",
+                    provider="stub",
                 )
 
             sender = from_default or "me"
@@ -203,7 +213,9 @@ class EmailService:
             for attempt in range(attempts):
                 try:
                     async with httpx.AsyncClient(timeout=10.0) as client:
-                        resp = await client.post(url, headers=headers, json={"raw": raw})
+                        resp = await client.post(
+                            url, headers=headers, json={"raw": raw}
+                        )
                     if 200 <= resp.status_code < 300:
                         return EmailResult(sent=True, detail=None, provider="gmail")
                     logger.warning(
@@ -220,7 +232,11 @@ class EmailService:
                 except Exception:
                     logger.exception(
                         "email_send_exception",
-                        extra={"business_id": business_id, "provider": "gmail", "attempt": attempt + 1},
+                        extra={
+                            "business_id": business_id,
+                            "provider": "gmail",
+                            "attempt": attempt + 1,
+                        },
                     )
                 await asyncio.sleep(0.2 * (attempt + 1))
             return EmailResult(
@@ -230,7 +246,9 @@ class EmailService:
             )
 
         # Stub/default path.
-        return EmailResult(sent=False, detail="Email provider not configured", provider="stub")
+        return EmailResult(
+            sent=False, detail="Email provider not configured", provider="stub"
+        )
 
     async def notify_owner(
         self,
@@ -243,7 +261,9 @@ class EmailService:
         to = owner_email
         if not to and business_id and get_settings().sms.owner_number:
             # No email configured; signal unsent.
-            return EmailResult(sent=False, detail="Owner email not configured", provider="stub")
+            return EmailResult(
+                sent=False, detail="Owner email not configured", provider="stub"
+            )
         return await self.send_email(
             to=to or "",
             subject=subject,

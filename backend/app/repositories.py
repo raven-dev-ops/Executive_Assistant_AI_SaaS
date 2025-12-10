@@ -181,7 +181,10 @@ class InMemoryAppointmentRepository:
             ids = self._by_business.get(business_id, [])
             for appt_id in ids:
                 appt = self._by_id.get(appt_id)
-                if appt and getattr(appt, "calendar_event_id", None) == calendar_event_id:
+                if (
+                    appt
+                    and getattr(appt, "calendar_event_id", None) == calendar_event_id
+                ):
                     return appt
         else:
             for appt in self._by_id.values():

@@ -48,9 +48,7 @@ def test_register_and_set_active_business():
 def test_login_refresh_and_me_with_bearer_token():
     email = f"login-{uuid.uuid4().hex[:8]}@example.com"
     password = "Str0ngPass!"
-    reg = client.post(
-        "/v1/auth/register", json={"email": email, "password": password}
-    )
+    reg = client.post("/v1/auth/register", json={"email": email, "password": password})
     assert reg.status_code == 200
 
     login = client.post("/v1/auth/login", json={"email": email, "password": password})
@@ -92,9 +90,7 @@ def test_login_lockout_after_failures():
     assert final_attempt.headers.get("Retry-After") is not None
 
     # Even correct password is blocked during lockout window.
-    locked = client.post(
-        "/v1/auth/login", json={"email": email, "password": password}
-    )
+    locked = client.post("/v1/auth/login", json={"email": email, "password": password})
     assert locked.status_code == 423
 
 
@@ -116,7 +112,9 @@ def test_password_reset_flow_allows_new_login():
     )
     assert confirm.status_code == 200
 
-    old_login = client.post("/v1/auth/login", json={"email": email, "password": password})
+    old_login = client.post(
+        "/v1/auth/login", json={"email": email, "password": password}
+    )
     assert old_login.status_code == 401
 
     new_login = client.post(
@@ -128,9 +126,7 @@ def test_password_reset_flow_allows_new_login():
 def test_dashboard_role_enforced_with_business_mismatch():
     email = f"multi-{uuid.uuid4().hex[:8]}@example.com"
     password = "Str0ngPass2!"
-    reg = client.post(
-        "/v1/auth/register", json={"email": email, "password": password}
-    )
+    reg = client.post("/v1/auth/register", json={"email": email, "password": password})
     assert reg.status_code == 200
 
     login = client.post("/v1/auth/login", json={"email": email, "password": password})
@@ -154,9 +150,7 @@ def test_dashboard_role_enforced_with_business_mismatch():
     finally:
         session.close()
 
-    ok = client.get(
-        "/v1/crm/customers", headers={"Authorization": f"Bearer {token}"}
-    )
+    ok = client.get("/v1/crm/customers", headers={"Authorization": f"Bearer {token}"})
     assert ok.status_code == 200
 
     forbidden = client.get(

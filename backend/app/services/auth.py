@@ -74,9 +74,7 @@ def create_access_token(
         "access",
         settings.auth.access_token_expires_minutes,
     )
-    token = jwt.encode(
-        payload, settings.auth.secret, algorithm=settings.auth.algorithm
-    )
+    token = jwt.encode(payload, settings.auth.secret, algorithm=settings.auth.algorithm)
     expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
     return token, expires_at
 
@@ -93,9 +91,7 @@ def create_refresh_token(
         "refresh",
         settings.auth.refresh_token_expires_minutes,
     )
-    token = jwt.encode(
-        payload, settings.auth.secret, algorithm=settings.auth.algorithm
-    )
+    token = jwt.encode(payload, settings.auth.secret, algorithm=settings.auth.algorithm)
     expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
     return token, expires_at
 
@@ -133,4 +129,3 @@ def decode_token(
         token_type=token_type or "unknown",
         expires_at=expires_at,
     )
-

@@ -63,7 +63,9 @@ def test_live_checkout_uses_stripe(monkeypatch):
         @staticmethod
         def create(**kwargs):
             created.update(kwargs)
-            return type("obj", (), {"url": "https://checkout.example/abc", "id": "cs_123"})()
+            return type(
+                "obj", (), {"url": "https://checkout.example/abc", "id": "cs_123"}
+            )()
 
     class FakeCheckout:
         Session = FakeCheckoutSession
@@ -72,10 +74,14 @@ def test_live_checkout_uses_stripe(monkeypatch):
         checkout = FakeCheckout
 
     monkeypatch.setattr(billing, "_get_stripe_client", lambda: FakeStripe)
-    monkeypatch.setattr(billing, "_get_or_create_customer", lambda _bid, _email: "cus_live")
+    monkeypatch.setattr(
+        billing, "_get_or_create_customer", lambda _bid, _email: "cus_live"
+    )
     monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
 
-    resp = client.post("/v1/billing/create-checkout-session", params={"plan_id": "basic"})
+    resp = client.post(
+        "/v1/billing/create-checkout-session", params={"plan_id": "basic"}
+    )
     assert resp.status_code == 200
     assert created["customer"] == "cus_live"
     assert created["line_items"][0]["price"] == stripe_settings.price_basic
@@ -213,7 +219,9 @@ def test_webhook_uses_stripe_construct_event(monkeypatch):
                         "id": "sub_123",
                         "status": "active",
                         "customer": "cus_123",
-                        "current_period_end": int((now + timedelta(days=3)).timestamp()),
+                        "current_period_end": int(
+                            (now + timedelta(days=3)).timestamp()
+                        ),
                         "metadata": {"business_id": "default_business"},
                     }
                 },
@@ -234,7 +242,9 @@ def test_webhook_uses_stripe_construct_event(monkeypatch):
 
     monkeypatch.setattr(billing, "stripe", FakeStripe)
     monkeypatch.setattr(billing, "check_replay", lambda *_a, **_k: None)
-    monkeypatch.setattr(billing, "_update_subscription", lambda *args, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(
+        billing, "_update_subscription", lambda *args, **kwargs: captured.update(kwargs)
+    )
     monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
 
     resp = client.post(
@@ -305,7 +315,9 @@ def test_billing_portal_live_creates_session(monkeypatch):
         stripe = FakeStripeSettings()
 
     monkeypatch.setattr(billing, "_get_stripe_client", lambda: FakeClient)
-    monkeypatch.setattr(billing, "_get_or_create_customer", lambda _bid, _e: "cus_portal")
+    monkeypatch.setattr(
+        billing, "_get_or_create_customer", lambda _bid, _e: "cus_portal"
+    )
     monkeypatch.setattr(billing, "get_settings", lambda: FakeSettings())
 
     resp = client.get("/v1/billing/portal-link")

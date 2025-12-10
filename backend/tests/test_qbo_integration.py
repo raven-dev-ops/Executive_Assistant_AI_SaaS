@@ -51,12 +51,14 @@ def test_qbo_callback_stub_when_not_configured(monkeypatch):
 
 def test_qbo_sync_real_flow_with_mocks(monkeypatch):
     from app.routers import qbo_integration
+
     # Reset repos and set dummy settings with credentials.
     if hasattr(customers_repo, "_by_id"):
         customers_repo._by_id.clear()  # type: ignore[attr-defined]
         customers_repo._by_phone.clear()  # type: ignore[attr-defined]
         customers_repo._by_business.clear()  # type: ignore[attr-defined]
     from app.repositories import appointments_repo
+
     if hasattr(appointments_repo, "_by_id"):
         appointments_repo._by_id.clear()  # type: ignore[attr-defined]
         appointments_repo._by_business.clear()  # type: ignore[attr-defined]
@@ -121,7 +123,9 @@ def test_qbo_sync_real_flow_with_mocks(monkeypatch):
                 return DummyResp(body={"Customer": {"Id": "100"}})
             return DummyResp(body={"SalesReceipt": {"Id": "200"}})
 
-    monkeypatch.setattr(qbo_integration, "httpx", type("X", (), {"Client": DummyClient}))
+    monkeypatch.setattr(
+        qbo_integration, "httpx", type("X", (), {"Client": DummyClient})
+    )
 
     sync_resp = client.post("/v1/integrations/qbo/sync")
     assert sync_resp.status_code == 200

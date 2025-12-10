@@ -102,7 +102,9 @@ def test_find_slots_prefers_oauth_user_client(monkeypatch):
         return DummyClient()
 
     monkeypatch.setattr(calendar_service, "_build_user_client", fake_user_client)
-    monkeypatch.setattr(calendar_service, "_resolve_calendar_id", lambda *a, **k: "primary")
+    monkeypatch.setattr(
+        calendar_service, "_resolve_calendar_id", lambda *a, **k: "primary"
+    )
 
     slots = asyncio.run(
         calendar_service.find_slots(

@@ -503,9 +503,8 @@ def create_business_invite(
         _record_dashboard_audit(
             business_id, "/v1/owner/invites", method="POST", actor="dashboard_user"
         )
-        testing_mode = (
-            os.getenv("TESTING", "false").lower() == "true"
-            or bool(os.getenv("PYTEST_CURRENT_TEST"))
+        testing_mode = os.getenv("TESTING", "false").lower() == "true" or bool(
+            os.getenv("PYTEST_CURRENT_TEST")
         )
         return OwnerInvite(
             id=invite.id,
@@ -635,7 +634,9 @@ def update_business_user_role(
     user_id: str,
     payload: OwnerUserRoleUpdate,
     business_id: str = Depends(ensure_business_active),
-    _role=Depends(require_dashboard_role(["owner", "admin"], allow_anonymous_if_no_token=False)),
+    _role=Depends(
+        require_dashboard_role(["owner", "admin"], allow_anonymous_if_no_token=False)
+    ),
 ) -> OwnerUser:
     """Update the role of a user within the current business."""
     allowed_roles = {"owner", "admin", "staff", "viewer"}
@@ -657,7 +658,9 @@ def update_business_user_role(
             .one_or_none()
         )
         if bu is None:
-            raise HTTPException(status_code=404, detail="User not found in this business")
+            raise HTTPException(
+                status_code=404, detail="User not found in this business"
+            )
         bu.role = payload.role
         session_db.add(bu)
         session_db.commit()
@@ -1439,12 +1442,9 @@ def _business_onboarding_profile_from_row(
         and getattr(settings.quickbooks, "client_secret", None)
         and getattr(settings.quickbooks, "redirect_uri", None)
     )
-    twilio_live = (
-        getattr(settings.sms, "provider", "stub") == "twilio"
-        and bool(
-            getattr(settings.sms, "twilio_account_sid", None)
-            and getattr(settings.sms, "twilio_auth_token", None)
-        )
+    twilio_live = getattr(settings.sms, "provider", "stub") == "twilio" and bool(
+        getattr(settings.sms, "twilio_account_sid", None)
+        and getattr(settings.sms, "twilio_auth_token", None)
     )
 
     def add(provider: str, status_tuple: tuple[bool, str], label: str) -> None:

@@ -28,7 +28,9 @@ class JobQueue:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="job-worker")
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="job-worker"
+        )
         self._thread.start()
         logger.info("job_queue_started")
 
@@ -52,7 +54,10 @@ class JobQueue:
                 job(*args, **kwargs)
             except Exception:
                 metrics.background_job_errors += 1
-                logger.exception("background_job_failed", extra={"job": getattr(job, "__name__", "unknown")})
+                logger.exception(
+                    "background_job_failed",
+                    extra={"job": getattr(job, "__name__", "unknown")},
+                )
             finally:
                 self._queue.task_done()
             time.sleep(self._poll_interval)

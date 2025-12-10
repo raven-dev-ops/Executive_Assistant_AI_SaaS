@@ -25,7 +25,10 @@ from ..metrics import metrics, BusinessTwilioMetrics
 
 
 router = APIRouter(
-    dependencies=[Depends(require_owner_dashboard_auth), Depends(require_subscription_active)]
+    dependencies=[
+        Depends(require_owner_dashboard_auth),
+        Depends(require_subscription_active),
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -100,9 +103,7 @@ def _build_business_context(business_id: str) -> str:
 
     # Enrich with usage/limits and callbacks.
     state = subscription_service.compute_state(business_id)
-    twilio_stats = metrics.twilio_by_business.get(
-        business_id, BusinessTwilioMetrics()
-    )
+    twilio_stats = metrics.twilio_by_business.get(business_id, BusinessTwilioMetrics())
     callbacks = metrics.callbacks_by_business.get(business_id, {}) or {}
     voice_usage = twilio_stats.voice_requests if twilio_stats else 0
     sms_usage = twilio_stats.sms_requests if twilio_stats else 0

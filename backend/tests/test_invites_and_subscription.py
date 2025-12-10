@@ -28,9 +28,13 @@ def test_invite_acceptance_creates_user(monkeypatch):
     invitee_email = f"staff-{uuid.uuid4().hex[:6]}@example.com"
 
     # Register and login as owner to obtain a bearer token for invite creation.
-    reg = client.post("/v1/auth/register", json={"email": owner_email, "password": owner_pass})
+    reg = client.post(
+        "/v1/auth/register", json={"email": owner_email, "password": owner_pass}
+    )
     assert reg.status_code == 200
-    login = client.post("/v1/auth/login", json={"email": owner_email, "password": owner_pass})
+    login = client.post(
+        "/v1/auth/login", json={"email": owner_email, "password": owner_pass}
+    )
     assert login.status_code == 200
     owner_access = login.json()["access_token"]
 
@@ -158,7 +162,9 @@ def test_plan_limit_blocks_calls(monkeypatch):
     deps.get_settings.cache_clear()
     # Force a very low limit for starter to exercise the path.
     monkeypatch.setitem(
-        subscription_service.PLAN_LIMITS, "starter", {"monthly_calls": 0, "monthly_appointments": 10}
+        subscription_service.PLAN_LIMITS,
+        "starter",
+        {"monthly_calls": 0, "monthly_appointments": 10},
     )
     metrics.voice_sessions_by_business.clear()
     session = SessionLocal()
@@ -180,13 +186,15 @@ def test_owner_callbacks_api(monkeypatch):
     metrics.callbacks_by_business.clear()
     # Seed a callback item as if missed call was recorded.
     now = datetime.now(UTC)
-    metrics.callbacks_by_business.setdefault("default_business", {})["+15550000001"] = CallbackItem(
-        phone="+15550000001",
-        first_seen=now,
-        last_seen=now,
-        count=1,
-        reason="MISSED_CALL",
-        status="PENDING",
+    metrics.callbacks_by_business.setdefault("default_business", {})["+15550000001"] = (
+        CallbackItem(
+            phone="+15550000001",
+            first_seen=now,
+            last_seen=now,
+            count=1,
+            reason="MISSED_CALL",
+            status="PENDING",
+        )
     )
     resp = client.get("/v1/owner/callbacks")
     assert resp.status_code == 200

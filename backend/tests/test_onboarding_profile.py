@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+
 client = TestClient(app)
 
 
@@ -47,7 +48,11 @@ def test_oauth_callback_error_then_success_marks_status():
 
     profile_after_error = _get_profile()
     gcal = next(
-        (i for i in profile_after_error["integrations"] if i["provider"] == "gcalendar"),
+        (
+            i
+            for i in profile_after_error["integrations"]
+            if i["provider"] == "gcalendar"
+        ),
         None,
     )
     assert gcal is not None
@@ -65,7 +70,11 @@ def test_oauth_callback_error_then_success_marks_status():
 
     profile_after_success = _get_profile()
     gcal_ok = next(
-        (i for i in profile_after_success["integrations"] if i["provider"] == "gcalendar"),
+        (
+            i
+            for i in profile_after_success["integrations"]
+            if i["provider"] == "gcalendar"
+        ),
         None,
     )
     assert gcal_ok is not None

@@ -62,7 +62,10 @@ def create_app() -> FastAPI:
     # parent (/app) in containers; fall back to the grandparent when running
     # from the backend package during local tests.
     repo_root = Path(__file__).resolve().parents[1]
-    if not (repo_root / "dashboard").exists() and len(Path(__file__).resolve().parents) > 2:
+    if (
+        not (repo_root / "dashboard").exists()
+        and len(Path(__file__).resolve().parents) > 2
+    ):
         candidate = Path(__file__).resolve().parents[2]
         if (candidate / "dashboard").exists():
             repo_root = candidate
@@ -71,11 +74,7 @@ def create_app() -> FastAPI:
         or os.getenv("TESTING", "false").lower() == "true"
         or "pytest" in sys.modules
     )
-    if (
-        testing_mode
-        and SQLALCHEMY_AVAILABLE
-        and SessionLocal is not None
-    ):
+    if testing_mode and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         # In tests, drop the default business owner phone so global overrides
         # remain predictable for assertions.
         try:
@@ -202,6 +201,7 @@ def create_app() -> FastAPI:
         @app.get("/", include_in_schema=False)
         async def root_redirect() -> RedirectResponse:
             return RedirectResponse(url="/dashboard/index.html")
+
     if chat_dir.exists():
         app.mount(
             "/chat",

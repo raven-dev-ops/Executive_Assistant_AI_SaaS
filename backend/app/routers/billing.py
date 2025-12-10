@@ -247,9 +247,7 @@ def get_billing_portal_link(
 
     client = _get_stripe_client()
     customer_id = _get_or_create_customer(business_id, None)
-    return_url = (
-        stripe_cfg.billing_portal_return_url or stripe_cfg.checkout_success_url
-    )
+    return_url = stripe_cfg.billing_portal_return_url or stripe_cfg.checkout_success_url
     try:
         session = client.billing_portal.Session.create(
             customer=customer_id,
@@ -261,7 +259,9 @@ def get_billing_portal_link(
         raise HTTPException(status_code=502, detail="Stripe portal failed") from exc
 
 
-def _status_from_subscription(event_type: str, obj: dict[str, object]) -> SubscriptionState:
+def _status_from_subscription(
+    event_type: str, obj: dict[str, object]
+) -> SubscriptionState:
     status = str(obj.get("status") or "").lower() if isinstance(obj, dict) else ""
     if event_type == "customer.subscription.deleted":
         status = "canceled"
@@ -286,9 +286,7 @@ def _plan_from_event_obj(obj: dict[str, object]) -> str | None:
                     continue
                 price = item.get("price") if isinstance(item.get("price"), dict) else {}
                 plan_id = (
-                    price.get("lookup_key")
-                    or price.get("nickname")
-                    or price.get("id")
+                    price.get("lookup_key") or price.get("nickname") or price.get("id")
                 )
                 if plan_id:
                     break

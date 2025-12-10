@@ -122,9 +122,14 @@ def _heuristic_intent_with_score(text: str) -> tuple[str, float]:
         return "cancel", 0.85
     if "resched" in lower or "change my time" in lower:
         return "reschedule", 0.85
-    if any(k in lower for k in ["book", "schedule", "appointment", "available", "tomorrow"]):
+    if any(
+        k in lower for k in ["book", "schedule", "appointment", "available", "tomorrow"]
+    ):
         return "schedule", 0.8
-    if any(k in lower for k in ["hours", "pricing", "quote", "estimate", "warranty", "guarantee"]):
+    if any(
+        k in lower
+        for k in ["hours", "pricing", "quote", "estimate", "warranty", "guarantee"]
+    ):
         return "faq", 0.65
     if lower.strip() in {"hi", "hello", "hey"}:
         return "greeting", 0.45

@@ -151,11 +151,7 @@ def _get_invite_by_token(session, token: str) -> BusinessInviteDB | None:
 
 
 def _get_memberships(session, user_id: str) -> list[BusinessUserDB]:
-    return (
-        session.query(BusinessUserDB)
-        .filter(BusinessUserDB.user_id == user_id)
-        .all()
-    )
+    return session.query(BusinessUserDB).filter(BusinessUserDB.user_id == user_id).all()
 
 
 def _roles_for_business(
@@ -440,9 +436,8 @@ def reset_init(payload: ResetInitRequest) -> ResetInitResponse:
         session.add(user)
         session.commit()
         session.refresh(user)
-        testing_mode = (
-            os.getenv("TESTING", "false").lower() == "true"
-            or bool(os.getenv("PYTEST_CURRENT_TEST"))
+        testing_mode = os.getenv("TESTING", "false").lower() == "true" or bool(
+            os.getenv("PYTEST_CURRENT_TEST")
         )
         reset_token = token if testing_mode else None
         return ResetInitResponse(message=message, reset_token=reset_token)
@@ -536,11 +531,7 @@ def invite_accept(payload: InviteAcceptRequest) -> TokenResponse:
         if not business:
             raise HTTPException(status_code=404, detail="Business not found")
 
-        user = (
-            session.query(UserDB)
-            .filter(UserDB.email == invite.email)
-            .one_or_none()
-        )
+        user = session.query(UserDB).filter(UserDB.email == invite.email).one_or_none()
         if user:
             user.password_hash = hash_password(payload.password)
             if payload.name:
@@ -644,6 +635,7 @@ def my_businesses(
         return MyBusinessesResponse(memberships=memberships_resp)
     finally:
         session.close()
+
 
 class ActiveBusinessRequest(BaseModel):
     business_id: str

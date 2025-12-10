@@ -118,7 +118,8 @@ def compute_state(business_id: str) -> SubscriptionState:
                             0, (grace_end - datetime.now(UTC)).days
                         )
                 state.blocked = (
-                    getattr(settings, "enforce_subscription", False) and not state.in_grace
+                    getattr(settings, "enforce_subscription", False)
+                    and not state.in_grace
                 )
     finally:
         session.close()
@@ -143,7 +144,9 @@ async def _notify_owner_if_needed(
     subject = f"Subscription attention needed ({state.status})"
     grace_note = ""
     if state.in_grace and state.grace_remaining_days:
-        grace_note = f" You have {state.grace_remaining_days} day(s) remaining in grace."
+        grace_note = (
+            f" You have {state.grace_remaining_days} day(s) remaining in grace."
+        )
     body = (
         f"Your subscription status is '{state.status}'."
         f"{grace_note} Please update billing to avoid interruptions."
@@ -158,7 +161,9 @@ async def _notify_owner_if_needed(
         _reminder_cache[cache_key] = now
     except Exception:
         logger.warning(
-            "subscription_reminder_failed", exc_info=True, extra={"business_id": business.id}
+            "subscription_reminder_failed",
+            exc_info=True,
+            extra={"business_id": business.id},
         )
 
 
