@@ -102,7 +102,7 @@ Adjust the remote URL for HTTPS if you prefer.
    ```bash
    docker build \
      -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ai-telephony/ai-telephony-backend:v1 \
-     -f backend/Dockerfile backend
+     -f backend/Dockerfile .
    ```
 
 5. Push the image:

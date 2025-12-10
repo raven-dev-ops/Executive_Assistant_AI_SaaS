@@ -2,8 +2,11 @@ import logging
 import os
 import sys
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from .config import get_settings
@@ -55,6 +58,7 @@ def create_app() -> FastAPI:
     # Log a brief configuration summary for operational visibility.
     settings = get_settings()
     logger = logging.getLogger(__name__)
+    repo_root = Path(__file__).resolve().parents[2]
     testing_mode = (
         bool(os.getenv("PYTEST_CURRENT_TEST"))
         or os.getenv("TESTING", "false").lower() == "true"
@@ -177,6 +181,32 @@ def create_app() -> FastAPI:
         job_queue.start()
     except Exception:
         logger.warning("job_queue_start_failed", exc_info=True)
+
+    dashboard_dir = repo_root / "dashboard"
+    chat_dir = repo_root / "chat"
+    widget_dir = repo_root / "widget"
+    if dashboard_dir.exists():
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(dashboard_dir), html=True),
+            name="dashboard",
+        )
+
+        @app.get("/", include_in_schema=False)
+        async def root_redirect() -> RedirectResponse:
+            return RedirectResponse(url="/dashboard/index.html")
+    if chat_dir.exists():
+        app.mount(
+            "/chat",
+            StaticFiles(directory=str(chat_dir), html=True),
+            name="chat",
+        )
+    if widget_dir.exists():
+        app.mount(
+            "/widget",
+            StaticFiles(directory=str(widget_dir), html=True),
+            name="widget",
+        )
 
     @app.middleware("http")
     async def metrics_middleware(request: Request, call_next):

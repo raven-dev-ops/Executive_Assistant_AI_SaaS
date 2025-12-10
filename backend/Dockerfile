@@ -13,9 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy project metadata and application code, then install dependencies
-COPY pyproject.toml ./
-COPY app ./app
-COPY seed_demo_data.py ./seed_demo_data.py
+COPY backend/pyproject.toml ./pyproject.toml
+COPY backend/app ./app
+COPY backend/seed_demo_data.py ./seed_demo_data.py
+COPY dashboard ./dashboard
+COPY chat ./chat
+COPY widget ./widget
+COPY PLANNER.md ./PLANNER.md
 RUN pip install --no-cache-dir .
 
 EXPOSE 8080

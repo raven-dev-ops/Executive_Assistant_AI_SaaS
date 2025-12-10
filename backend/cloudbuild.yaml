@@ -1,8 +1,9 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    dir: backend
     args:
       - build
+      - -f
+      - backend/Dockerfile
       - .
       - -t
       - us-central1-docker.pkg.dev/$PROJECT_ID/ai-telephony-backend/backend:$COMMIT_SHA
