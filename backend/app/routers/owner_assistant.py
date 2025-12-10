@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi import Response, Form
 from pydantic import BaseModel
 
 from ..deps import ensure_business_active, require_owner_dashboard_auth
@@ -35,3 +36,25 @@ async def owner_assistant_query(
     _ = business_id
     result = await owner_assistant_service.answer(payload.question)
     return OwnerAssistantReply(answer=result.answer, model=result.used_model)
+
+
+@router.post("/voice-reply", response_class=Response)
+async def owner_assistant_voice_reply(
+    Question: str = Form(..., description="Owner question via Twilio <Gather>"),
+    business_id: str = Depends(ensure_business_active),
+) -> Response:
+    """Return a TwiML <Say> response for owner AI questions.
+
+    This allows the owner assistant to answer over voice (e.g., Twilio
+    webhook) without exposing sensitive data. Answers are grounded in the
+    same docs as the text endpoint.
+    """
+    _ = business_id
+    result = await owner_assistant_service.answer(Question)
+    safe = result.answer.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    twiml = f"""
+<Response>
+  <Say voice="alice">{safe}</Say>
+</Response>
+""".strip()
+    return Response(content=twiml, media_type="text/xml")

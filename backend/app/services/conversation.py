@@ -311,13 +311,30 @@ class ConversationManager:
             getattr(session, "business_id", "default_business") or "default_business"
         )
         intent_meta = None
+        history: list[str] = []
+        conv = conversations_repo.get_by_session(session.id)
+        if conv and getattr(conv, "messages", None):
+            history = [
+                m.text
+                for m in conv.messages[-4:]
+                if getattr(m, "role", "") == "user" and getattr(m, "text", None)
+            ]
         if normalized:
             try:
                 intent_meta = await classify_intent_with_metadata(
-                    normalized, business_id
+                    normalized, business_id, history=history
                 )
                 session.intent = intent_meta["intent"]
                 session.intent_confidence = intent_meta.get("confidence")
+                logger.debug(
+                    "intent_classified",
+                    extra={
+                        "business_id": business_id,
+                        "intent": session.intent,
+                        "confidence": session.intent_confidence,
+                        "provider": intent_meta.get("provider"),
+                    },
+                )
             except Exception:
                 session.intent = session.intent or None
                 session.intent_confidence = getattr(session, "intent_confidence", None)

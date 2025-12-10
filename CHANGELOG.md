@@ -29,6 +29,7 @@ Release notes here summarize work that implements or documents the design descri
 - Email delivery now supports Gmail (per-tenant OAuth) and SendGrid providers with retry/backoff, configuration validation, and stubbed fallbacks.
 - Google Calendar: per-tenant OAuth tokens are used for availability/event writes, refreshed and persisted when needed; added `/v1/calendar/google/webhook` to sync inbound updates/cancellations into stored appointments with stub fallback.
 - QuickBooks: OAuth token exchanges/refresh persisted per tenant; `/v1/integrations/qbo/sync` now pushes customers + sales receipts (with retry/backoff) when credentials are configured, and returns stubbed status otherwise.
+- AI/intent: intent classifier now uses recent conversation history with OpenAI guardrails and fallback heuristics; owner assistant can reply via Twilio voice (`/v1/owner/assistant/voice-reply`) alongside text.
 - Twilio voice streaming now enqueues missed/partial calls into the callback queue, sends owner alerts, and includes signature validation tests for voice and status webhooks.
 
 

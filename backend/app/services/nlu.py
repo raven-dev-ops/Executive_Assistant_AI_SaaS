@@ -133,8 +133,12 @@ def _heuristic_intent_with_score(text: str) -> tuple[str, float]:
     return "other", 0.4
 
 
-async def _classify_with_llm(text: str) -> str | None:
-    """LLM intent classifier for deployments that configure OpenAI."""
+async def _classify_with_llm(text: str, history: list[str] | None = None) -> str | None:
+    """LLM intent classifier for deployments that configure OpenAI.
+
+    History is provided as recent user utterances to help disambiguate
+    short or vague inputs without leaking sensitive data.
+    """
     settings = get_settings()
     speech = settings.speech
     if speech.provider != "openai" or not speech.openai_api_key:
@@ -148,10 +152,23 @@ async def _classify_with_llm(text: str) -> str | None:
                 "Allowed intents: emergency, schedule, reschedule, cancel, faq, greeting, other. "
                 "Return only the intent label."
             )
+            context_lines = []
+            if history:
+                recent = [h.strip() for h in history if h.strip()][-3:]
+                if recent:
+                    context_lines.append(
+                        "Recent caller turns (most recent last):\n"
+                        + "\n".join(f"- {h[:256]}" for h in recent)
+                    )
             payload = {
                 "model": speech.openai_chat_model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
+                    *(
+                        [{"role": "system", "content": "\n".join(context_lines)}]
+                        if context_lines
+                        else []
+                    ),
                     {"role": "user", "content": (text or "").strip()},
                 ],
                 "temperature": 0,
@@ -175,20 +192,26 @@ async def _classify_with_llm(text: str) -> str | None:
 
 
 async def classify_intent_with_metadata(
-    text: str, business_id: str | None = None
+    text: str, business_id: str | None = None, history: list[str] | None = None
 ) -> dict:
     """Return intent label with confidence and provider metadata."""
-    intent, confidence = _heuristic_intent_with_score(text)
+    combined = " ".join([text or "", " ".join(history or [])]).strip()
+    intent, confidence = _heuristic_intent_with_score(combined or text)
     chosen_provider = "heuristic"
     settings = get_settings()
     provider = getattr(settings.nlu, "intent_provider", "heuristic").lower()
 
     if provider == "openai":
-        llm_label = await _classify_with_llm(text)
-        if llm_label:
+        llm_label = await _classify_with_llm(text, history=history)
+        if llm_label in INTENT_LABELS:
             intent = llm_label
             confidence = max(confidence, 0.85)
             chosen_provider = "openai"
+        else:
+            logger.debug(
+                "intent_llm_invalid_label",
+                extra={"label": llm_label, "business_id": business_id},
+            )
 
     return {
         "intent": intent,
@@ -198,7 +221,7 @@ async def classify_intent_with_metadata(
     }
 
 
-async def classify_intent(text: str) -> str:
+async def classify_intent(text: str, history: list[str] | None = None) -> str:
     """Backward-compatible intent classifier that returns only the label."""
-    meta = await classify_intent_with_metadata(text, None)
+    meta = await classify_intent_with_metadata(text, None, history=history)
     return meta["intent"]
