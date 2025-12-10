@@ -529,6 +529,95 @@ def test_twilio_signature_valid_allows_request(monkeypatch) -> None:
     assert "<Message>" in body
 
 
+def test_twilio_voice_signature_required_when_enabled(monkeypatch) -> None:
+    class SmsCfg:
+        def __init__(self) -> None:
+            self.verify_twilio_signatures = True
+            self.twilio_auth_token = "test-token"
+            self.twilio_say_language_default = None
+            self.twilio_say_language_es = None
+
+    class DummySettings:
+        def __init__(self) -> None:
+            self.sms = SmsCfg()
+
+    monkeypatch.setattr(twilio_integration, "get_settings", lambda: DummySettings())
+
+    resp = client.post(
+        "/twilio/voice",
+        data={"CallSid": "CA_SIG_MISS", "From": "+15550000002"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 401
+
+
+def test_twilio_voice_signature_valid_allows(monkeypatch) -> None:
+    class SmsCfg:
+        def __init__(self) -> None:
+            self.verify_twilio_signatures = True
+            self.twilio_auth_token = "test-token"
+            self.twilio_say_language_default = None
+            self.twilio_say_language_es = None
+
+    class DummySettings:
+        def __init__(self) -> None:
+            self.sms = SmsCfg()
+
+    monkeypatch.setattr(twilio_integration, "get_settings", lambda: DummySettings())
+
+    path = "/twilio/voice"
+    form = {"CallSid": "CA_SIG_OK", "From": "+15550000003"}
+    signature = _build_twilio_signature(path, dict(form), "test-token")
+
+    resp = client.post(
+        path,
+        data=form,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": signature,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "<Response>" in body
+    assert "<Gather" in body
+
+
+def test_twilio_status_callback_requires_signature(monkeypatch) -> None:
+    class SmsCfg:
+        def __init__(self) -> None:
+            self.verify_twilio_signatures = True
+            self.twilio_auth_token = "test-token"
+            self.twilio_say_language_default = None
+            self.twilio_say_language_es = None
+
+    class DummySettings:
+        def __init__(self) -> None:
+            self.sms = SmsCfg()
+
+    monkeypatch.setattr(twilio_integration, "get_settings", lambda: DummySettings())
+
+    form = {"MessageSid": "SM_SIG1", "MessageStatus": "delivered"}
+    resp = client.post(
+        "/twilio/status-callback",
+        data=form,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 401
+
+    signature = _build_twilio_signature("/twilio/status-callback", form, "test-token")
+    resp_ok = client.post(
+        "/twilio/status-callback",
+        data=form,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": signature,
+        },
+    )
+    assert resp_ok.status_code == 200
+    assert resp_ok.json()["status"] == "delivered"
+
+
 @pytest.mark.skipif(
     not SQLALCHEMY_AVAILABLE or SessionLocal is None,
     reason="_get_business_name DB behavior requires database support",

@@ -4,6 +4,7 @@ from app.main import app
 from app import config, deps
 from app.repositories import conversations_repo
 from app.metrics import metrics
+from app.deps import DEFAULT_BUSINESS_ID
 
 
 client = TestClient(app)
@@ -49,3 +50,40 @@ def test_twilio_streaming_canary(monkeypatch):
     assert conv is not None
     assert any(msg.role == "assistant" for msg in conv.messages)
     assert conv.intent in {"schedule", "faq", "greeting", "other"}
+
+
+def test_twilio_stream_stop_enqueues_partial_callback(monkeypatch):
+    metrics.callbacks_by_business.clear()
+    metrics.twilio_by_business.clear()
+    monkeypatch.setenv("TWILIO_STREAMING_ENABLED", "true")
+    config.get_settings.cache_clear()
+    deps.get_settings.cache_clear()
+
+    start = client.post(
+        "/v1/twilio/voice-stream",
+        json={
+            "call_sid": "CS_STOP1",
+            "stream_sid": "SS_STOP1",
+            "event": "start",
+            "business_id": DEFAULT_BUSINESS_ID,
+            "from_number": "+15550002222",
+        },
+    )
+    assert start.status_code == 200
+
+    stop = client.post(
+        "/v1/twilio/voice-stream",
+        json={
+            "call_sid": "CS_STOP1",
+            "stream_sid": "SS_STOP1",
+            "event": "stop",
+            "business_id": DEFAULT_BUSINESS_ID,
+            "from_number": "+15550002222",
+        },
+    )
+    assert stop.status_code == 200
+    queue = metrics.callbacks_by_business.get(DEFAULT_BUSINESS_ID, {})
+    assert "+15550002222" in queue
+    item = queue["+15550002222"]
+    assert item.reason == "PARTIAL_INTAKE"
+    assert item.status == "PENDING"

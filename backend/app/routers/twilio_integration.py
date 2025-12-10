@@ -543,7 +543,7 @@ async def twilio_voice(
                             if language_code == "es":
                                 body = (
                                     f"Sentimos no haber podido completar tu llamada con {business_name}. "
-                                    "Si aAºn necesitas ayuda, respóndenos con un breve resumen del problema "
+                                    "Si aun necesitas ayuda, respóndenos con un breve resumen del problema "
                                     "y te contactaremos."
                                 )
                             else:
@@ -1096,6 +1096,19 @@ async def twilio_voice_stream(
         )
 
     business_id = payload.business_id or DEFAULT_BUSINESS_ID
+    owner_phone = None
+    owner_email = None
+    business_row: BusinessDB | None = None
+    if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session_db = SessionLocal()
+        try:
+            business_row = session_db.get(BusinessDB, business_id)
+        finally:
+            session_db.close()
+        if business_row is not None:
+            owner_phone = getattr(business_row, "owner_phone", None)
+            owner_email = getattr(business_row, "owner_email", None)
+
     metrics.twilio_voice_requests += 1
     per_tenant = metrics.twilio_by_business.setdefault(
         business_id, BusinessTwilioMetrics()
@@ -1125,6 +1138,83 @@ async def twilio_voice_stream(
 
     event = (payload.event or "").lower()
     if event == "stop":
+        status_val = (getattr(session_obj, "status", "") or "").upper()
+        is_partial_lead = status_val not in {"SCHEDULED", "PENDING_FOLLOWUP", "COMPLETED"}
+        phone = payload.from_number or ""
+        lead_source = getattr(session_obj, "lead_source", None) or payload.lead_source
+        if phone and (is_partial_lead or not session_obj):
+            now = datetime.now(UTC)
+            queue = metrics.callbacks_by_business.setdefault(business_id, {})
+            existing = queue.get(phone)
+            reason = "PARTIAL_INTAKE" if is_partial_lead else "MISSED_CALL"
+            if existing is None:
+                queue[phone] = CallbackItem(
+                    phone=phone,
+                    first_seen=now,
+                    last_seen=now,
+                    count=1,
+                    channel="phone",
+                    lead_source=lead_source,
+                    reason=reason,
+                )
+            else:
+                existing.last_seen = now
+                existing.count += 1
+                if lead_source:
+                    existing.lead_source = lead_source
+                if is_partial_lead:
+                    existing.reason = "PARTIAL_INTAKE"
+                if getattr(existing, "status", "PENDING").upper() != "PENDING":
+                    existing.status = "PENDING"
+                    existing.last_result = None
+
+            owner_message = f"{'Partial intake' if is_partial_lead else 'Missed call'} from {phone} at {now.strftime('%Y-%m-%d %H:%M UTC')}."
+            if owner_phone:
+                try:
+                    await sms_service.notify_owner(owner_message, business_id=business_id)
+                except Exception:
+                    logger.warning(
+                        "twilio_stream_owner_sms_failed",
+                        exc_info=True,
+                        extra={"business_id": business_id, "call_sid": payload.call_sid},
+                    )
+            if owner_email:
+                try:
+                    await email_service.notify_owner(
+                        subject="Missed call alert",
+                        body=owner_message,
+                        business_id=business_id,
+                        owner_email=owner_email,
+                    )
+                except Exception:
+                    logger.warning(
+                        "twilio_stream_owner_email_failed",
+                        exc_info=True,
+                        extra={"business_id": business_id, "call_sid": payload.call_sid},
+                    )
+
+            if is_partial_lead and phone:
+                customer = customers_repo.get_by_phone(phone, business_id=business_id)
+                if not customer or not getattr(customer, "sms_opt_out", False):
+                    language_code = get_language_for_business(business_id)
+                    business_name = conversation.DEFAULT_BUSINESS_NAME
+                    if business_row is not None and getattr(business_row, "name", None):
+                        business_name = business_row.name  # type: ignore[assignment]
+                    if language_code == "es":
+                        body = (
+                            f"Sentimos no haber podido completar tu llamada con {business_name}. "
+                            "Si aAºn necesitas ayuda, respóndenos con un breve resumen del problema "
+                            "y te contactaremos."
+                        )
+                    else:
+                        body = (
+                            f"Sorry we couldn't finish your call with {business_name}. "
+                            "If you still need help, please reply with a quick summary of the issue "
+                            "and we'll follow up."
+                        )
+                    await sms_service.notify_customer(
+                        phone, body, business_id=business_id
+                    )
         twilio_state_store.clear_call_session(payload.call_sid)
         sessions.session_store.end(session_obj.id)
         return TwilioStreamResponse(
