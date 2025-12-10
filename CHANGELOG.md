@@ -30,6 +30,8 @@ Release notes here summarize work that implements or documents the design descri
 - Google Calendar: per-tenant OAuth tokens are used for availability/event writes, refreshed and persisted when needed; added `/v1/calendar/google/webhook` to sync inbound updates/cancellations into stored appointments with stub fallback.
 - QuickBooks: OAuth token exchanges/refresh persisted per tenant; `/v1/integrations/qbo/sync` now pushes customers + sales receipts (with retry/backoff) when credentials are configured, and returns stubbed status otherwise.
 - AI/intent: intent classifier now uses recent conversation history with OpenAI guardrails and fallback heuristics; owner assistant can reply via Twilio voice (`/v1/owner/assistant/voice-reply`) alongside text.
+- Onboarding guardrails now protect voice/Twilio session routes; enforcement can be disabled in tests via `ONBOARDING_ENFORCE_IN_TESTS=false`.
+- Integration readiness badges distinguish stub vs live for QuickBooks, Twilio, and Google; QuickBooks sync defaults to inline execution (pass `enqueue=true` to run in the background).
 - Testing/guardrails: added admin route regression checks, end-to-end signup→voice scheduling flow, load-smoke context test, and subscription enforcement guardrail coverage.
 - Twilio voice streaming now enqueues missed/partial calls into the callback queue, sends owner alerts, and includes signature validation tests for voice and status webhooks.
 

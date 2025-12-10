@@ -135,6 +135,51 @@ async def ensure_business_active(
     return business_id
 
 
+def _should_enforce_onboarding() -> bool:
+    testing = bool(os.getenv("PYTEST_CURRENT_TEST")) or (
+        os.getenv("TESTING", "false").lower() == "true"
+    )
+    if testing and os.getenv("ONBOARDING_ENFORCE_IN_TESTS", "false").lower() != "true":
+        return False
+    return os.getenv("ENFORCE_ONBOARDING", "true").lower() == "true"
+
+
+async def ensure_onboarding_ready(
+    business_id: str = Depends(ensure_business_active),
+) -> str:
+    """Ensure onboarding requirements are complete before allowing certain flows."""
+    if not _should_enforce_onboarding():
+        return business_id
+    if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return business_id
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+    finally:
+        session.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Business not found")
+    missing: list[str] = []
+    if not getattr(row, "terms_accepted_at", None):
+        missing.append("terms_of_service")
+    if not getattr(row, "privacy_accepted_at", None):
+        missing.append("privacy_policy")
+    if not getattr(row, "owner_name", None):
+        missing.append("owner_name")
+    if not getattr(row, "owner_email", None):
+        missing.append("owner_email")
+    if not getattr(row, "service_tier", None):
+        missing.append("service_tier")
+    if not getattr(row, "onboarding_completed", False):
+        missing.append("onboarding_completed")
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Complete onboarding first: {', '.join(missing)}",
+        )
+    return business_id
+
+
 async def require_subscription_active(
     business_id: str = Depends(get_business_id),
 ):

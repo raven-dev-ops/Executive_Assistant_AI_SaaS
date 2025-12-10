@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..deps import ensure_business_active
+from ..deps import ensure_onboarding_ready
 from ..metrics import BusinessVoiceSessionMetrics, metrics
 from ..repositories import conversations_repo, customers_repo
 from ..services import conversation, sessions
@@ -43,7 +43,7 @@ class SessionEndResponse(BaseModel):
 @router.post("/session/start", response_model=SessionStartResponse)
 async def start_session(
     payload: SessionStartRequest,
-    business_id: str = Depends(ensure_business_active),
+    business_id: str = Depends(ensure_onboarding_ready),
 ) -> SessionStartResponse:
     # Track voice session API usage.
     metrics.voice_session_requests += 1
@@ -75,7 +75,7 @@ async def start_session(
 async def session_input(
     session_id: str,
     payload: SessionInputRequest,
-    business_id: str = Depends(ensure_business_active),
+    business_id: str = Depends(ensure_onboarding_ready),
 ) -> SessionInputResponse:
     # Track voice session API usage.
     metrics.voice_session_requests += 1

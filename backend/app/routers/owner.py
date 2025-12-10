@@ -1436,11 +1436,23 @@ def _business_onboarding_profile_from_row(
         return connected, status
 
     integrations: list[OwnerIntegrationStatus] = []
+    settings = get_settings()
     google_live = bool(
-        getattr(get_settings().oauth, "google_client_id", None)
-        and getattr(get_settings().oauth, "google_client_secret", None)
+        getattr(settings.oauth, "google_client_id", None)
+        and getattr(settings.oauth, "google_client_secret", None)
     )
-    quickbooks_live = False  # Placeholder until QBO OAuth added.
+    quickbooks_live = bool(
+        getattr(settings.quickbooks, "client_id", None)
+        and getattr(settings.quickbooks, "client_secret", None)
+        and getattr(settings.quickbooks, "redirect_uri", None)
+    )
+    twilio_live = (
+        getattr(settings.sms, "provider", "stub") == "twilio"
+        and bool(
+            getattr(settings.sms, "twilio_account_sid", None)
+            and getattr(settings.sms, "twilio_auth_token", None)
+        )
+    )
 
     def add(provider: str, status_tuple: tuple[bool, str], label: str) -> None:
         connected, status_value = status_tuple
@@ -1449,7 +1461,9 @@ def _business_onboarding_profile_from_row(
             mode = "stub"
         if provider == "quickbooks" and not quickbooks_live:
             mode = "stub"
-        if provider in {"twilio", "linkedin"}:
+        if provider == "twilio" and not twilio_live:
+            mode = "stub"
+        if provider == "linkedin":
             mode = "stub"
         integrations.append(
             OwnerIntegrationStatus(

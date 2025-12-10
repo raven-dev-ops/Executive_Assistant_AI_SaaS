@@ -371,7 +371,8 @@ def qbo_status(business_id: str = Depends(ensure_business_active)) -> QboStatusR
 def qbo_sync_contacts(
     business_id: str = Depends(ensure_business_active),
     enqueue: bool | None = Query(
-        default=True, description="Run sync in background when true."
+        default=False,
+        description="Run sync in background when true (defaults to inline for predictability).",
     ),
 ) -> QboSyncResponse:
     """Push customers/appointments into QuickBooks as customers + sales receipts."""

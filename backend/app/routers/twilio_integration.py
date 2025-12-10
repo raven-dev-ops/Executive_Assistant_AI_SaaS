@@ -14,7 +14,7 @@ from typing import Dict, TYPE_CHECKING
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
-from ..deps import DEFAULT_BUSINESS_ID
+from ..deps import DEFAULT_BUSINESS_ID, ensure_onboarding_ready
 from ..metrics import (
     BusinessSmsMetrics,
     BusinessTwilioMetrics,
@@ -377,6 +377,9 @@ async def twilio_voice(
         business_id, BusinessTwilioMetrics()
     )
     per_tenant.voice_requests += 1
+
+    # Enforce onboarding completion for telephony flows unless disabled in tests.
+    await ensure_onboarding_ready(business_id)
 
     # Resolve language once for this call so we can adjust TwiML voices and
     # error messages when tenants are configured for Spanish.
@@ -972,6 +975,8 @@ async def twilio_voice_assistant(
         business_id, BusinessTwilioMetrics()
     )
     per_tenant.voice_requests += 1
+
+    await ensure_onboarding_ready(business_id)
 
     # Optional signature verification.
     form_params: Dict[str, str] = {"CallSid": CallSid}
