@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import os
 import httpx
 
@@ -232,6 +233,14 @@ async def auth_callback(
                 refresh_token,
                 expires_in=expires_in,
             )
+            if provider_norm == "gcalendar":
+                row.gcalendar_access_token = tok.access_token
+                row.gcalendar_refresh_token = tok.refresh_token
+                row.gcalendar_token_expires_at = datetime.now(UTC) + timedelta(
+                    seconds=expires_in or 3600
+                )
+                session.add(row)
+                session.commit()
         except HTTPException as exc:
             if attr:
                 setattr(row, attr, "error")

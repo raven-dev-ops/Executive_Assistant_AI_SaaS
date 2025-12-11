@@ -6,8 +6,11 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.repositories import appointments_repo, customers_repo
 from app.deps import DEFAULT_BUSINESS_ID
-from app.services.calendar import calendar_service
+from app.services.calendar import calendar_service, _load_gcal_tokens
 from app.services.oauth_tokens import oauth_store
+from app.db import SessionLocal
+from app.db_models import BusinessDB
+from app import config
 
 
 client = TestClient(app)
@@ -117,3 +120,39 @@ def test_find_slots_prefers_oauth_user_client(monkeypatch):
     assert slots
 
     calendar_service._settings.use_stub = original_use_stub
+
+
+def test_gcalendar_tokens_persist_and_load(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csecret")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE", "https://example.com/auth")
+    config.get_settings.cache_clear()
+
+    start = client.get(f"/auth/gcalendar/start?business_id={DEFAULT_BUSINESS_ID}")
+    assert start.status_code == 200
+    state = start.json()["authorization_url"].split("state=")[-1]
+
+    async def fake_exchange(code, redirect_uri, scopes):
+        return "access-live", "refresh-live", 1200
+
+    from app.routers import auth_integration
+
+    monkeypatch.setattr(
+        auth_integration, "_exchange_google_code_for_tokens", fake_exchange
+    )
+
+    resp = client.get(f"/auth/gcalendar/callback?state={state}&code=abc")
+    assert resp.status_code == 200
+    tok = oauth_store.get_tokens("gcalendar", DEFAULT_BUSINESS_ID)
+    assert tok is not None
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, DEFAULT_BUSINESS_ID)
+        assert getattr(row, "gcalendar_access_token", None) == "access-live"
+        assert getattr(row, "gcalendar_refresh_token", None) == "refresh-live"
+        loaded = _load_gcal_tokens(DEFAULT_BUSINESS_ID)
+        assert loaded is not None
+        assert loaded.access_token == "access-live"
+    finally:
+        session.close()
+    config.get_settings.cache_clear()

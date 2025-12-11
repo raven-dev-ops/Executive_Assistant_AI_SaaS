@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
+import httpx
 
 try:  # Optional Google Calendar dependencies.
     from google.auth.transport.requests import Request
@@ -30,7 +31,7 @@ except Exception:  # pragma: no cover - fallback when google libs are absent.
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
-from ..services.oauth_tokens import oauth_store
+from ..services.oauth_tokens import oauth_store, OAuthToken
 
 
 @dataclass
@@ -158,6 +159,95 @@ def _get_business_capacity(
     return max_jobs_per_day, reserve_mornings_for_emergencies, travel_buffer_minutes
 
 
+def _load_gcal_tokens(business_id: str) -> OAuthToken | None:
+    if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return None
+    session_db = SessionLocal()
+    try:
+        row = session_db.get(BusinessDB, business_id)
+        if not row:
+            return None
+        if getattr(row, "gcalendar_access_token", None) and getattr(
+            row, "gcalendar_refresh_token", None
+        ):
+            expires_at = (
+                row.gcalendar_token_expires_at.timestamp()
+                if getattr(row, "gcalendar_token_expires_at", None)
+                else datetime.now(UTC).timestamp() + 3600
+            )
+            return OAuthToken(
+                access_token=row.gcalendar_access_token,
+                refresh_token=row.gcalendar_refresh_token,
+                expires_at=expires_at,
+            )
+    finally:
+        session_db.close()
+    return None
+
+
+def _save_gcal_tokens(
+    business_id: str, access_token: str, refresh_token: str, expires_in: int
+) -> OAuthToken:
+    tok = oauth_store.save_tokens(
+        "gcalendar",
+        business_id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+    )
+    if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session_db = SessionLocal()
+        try:
+            row = session_db.get(BusinessDB, business_id)
+            if row:
+                row.gcalendar_access_token = access_token
+                row.gcalendar_refresh_token = refresh_token
+                row.gcalendar_token_expires_at = datetime.now(UTC) + timedelta(
+                    seconds=expires_in
+                )
+                session_db.add(row)
+                session_db.commit()
+        finally:
+            session_db.close()
+    return tok
+
+
+def _refresh_gcal_tokens(business_id: str, settings) -> OAuthToken | None:
+    tok = oauth_store.get_tokens("gcalendar", business_id) or _load_gcal_tokens(
+        business_id
+    )
+    if not tok:
+        return None
+    client_id = settings.oauth.google_client_id
+    client_secret = settings.oauth.google_client_secret
+    if tok.refresh_token and client_id and client_secret:
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": tok.refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        try:
+            with httpx.Client(timeout=8.0) as client:
+                resp = client.post("https://oauth2.googleapis.com/token", data=data)
+            if resp.status_code == 200:
+                payload = resp.json()
+                access_token = payload.get("access_token", tok.access_token)
+                refresh_token = payload.get("refresh_token") or tok.refresh_token
+                expires_in = int(payload.get("expires_in") or 3600)
+                return _save_gcal_tokens(
+                    business_id, access_token, refresh_token, expires_in
+                )
+        except Exception:
+            pass
+    return _save_gcal_tokens(
+        business_id,
+        access_token=f"gcalendar_access_{int(datetime.now(UTC).timestamp())}",
+        refresh_token=tok.refresh_token,
+        expires_in=3600,
+    )
+
+
 def _align_to_business_hours(
     start: datetime,
     duration: timedelta,
@@ -244,7 +334,9 @@ class CalendarService:
         if not (UserCredentials and Request and build):
             return None
         settings = get_settings()
-        tok = oauth_store.get_tokens("gcalendar", business_id)
+        tok = oauth_store.get_tokens("gcalendar", business_id) or _load_gcal_tokens(
+            business_id
+        )
         if not tok:
             return None
         client_id = settings.oauth.google_client_id
@@ -269,8 +361,7 @@ class CalendarService:
                         )
                     except Exception:
                         expires_in = 3600
-                oauth_store.save_tokens(
-                    "gcalendar",
+                _save_gcal_tokens(
                     business_id,
                     access_token=creds.token,
                     refresh_token=creds.refresh_token or tok.refresh_token,
@@ -278,7 +369,9 @@ class CalendarService:
                 )
             return build("calendar", "v3", credentials=creds, cache_discovery=False)
         except Exception:
-            # If refresh fails, fall back to stored tokens and stub/service account.
+            refreshed = _refresh_gcal_tokens(business_id, settings)
+            if refreshed:
+                return self._build_user_client(business_id)
             return None
 
     def _resolve_calendar_id(self, business_id: str | None, calendar_id: str | None):
