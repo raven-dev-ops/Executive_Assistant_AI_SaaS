@@ -1,6 +1,9 @@
 AI Telephony Service & CRM for Trades
 =====================================
 
+![Backend CI](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/backend-ci.yml/badge.svg)
+![Perf Smoke](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/perf-smoke.yml/badge.svg)
+
 This repository contains the design and a working prototype for an AI-powered telephony service and
 lightweight CRM tailored to small trades businesses, using **Bristol Plumbing (Merriam, KS)** as
 the reference customer. The assistant acts as a 24/7 virtual receptionist that can:
@@ -358,6 +361,9 @@ Testing (key flows)
 
 - Twilio admin health coverage: `python -m pytest tests/test_business_admin.py::test_admin_twilio_health_reflects_config_and_metrics`
 - Stripe admin health coverage: `python -m pytest tests/test_business_admin.py::test_admin_stripe_health_includes_config_and_usage`
+- Coverage artifacts: backend CI uploads `coverage.xml` per Python version (Actions → backend-ci artifacts) and enforces an 85% minimum.
+- Perf smoke: `pytest tests/test_perf_smoke.py tests/test_perf_multitenant_smoke.py tests/test_perf_transcript_smoke.py tests/test_twilio_streaming_canary.py` (also runs in `.github/workflows/perf-smoke.yml`).
+- Tests default to stubbed providers (Twilio/Stripe/Google/QBO) via env profiles (`env.*.stub`) to avoid real external calls.
 
 
 ## New in this iteration
