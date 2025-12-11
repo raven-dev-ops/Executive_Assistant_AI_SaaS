@@ -2743,6 +2743,32 @@
 
 
 
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <p class="muted">Team & Roles</p>
+            <h2>Members</h2>
+          </div>
+          <div class="pill connected" id="active-business-pill" aria-live="polite"></div>
+        </div>
+
+        <div class="quick-actions" style="margin-bottom: 0.75rem;">
+          <div>
+            <label for="active-business-input" class="muted" style="font-size: 0.8rem;">Switch active business</label>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <input id="active-business-input" type="text" placeholder="business_id" aria-label="Active business id" />
+              <button type="button" class="ghost-button" id="set-active-business">Set active</button>
+            </div>
+          </div>
+          <div>
+            <label class="muted" style="font-size: 0.8rem;">Invite teammate</label>
+            <button type="button" class="ghost-button" data-target="staff-invite-form-wrapper">Open invite form</button>
+          </div>
+        </div>
+
+        <div id="team-table" class="muted">Loading team...</div>
+      </div>
+
       <div class="card" id="callbacks-card">
 
         <div class="card-header">
@@ -4695,6 +4721,106 @@
         a.download = "callbacks.csv";
         a.click();
         URL.revokeObjectURL(url);
+      }
+
+      async function loadTeam() {
+        const table = document.getElementById("team-table");
+        if (!table) return;
+        if (!hasOwnerPrivileges()) {
+          table.textContent = "Team management requires owner or admin.";
+          return;
+        }
+        table.textContent = "Loading team...";
+        try {
+          const res = await authorizedFetch("/v1/owner/users");
+          if (!res.ok) throw new Error(`Unable to load team (${res.status})`);
+          const data = await res.json();
+          const users = Array.isArray(data?.users) ? data.users : [];
+          if (!users.length) {
+            table.innerHTML = '<div class="muted">No teammates yet.</div>';
+            return;
+          }
+          table.innerHTML = `
+            <div class="table" role="table" aria-label="Team members">
+              ${users
+                .map(
+                  (u) => `
+                  <div class="table-row" role="row">
+                    <div class="table-cell" role="cell">
+                      <div style="font-weight:600;">${escapeHtml(u.email || "")}</div>
+                      <div class="muted" style="font-size:0.8rem;">User ID: ${escapeHtml(u.id || "")}</div>
+                    </div>
+                    <div class="table-cell" role="cell">
+                      <label class="muted" style="font-size:0.75rem;">Role</label>
+                      <select data-user-id="${escapeHtml(u.id)}" class="role-select" ${hasOwnerPrivileges() ? "" : "disabled"}>
+                        ${["owner", "admin", "staff", "viewer"]
+                          .map((r) => `<option value="${r}" ${u.role === r ? "selected" : ""}>${r}</option>`)
+                          .join("")}
+                      </select>
+                    </div>
+                  </div>
+                `
+                )
+                .join("")}
+            </div>
+          `;
+
+          document.querySelectorAll(".role-select").forEach((select) => {
+            select.addEventListener("change", async (evt) => {
+              const userId = evt.target.getAttribute("data-user-id");
+              const role = evt.target.value;
+              if (!userId) return;
+              try {
+                const res = await authorizedFetch(`/v1/owner/users/${userId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ role }),
+                });
+                if (!res.ok) {
+                  throw new Error(`Unable to update role (${res.status})`);
+                }
+              } catch (err) {
+                console.error(err);
+                alert(err?.message || "Role update failed.");
+              }
+            });
+          });
+        } catch (err) {
+          console.error(err);
+          table.textContent = err?.message || "Unable to load team.";
+        }
+      }
+
+      async function loadActiveBusiness() {
+        const pill = document.getElementById("active-business-pill");
+        if (!pill) return;
+        try {
+          const res = await authorizedFetch("/v1/auth/me");
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          const businessId = data?.active_business_id || "default_business";
+          pill.textContent = `Active business: ${businessId}`;
+        } catch {
+          pill.textContent = "Active business: unknown";
+        }
+      }
+
+      async function setActiveBusiness() {
+        const input = document.getElementById("active-business-input");
+        const businessId = input?.value?.trim();
+        if (!businessId) return;
+        try {
+          const res = await authorizedFetch("/v1/auth/active-business", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ business_id: businessId }),
+          });
+          if (!res.ok) throw new Error(`Unable to set active business (${res.status})`);
+          await loadActiveBusiness();
+        } catch (err) {
+          console.error(err);
+          alert(err?.message || "Unable to set active business.");
+        }
       }
 
       function renderConversationSummary(list = []) {
@@ -8526,6 +8652,7 @@ async function loadTeam() {
 
         document.getElementById("refresh-callbacks")?.addEventListener("click", loadCallbacks);
         document.getElementById("download-callbacks")?.addEventListener("click", downloadCallbacksCsv);
+        document.getElementById("set-active-business")?.addEventListener("click", setActiveBusiness);
 
       }
 
@@ -8660,6 +8787,7 @@ async function loadTeam() {
         loadBusinesses();
 
         loadTeam();
+        loadActiveBusiness();
 
         loadInvites();
 
