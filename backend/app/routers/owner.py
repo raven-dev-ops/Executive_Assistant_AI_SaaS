@@ -1778,6 +1778,7 @@ class OwnerQboSummaryResponse(BaseModel):
     token_expires_at: datetime | None = None
     last_sync_at: datetime | None = None
     pending_count: int
+    configured: bool = False
 
 
 class OwnerQboNotifyRequest(BaseModel):
@@ -1934,6 +1935,11 @@ def owner_qbo_summary(
     connected = False
     realm_id = None
     token_expires_at = None
+    configured = False
+    settings = get_settings()
+    qb = settings.quickbooks
+    if qb.client_id and qb.client_secret and qb.redirect_uri:
+        configured = True
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
@@ -1951,6 +1957,7 @@ def owner_qbo_summary(
         token_expires_at=token_expires_at,
         last_sync_at=None,
         pending_count=len(pending),
+        configured=configured,
     )
 
 

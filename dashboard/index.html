@@ -5668,7 +5668,9 @@
           if (modeEl) {
             modeEl.textContent = summary.connected
               ? `QuickBooks: live mode${summary.realm_id ? " (" + summary.realm_id + ")" : ""}`
-              : "QuickBooks: demo/stub mode until connected.";
+              : summary.configured
+                ? "QuickBooks: live credentials set, connect to go live."
+                : "QuickBooks: demo/stub mode until client_id/secret/redirect are set.";
           }
 
           const badge = summary.connected
@@ -5807,6 +5809,7 @@
 
         const statusEl = document.getElementById("owner-qbo-status");
         const connectBtn = document.getElementById("owner-qbo-connect");
+        const modeEl = document.getElementById("owner-qbo-mode");
 
         if (statusEl) statusEl.textContent = "Opening QuickBooks authorization...";
         if (connectBtn) connectBtn.disabled = true;
@@ -5824,6 +5827,7 @@
           } else {
 
             if (statusEl) statusEl.textContent = "Authorization URL not available.";
+            if (modeEl) modeEl.textContent = "QuickBooks: demo/stub mode (missing client_id/secret/redirect).";
 
           }
 

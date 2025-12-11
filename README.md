@@ -45,6 +45,7 @@ Feature highlights
 - Owner/admin dashboards: schedules, callbacks/voicemails, analytics, Twilio/Stripe health.
 - Self-service signup/onboarding, per-tenant API and widget tokens, subscription gating with grace and limits.
 - Notifications: owner alerts for emergencies/missed calls/voicemail; customer reminders and opt-out handling.
+- QuickBooks: sandbox/demo by default; set `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_REDIRECT_URI` (and `QBO_SANDBOX=false` for production) to enable live OAuth and syncing customers/receipts from appointments.
 
 Architecture (capsule)
 ----------------------
