@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
 from typing import Dict, Optional
@@ -47,6 +47,7 @@ class SubscriptionState:
     blocked: bool = False
     message: str | None = None
     usage: UsageSnapshot | None = None
+    usage_warnings: list[str] = field(default_factory=list)
 
 
 def _grace_days() -> int:
@@ -83,6 +84,28 @@ def _usage_snapshot(business_id: str) -> UsageSnapshot:
     return UsageSnapshot(calls=calls, appointments=appointments)
 
 
+def _collect_usage_warnings(
+    usage: UsageSnapshot, limits: Dict[str, Optional[int]]
+) -> list[str]:
+    """Return soft warnings when usage is approaching limits."""
+    warnings: list[str] = []
+    call_limit = limits.get("monthly_calls")
+    if call_limit:
+        ratio = usage.calls / call_limit if call_limit else 0
+        if ratio >= 0.9:
+            warnings.append(
+                f"Calls at {usage.calls}/{call_limit}; upgrade to avoid suspension."
+            )
+    appt_limit = limits.get("monthly_appointments")
+    if appt_limit:
+        ratio = usage.appointments / appt_limit if appt_limit else 0
+        if ratio >= 0.9:
+            warnings.append(
+                f"Appointments at {usage.appointments}/{appt_limit}; upgrade to avoid suspension."
+            )
+    return warnings
+
+
 def compute_state(business_id: str) -> SubscriptionState:
     settings = get_settings()
     state = SubscriptionState()
@@ -109,6 +132,7 @@ def compute_state(business_id: str) -> SubscriptionState:
             if state.usage:
                 state.usage.call_limit = limits.get("monthly_calls")
                 state.usage.appointment_limit = limits.get("monthly_appointments")
+                state.usage_warnings = _collect_usage_warnings(state.usage, limits)
             if state.status not in {"active", "trialing"}:
                 if state.current_period_end:
                     grace_end = state.current_period_end + timedelta(days=_grace_days())
@@ -128,26 +152,31 @@ def compute_state(business_id: str) -> SubscriptionState:
 
 
 async def _notify_owner_if_needed(
-    business: BusinessDB | None, state: SubscriptionState
+    business: BusinessDB | None,
+    state: SubscriptionState,
+    *,
+    status_override: str | None = None,
+    message_override: str | None = None,
 ) -> None:
     if not business:
         return
     owner_email = getattr(business, "owner_email", None)
     if not owner_email:
         return
-    cache_key = f"{business.id}:{state.status}"
+    cache_status = status_override or state.status
+    cache_key = f"{business.id}:{cache_status}"
     last_sent = _reminder_cache.get(cache_key)
     interval = timedelta(hours=_reminder_interval_hours())
     now = datetime.now(UTC)
     if last_sent and now - last_sent < interval:
         return
-    subject = f"Subscription attention needed ({state.status})"
+    subject = f"Subscription attention needed ({cache_status})"
     grace_note = ""
     if state.in_grace and state.grace_remaining_days:
         grace_note = (
             f" You have {state.grace_remaining_days} day(s) remaining in grace."
         )
-    body = (
+    body = message_override or (
         f"Your subscription status is '{state.status}'."
         f"{grace_note} Please update billing to avoid interruptions."
     )
@@ -203,7 +232,13 @@ async def check_access(
         finally:
             session.close()
 
-    if state.status not in {"active", "trialing"} and not state.in_grace:
+    if state.status not in {"active", "trialing"}:
+        if state.in_grace:
+            state.message = state.message or (
+                f"Payment past due. Grace ends in {state.grace_remaining_days} day(s)."
+            )
+            await _notify_owner_if_needed(business, state, message_override=state.message)
+            return state
         state.blocked = True
         state.message = "Subscription inactive. Please upgrade or resume billing."
         await _notify_owner_if_needed(business, state)
@@ -211,6 +246,23 @@ async def check_access(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,
             headers={"X-Subscription-Status": state.status},
+        )
+
+    # Proactive reminder when the period end is approaching.
+    expiring_window = timedelta(days=_grace_days())
+    if (
+        state.current_period_end
+        and state.status in {"active", "trialing"}
+        and state.current_period_end <= datetime.now(UTC) + expiring_window
+    ):
+        state.message = state.message or (
+            "Subscription renews soon; confirm payment to avoid interruption."
+        )
+        await _notify_owner_if_needed(
+            business,
+            state,
+            status_override="expiring_soon",
+            message_override=state.message,
         )
 
     # Enforce plan limits when present.
@@ -221,11 +273,13 @@ async def check_access(
 
     call_limit = limits.get("monthly_calls")
     if call_limit is not None and projected_calls > call_limit:
-        state.blocked = True
-        state.message = (
+        warning = (
             f"Call limit reached for plan {state.plan or 'starter'} "
             f"({projected_calls}/{call_limit})."
         )
+        state.usage_warnings.append(warning)
+        state.blocked = True
+        state.message = warning
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,
@@ -234,11 +288,13 @@ async def check_access(
 
     appt_limit = limits.get("monthly_appointments")
     if appt_limit is not None and projected_appts > appt_limit:
-        state.blocked = True
-        state.message = (
+        warning = (
             f"Appointment limit reached for plan {state.plan or 'starter'} "
             f"({projected_appts}/{appt_limit})."
         )
+        state.usage_warnings.append(warning)
+        state.blocked = True
+        state.message = warning
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,
@@ -247,6 +303,9 @@ async def check_access(
                 "X-Plan-Limit": "appointments",
             },
         )
+
+    if state.usage_warnings and not state.message:
+        state.message = state.usage_warnings[0]
 
     state.blocked = False
     return state

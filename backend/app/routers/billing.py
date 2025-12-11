@@ -6,7 +6,7 @@ from typing import List, Optional
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..config import get_settings
 from ..deps import ensure_business_active, require_owner_dashboard_auth
@@ -64,6 +64,7 @@ class SubscriptionStatusResponse(BaseModel):
     grace_remaining_days: int = 0
     blocked: bool = False
     message: str | None = None
+    usage_warnings: list[str] = Field(default_factory=list)
     calls_used: int = 0
     calls_limit: int | None = None
     appointments_used: int = 0
@@ -309,6 +310,7 @@ async def get_subscription_status(
         grace_remaining_days=state.grace_remaining_days,
         blocked=state.blocked,
         message=state.message,
+        usage_warnings=state.usage_warnings,
         calls_used=usage.calls,
         calls_limit=usage.call_limit,
         appointments_used=usage.appointments,

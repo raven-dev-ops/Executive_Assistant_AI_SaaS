@@ -10,7 +10,12 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header
 from pydantic import BaseModel, EmailStr, Field
 
-from ..deps import DEFAULT_BUSINESS_ID, ensure_business_active, require_dashboard_role
+from ..deps import (
+    DEFAULT_BUSINESS_ID,
+    ensure_business_active,
+    require_dashboard_role,
+    require_subscription_active,
+)
 from ..config import get_settings
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
@@ -39,7 +44,8 @@ from ..services.auth import decode_token, TokenError
 
 router = APIRouter(
     dependencies=[
-        Depends(require_dashboard_role(["admin", "owner", "staff", "viewer"]))
+        Depends(require_dashboard_role(["admin", "owner", "staff", "viewer"])),
+        Depends(require_subscription_active),
     ]
 )
 _DEFAULT_ONBOARDING_RESET = False

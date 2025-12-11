@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from ..config import get_settings
-from ..deps import ensure_business_active, require_dashboard_role
+from ..deps import (
+    ensure_business_active,
+    require_dashboard_role,
+    require_subscription_active,
+)
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..business_config import get_calendar_id_for_business
 from ..services.calendar import TimeSlot, calendar_service
@@ -18,7 +22,12 @@ from ..services import subscription as subscription_service
 
 READ_ROLES = ["admin", "owner", "staff", "viewer"]
 WRITE_ROLES = ["admin", "owner", "staff"]
-router = APIRouter(dependencies=[Depends(require_dashboard_role(READ_ROLES))])
+router = APIRouter(
+    dependencies=[
+        Depends(require_dashboard_role(READ_ROLES)),
+        Depends(require_subscription_active),
+    ]
+)
 
 
 class CustomerCreateRequest(BaseModel):
