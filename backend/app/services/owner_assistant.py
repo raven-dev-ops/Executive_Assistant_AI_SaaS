@@ -7,6 +7,7 @@ from typing import Optional
 import httpx
 
 from ..config import get_settings
+from ..metrics import metrics
 
 
 @dataclass
@@ -77,7 +78,10 @@ class OwnerAssistantService:
         return self._docs_cache
 
     async def answer(
-        self, question: str, business_context: Optional[str] = None
+        self,
+        question: str,
+        business_context: Optional[str] = None,
+        business_id: str | None = None,
     ) -> OwnerAssistantAnswer:
         """Return an answer for the owner's question.
 
@@ -93,8 +97,19 @@ class OwnerAssistantService:
                 ),
             )
 
+        metrics_context = self._summarize_metrics(business_id)
+
         # Only attempt real LLM calls when configured for OpenAI.
         if self._speech.provider != "openai" or not self._speech.openai_api_key:
+            if metrics_context:
+                return OwnerAssistantAnswer(
+                    answer=(
+                        "The AI owner assistant is not fully configured yet.\n\n"
+                        f"Recent metrics for this tenant:\n{metrics_context}\n\n"
+                        "To enable rich answers, set SPEECH_PROVIDER=openai and provide "
+                        "a valid OPENAI_API_KEY (and optionally OPENAI_CHAT_MODEL)."
+                    ),
+                )
             return OwnerAssistantAnswer(
                 answer=(
                     "The AI owner assistant is not fully configured yet.\n\n"
@@ -124,6 +139,13 @@ class OwnerAssistantService:
                 "content": system_instructions,
             },
         ]
+        if metrics_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Latest tenant metrics:\n{metrics_context}",
+                }
+            )
         if business_context:
             messages.append(
                 {
@@ -188,6 +210,37 @@ class OwnerAssistantService:
 
         used_model = data.get("model") or self._speech.openai_chat_model
         return OwnerAssistantAnswer(answer=content, used_model=used_model)
+
+    def _summarize_metrics(self, business_id: str | None) -> str:
+        """Return a compact, human-readable metrics snapshot for a tenant."""
+        if not business_id:
+            return ""
+        twilio = metrics.twilio_by_business.get(business_id)
+        sms = metrics.sms_by_business.get(business_id)
+        callbacks = metrics.callbacks_by_business.get(business_id, {})
+        voice_sessions = metrics.voice_sessions_by_business.get(business_id)
+        parts: list[str] = []
+        if twilio:
+            parts.append(
+                f"Voice requests: {twilio.voice_requests}, voice errors: {twilio.voice_errors}"
+            )
+            parts.append(
+                f"SMS requests: {twilio.sms_requests}, sms errors: {twilio.sms_errors}"
+            )
+        if sms:
+            parts.append(
+                f"SMS sent (owner/customer): {sms.sms_sent_owner}/{sms.sms_sent_customer}, opt-outs: {sms.sms_opt_out_events}"
+            )
+            parts.append(
+                f"Retention SMS sent: {sms.retention_messages_sent}, followups: {sms.lead_followups_sent}"
+            )
+        if callbacks:
+            parts.append(f"Pending callbacks/voicemails: {len(callbacks)}")
+        if voice_sessions:
+            parts.append(
+                f"Voice sessions (requests/errors): {voice_sessions.requests}/{voice_sessions.errors}"
+            )
+        return "\n".join(parts)
 
 
 owner_assistant_service = OwnerAssistantService()

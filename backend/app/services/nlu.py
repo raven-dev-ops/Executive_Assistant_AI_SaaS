@@ -201,27 +201,36 @@ async def classify_intent_with_metadata(
 ) -> dict:
     """Return intent label with confidence and provider metadata."""
     combined = " ".join([text or "", " ".join(history or [])]).strip()
-    intent, confidence = _heuristic_intent_with_score(combined or text)
+    heuristic_intent, heuristic_confidence = _heuristic_intent_with_score(
+        combined or text
+    )
+    intent, confidence = heuristic_intent, heuristic_confidence
     chosen_provider = "heuristic"
     settings = get_settings()
     provider = getattr(settings.nlu, "intent_provider", "heuristic").lower()
 
     if provider == "openai":
-        llm_label = await _classify_with_llm(text, history=history)
+        llm_label: str | None = None
+        # Keep deterministic emergencies and other high-confidence intents.
+        if heuristic_intent not in {"emergency"} and heuristic_confidence < 0.8:
+            llm_label = await _classify_with_llm(combined or text, history=history)
         if llm_label in INTENT_LABELS:
             intent = llm_label
-            confidence = max(confidence, 0.85)
+            confidence = max(heuristic_confidence, 0.7)
             chosen_provider = "openai"
-        else:
+        elif llm_label:
             logger.debug(
                 "intent_llm_invalid_label",
                 extra={"label": llm_label, "business_id": business_id},
             )
+            chosen_provider = "heuristic"
 
     return {
         "intent": intent,
         "confidence": float(confidence),
         "provider": chosen_provider,
+        "heuristic_intent": heuristic_intent,
+        "heuristic_confidence": float(heuristic_confidence),
         "business_id": business_id,
     }
 

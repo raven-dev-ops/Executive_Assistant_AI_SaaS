@@ -3,8 +3,15 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 import os
 
+from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal
-from .db_models import AppointmentDB, ConversationDB, ConversationMessageDB, CustomerDB
+from .db_models import (
+    AppointmentDB,
+    BusinessDB,
+    ConversationDB,
+    ConversationMessageDB,
+    CustomerDB,
+)
 from .models import (
     Appointment,
     Conversation,
@@ -27,6 +34,25 @@ def _join_tags(tags: list[str] | None) -> str | None:
         return None
     cleaned = [t.strip() for t in tags if t and t.strip()]
     return ",".join(cleaned) if cleaned else None
+
+
+def _capture_transcripts_allowed(business_id: str | None) -> bool:
+    """Return whether transcripts should be stored for a tenant."""
+    settings = get_settings()
+    if not getattr(settings, "capture_transcripts", True):
+        return False
+    if not business_id or not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+        return True
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is not None and getattr(row, "retention_enabled", True) is False:
+            return False
+    except Exception:
+        return True
+    finally:
+        session.close()
+    return True
 
 
 class InMemoryCustomerRepository:
@@ -282,6 +308,8 @@ class InMemoryConversationRepository:
     def append_message(self, conversation_id: str, role: str, text: str) -> None:
         conv = self._by_id.get(conversation_id)
         if not conv:
+            return
+        if not _capture_transcripts_allowed(getattr(conv, "business_id", None)):
             return
         conv.messages.append(ConversationMessage(role=role, text=text))
 
@@ -755,7 +783,10 @@ class DbConversationRepository:
             raise RuntimeError("Database session factory is not available")
         session = SessionLocal()
         try:
-            if not session.get(ConversationDB, conversation_id):
+            conv_row = session.get(ConversationDB, conversation_id)
+            if not conv_row:
+                return
+            if not _capture_transcripts_allowed(getattr(conv_row, "business_id", None)):
                 return
             msg = ConversationMessageDB(
                 id=new_conversation_id(),

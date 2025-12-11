@@ -33,8 +33,9 @@ async def owner_assistant_query(
     """
     # `business_id` is accepted for future per-tenant tuning but not sent
     # directly to the model to avoid leaking identifiers.
-    _ = business_id
-    result = await owner_assistant_service.answer(payload.question)
+    result = await owner_assistant_service.answer(
+        payload.question, business_id=business_id
+    )
     return OwnerAssistantReply(answer=result.answer, model=result.used_model)
 
 
@@ -49,8 +50,7 @@ async def owner_assistant_voice_reply(
     webhook) without exposing sensitive data. Answers are grounded in the
     same docs as the text endpoint.
     """
-    _ = business_id
-    result = await owner_assistant_service.answer(Question)
+    result = await owner_assistant_service.answer(Question, business_id=business_id)
     safe = result.answer.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     twiml = f"""
 <Response>

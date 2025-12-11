@@ -162,6 +162,7 @@ class AppSettings(BaseModel):
     rate_limit_burst: int = 20
     rate_limit_whitelist_ips: list[str] = []
     retention_purge_interval_hours: int = 24
+    capture_transcripts: bool = True
     security_headers_enabled: bool = True
     security_csp: str = (
         "default-src 'self'; "
@@ -352,6 +353,9 @@ class AppSettings(BaseModel):
         retention_purge_interval_hours = int(
             os.getenv("RETENTION_PURGE_INTERVAL_HOURS", "24")
         )
+        capture_transcripts = (
+            os.getenv("CAPTURE_TRANSCRIPTS", "true").lower() != "false"
+        )
         security_headers_enabled = (
             os.getenv("SECURITY_HEADERS_ENABLED", "true").lower() == "true"
         )
@@ -393,6 +397,7 @@ class AppSettings(BaseModel):
             rate_limit_burst=rate_limit_burst,
             rate_limit_whitelist_ips=rate_limit_whitelist_ips,
             retention_purge_interval_hours=retention_purge_interval_hours,
+            capture_transcripts=capture_transcripts,
             security_headers_enabled=security_headers_enabled,
             security_csp=security_csp,
             security_hsts_enabled=security_hsts_enabled,
