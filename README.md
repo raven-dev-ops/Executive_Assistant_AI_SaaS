@@ -3,7 +3,7 @@ AI Telephony Service & CRM for Trades
 
 ![Backend CI](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/backend-ci.yml/badge.svg)
 ![Perf Smoke](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/perf-smoke.yml/badge.svg)
-![Coverage](https://img.shields.io/badge/coverage-%E2%89%A585%25-brightgreen)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A585%25-brightgreen)](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/backend-ci.yml)
 
 AI-powered telephony and lightweight CRM for small trades businesses (reference tenant: Bristol Plumbing, Merriam KS). The assistant acts as a 24/7 virtual receptionist that answers calls/chats, triages emergencies, schedules on Google Calendar, and keeps a searchable history of customers and jobs.
 
@@ -88,4 +88,5 @@ New in this iteration
 ---------------------
 - Subscription enforcement improved: grace reminders, plan cap warnings, and voicemail/callback surfacing on dashboard cards.  
 - Perf smoke and coverage badges visible; README streamlined for faster onboarding.  
+  - Coverage badge links to backend-ci; detailed `coverage.xml` per Python version is available in Actions → backend-ci artifacts.
 - Investor brief available at `/planner` and `dashboard/planner.html`.
