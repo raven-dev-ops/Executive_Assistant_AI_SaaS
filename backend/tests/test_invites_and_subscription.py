@@ -182,6 +182,40 @@ def test_plan_limit_blocks_calls(monkeypatch):
     _reset_settings_env(monkeypatch)
 
 
+def test_subscription_reminder_sent_when_enforcement_disabled(monkeypatch):
+    monkeypatch.delenv("ENFORCE_SUBSCRIPTION", raising=False)
+    config.get_settings.cache_clear()
+    deps.get_settings.cache_clear()
+
+    sent = []
+
+    class DummyEmail:
+        async def notify_owner(self, subject, body, *, business_id, owner_email):
+            sent.append((subject, body, business_id, owner_email))
+
+    from app.services import subscription as subscription_service
+
+    monkeypatch.setattr(subscription_service, "email_service", DummyEmail())
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, "default_business")
+        row.subscription_status = "past_due"
+        row.subscription_current_period_end = datetime.now(UTC) - timedelta(days=1)
+        row.owner_email = "owner@example.com"
+        session.add(row)
+        session.commit()
+    finally:
+        session.close()
+
+    import asyncio
+
+    state = asyncio.run(subscription_service.check_access("default_business"))
+    assert state.status == "past_due"
+    assert sent, "Owner reminder should be sent even when enforcement disabled"
+    _reset_settings_env(monkeypatch)
+
+
 def test_owner_callbacks_api(monkeypatch):
     metrics.callbacks_by_business.clear()
     # Seed a callback item as if missed call was recorded.

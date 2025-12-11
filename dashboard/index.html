@@ -2711,6 +2711,8 @@
 
         <div id="subscription-usage" class="muted" style="margin-top: 0.35rem;"></div>
 
+        <ul id="subscription-warnings-list" class="muted" style="margin: 0.35rem 0 0 1rem; padding-left: 1rem; display: none;"></ul>
+
       </div>
 
 
@@ -8261,6 +8263,8 @@
 
         const planBadge = document.getElementById("plan-badge");
 
+        const warningsList = document.getElementById("subscription-warnings-list");
+
         try {
 
           const res = await authorizedFetch("/v1/billing/subscription/status");
@@ -8317,6 +8321,20 @@
             }
 
             usage.textContent = parts.join(" . ");
+
+          }
+
+          if (warningsList) {
+
+            const warnings = Array.isArray(data?.usage_warnings) ? data.usage_warnings : [];
+
+            warningsList.innerHTML = warnings
+
+              .map((w) => `<li>${escapeHtml(w)}</li>`)
+
+              .join("");
+
+            warningsList.style.display = warnings.length ? "block" : "none";
 
           }
 
