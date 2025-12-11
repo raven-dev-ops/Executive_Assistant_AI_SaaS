@@ -490,7 +490,9 @@ def test_missed_call_notifies_owner(monkeypatch):
         email_calls.append((subject, body, business_id, owner_email))
 
     monkeypatch.setattr("app.services.sms.sms_service.notify_owner", _fake_sms)
-    monkeypatch.setattr("app.services.email_service.email_service.notify_owner", _fake_email)
+    monkeypatch.setattr(
+        "app.services.email_service.email_service.notify_owner", _fake_email
+    )
 
     resp = client.post(
         "/twilio/voice",
@@ -533,7 +535,9 @@ def test_voicemail_notifies_owner(monkeypatch):
         email_calls.append((subject, body, business_id, owner_email))
 
     monkeypatch.setattr("app.services.sms.sms_service.notify_owner", _fake_sms)
-    monkeypatch.setattr("app.services.email_service.email_service.notify_owner", _fake_email)
+    monkeypatch.setattr(
+        "app.services.email_service.email_service.notify_owner", _fake_email
+    )
 
     resp = client.post(
         "/twilio/voicemail",
