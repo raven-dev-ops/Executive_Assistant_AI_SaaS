@@ -83,6 +83,7 @@ Docs & references
 - API details: `API_REFERENCE.md`; data model: `DATA_MODEL.md`.  
 - Dev workflow: `DEV_WORKFLOW.md`, `TOOLS.md`.  
 - Incident playbooks: `INCIDENT_RESPONSE.md`, `POST_INCIDENT_TEMPLATE.md`.
+- Closed beta Definition of Done: `BETA_DOD.md` (linked from planner and dashboard planner view).
 
 New in this iteration
 ---------------------

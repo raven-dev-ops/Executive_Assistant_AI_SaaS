@@ -288,6 +288,9 @@
     </div>
     <div class="subtitle">Prepared for Senior Board Advisor Review</div>
     <div class="date">December 2025</div>
+    <div style="margin-top: 30px; font-size: 16px; font-weight: 600;">
+        <a href="/BETA_DOD.md" style="color: #fff; text-decoration: underline;">Closed Beta Definition of Done</a>
+    </div>
 </div>
 
 <div class="page-break"></div>
