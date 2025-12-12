@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, UTC, timedelta
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Body
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
@@ -72,7 +72,12 @@ class BusinessResponse(BaseModel):
     owner_profile_image_url: str | None = None
     vertical: str | None = None
     api_key: str | None = None
+    api_key_last_used_at: datetime | None = None
+    api_key_last_rotated_at: datetime | None = None
     widget_token: str | None = None
+    widget_token_last_used_at: datetime | None = None
+    widget_token_last_rotated_at: datetime | None = None
+    widget_token_expires_at: datetime | None = None
     calendar_id: str | None = None
     status: str
     owner_phone: str | None = None
@@ -123,6 +128,40 @@ class BusinessUsageResponse(BusinessResponse):
     twilio_sms_errors: int | None = None
     twilio_error_rate: float | None = None
     last_activity_at: datetime | None = None
+
+
+class WidgetTokenRotateRequest(BaseModel):
+    expires_in_minutes: int | None = Field(
+        default=None,
+        ge=0,
+        le=60 * 24 * 30,
+        description="Optional TTL for the widget token; when 0 or null, the token does not expire.",
+    )
+
+
+class TokenRotationResponse(BaseModel):
+    token: str
+    token_type: str
+    rotated_at: datetime
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+
+
+class BusinessTokenUsage(BaseModel):
+    business_id: str
+    api_key_last_used_at: datetime | None = None
+    api_key_last_rotated_at: datetime | None = None
+    widget_token_last_used_at: datetime | None = None
+    widget_token_last_rotated_at: datetime | None = None
+    widget_token_expires_at: datetime | None = None
+
+
+class TokenUsageResponse(BaseModel):
+    admin_token_last_used_at: datetime | None = None
+    admin_token_last_rotated_at: datetime | None = None
+    owner_token_last_used_at: datetime | None = None
+    owner_token_last_rotated_at: datetime | None = None
+    business_tokens: list[BusinessTokenUsage] = Field(default_factory=list)
 
 
 class TwilioConfigStatus(BaseModel):
@@ -301,7 +340,14 @@ def _business_to_response(row: BusinessDB) -> BusinessResponse:
         owner_profile_image_url=getattr(row, "owner_profile_image_url", None),
         vertical=getattr(row, "vertical", None),
         api_key=row.api_key,
+        api_key_last_used_at=getattr(row, "api_key_last_used_at", None),
+        api_key_last_rotated_at=getattr(row, "api_key_last_rotated_at", None),
         widget_token=getattr(row, "widget_token", None),
+        widget_token_last_used_at=getattr(row, "widget_token_last_used_at", None),
+        widget_token_last_rotated_at=getattr(
+            row, "widget_token_last_rotated_at", None
+        ),
+        widget_token_expires_at=getattr(row, "widget_token_expires_at", None),
         calendar_id=getattr(row, "calendar_id", None),
         status=getattr(row, "status", "ACTIVE"),
         owner_phone=getattr(row, "owner_phone", None),
@@ -370,12 +416,21 @@ def create_business(payload: BusinessCreateRequest) -> BusinessResponse:
         now = datetime.now(UTC)
         settings = get_settings()
         calendar_id = payload.calendar_id or settings.calendar.calendar_id
+        default_widget_ttl = getattr(settings, "widget_token_ttl_minutes", None)
+        widget_expires_at = (
+            now + timedelta(minutes=int(default_widget_ttl))
+            if default_widget_ttl and int(default_widget_ttl) > 0
+            else None
+        )
         row = BusinessDB(  # type: ignore[arg-type]
             id=business_id,
             name=payload.name,
             vertical=getattr(settings, "default_vertical", "plumbing"),
             api_key=api_key,
+            api_key_last_rotated_at=now,
             widget_token=widget_token,
+            widget_token_last_rotated_at=now,
+            widget_token_expires_at=widget_expires_at,
             calendar_id=calendar_id,
             status="ACTIVE",
             owner_phone=None,
@@ -490,6 +545,8 @@ def rotate_api_key(business_id: str) -> BusinessResponse:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Business not found"
             )
         row.api_key = secrets.token_hex(16)
+        row.api_key_last_rotated_at = datetime.now(UTC)
+        row.api_key_last_used_at = None
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -501,7 +558,9 @@ def rotate_api_key(business_id: str) -> BusinessResponse:
 @router.post(
     "/businesses/{business_id}/rotate-widget-token", response_model=BusinessResponse
 )
-def rotate_widget_token(business_id: str) -> BusinessResponse:
+def rotate_widget_token(
+    business_id: str, payload: WidgetTokenRotateRequest | None = Body(default=None)
+) -> BusinessResponse:
     session = _get_db_session()
     try:
         row = session.get(BusinessDB, business_id)
@@ -510,12 +569,107 @@ def rotate_widget_token(business_id: str) -> BusinessResponse:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Business not found"
             )
         row.widget_token = secrets.token_hex(16)
+        row.widget_token_last_rotated_at = datetime.now(UTC)
+        row.widget_token_last_used_at = None
+        ttl_minutes = None
+        if payload and payload.expires_in_minutes is not None:
+            ttl_minutes = payload.expires_in_minutes
+        else:
+            ttl_minutes = getattr(get_settings(), "widget_token_ttl_minutes", None)
+        if ttl_minutes and ttl_minutes > 0:
+            row.widget_token_expires_at = datetime.now(UTC) + timedelta(
+                minutes=int(ttl_minutes)
+            )
+        else:
+            row.widget_token_expires_at = None
         session.add(row)
         session.commit()
         session.refresh(row)
         return _business_to_response(row)
     finally:
         session.close()
+
+
+@router.post("/tokens/admin/rotate", response_model=TokenRotationResponse)
+def rotate_admin_api_key() -> TokenRotationResponse:
+    """Rotate the platform admin API key (used for /v1/admin routes)."""
+    settings = get_settings()
+    new_token = secrets.token_hex(24)
+    now = datetime.now(UTC)
+    settings.admin_api_key = new_token
+    metrics.admin_token_last_rotated_at = now.isoformat()
+    metrics.admin_token_last_used_at = None
+    return TokenRotationResponse(
+        token=new_token,
+        token_type="admin_api_key",
+        rotated_at=now,
+        last_used_at=None,
+    )
+
+
+@router.post("/tokens/owner/rotate", response_model=TokenRotationResponse)
+def rotate_owner_dashboard_token() -> TokenRotationResponse:
+    """Rotate the owner dashboard token used by the CRM/dash UI."""
+    settings = get_settings()
+    new_token = secrets.token_hex(24)
+    now = datetime.now(UTC)
+    settings.owner_dashboard_token = new_token
+    metrics.owner_token_last_rotated_at = now.isoformat()
+    metrics.owner_token_last_used_at = None
+    return TokenRotationResponse(
+        token=new_token,
+        token_type="owner_dashboard_token",
+        rotated_at=now,
+        last_used_at=None,
+    )
+
+
+@router.get("/tokens/usage", response_model=TokenUsageResponse)
+def token_usage() -> TokenUsageResponse:
+    """Return last-used and rotation timestamps for core tokens."""
+
+    def _parse_iso(val: str | None) -> datetime | None:
+        if not val:
+            return None
+        try:
+            return datetime.fromisoformat(val)
+        except Exception:
+            return None
+
+    business_tokens: list[BusinessTokenUsage] = []
+    if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session = SessionLocal()
+        try:
+            rows = session.query(BusinessDB).all()
+            for row in rows:
+                business_tokens.append(
+                    BusinessTokenUsage(
+                        business_id=row.id,
+                        api_key_last_used_at=getattr(row, "api_key_last_used_at", None),
+                        api_key_last_rotated_at=getattr(
+                            row, "api_key_last_rotated_at", None
+                        ),
+                        widget_token_last_used_at=getattr(
+                            row, "widget_token_last_used_at", None
+                        ),
+                        widget_token_last_rotated_at=getattr(
+                            row, "widget_token_last_rotated_at", None
+                        ),
+                        widget_token_expires_at=getattr(
+                            row, "widget_token_expires_at", None
+                        ),
+                    )
+                )
+        finally:
+            session.close()
+
+    return TokenUsageResponse(
+        admin_token_last_used_at=_parse_iso(metrics.admin_token_last_used_at),
+        admin_token_last_rotated_at=_parse_iso(metrics.admin_token_last_rotated_at),
+        owner_token_last_used_at=_parse_iso(metrics.owner_token_last_used_at),
+        owner_token_last_rotated_at=_parse_iso(metrics.owner_token_last_rotated_at),
+        business_tokens=business_tokens,
+    )
 
 
 class TenantDemoBusiness(BaseModel):
@@ -548,12 +702,23 @@ def seed_demo_tenants() -> TenantDemoResponse:
                 api_key = secrets.token_hex(16)
                 widget_token = secrets.token_hex(16)
                 now = datetime.now(UTC)
+                default_widget_ttl = getattr(
+                    get_settings(), "widget_token_ttl_minutes", None
+                )
+                widget_expires_at = (
+                    now + timedelta(minutes=int(default_widget_ttl))
+                    if default_widget_ttl and int(default_widget_ttl) > 0
+                    else None
+                )
                 row = BusinessDB(  # type: ignore[arg-type]
                     id=business_id,
                     name=name,
                     api_key=api_key,
+                    api_key_last_rotated_at=now,
                     calendar_id=None,
                     widget_token=widget_token,
+                    widget_token_last_rotated_at=now,
+                    widget_token_expires_at=widget_expires_at,
                     status="ACTIVE",
                     owner_phone=None,
                     emergency_keywords=None,

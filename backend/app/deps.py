@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, UTC
 from fastapi import Depends, Header, HTTPException, status
 from typing import cast
 
@@ -9,6 +10,7 @@ from .db import SQLALCHEMY_AVAILABLE, SessionLocal
 from .db_models import BusinessDB, BusinessUserDB
 from .services.auth import TokenError, decode_token
 from .services import subscription as subscription_service
+from .metrics import metrics
 
 DEFAULT_BUSINESS_ID = "default_business"
 
@@ -67,20 +69,49 @@ async def get_business_id(
         and (x_api_key or x_widget_token)
     ):
         session = SessionLocal()
+        business_id_value: str | None = None
         try:
             business = None
+            now = datetime.now(UTC)
             if x_api_key:
                 business = (
                     session.query(BusinessDB)
                     .filter(BusinessDB.api_key == x_api_key)
                     .one_or_none()
                 )
+                if business is not None:
+                    try:
+                        business.api_key_last_used_at = now  # type: ignore[attr-defined]
+                        session.add(business)
+                        session.commit()
+                    except Exception:
+                        session.rollback()
             elif x_widget_token:
                 business = (
                     session.query(BusinessDB)
                     .filter(BusinessDB.widget_token == x_widget_token)
                     .one_or_none()
                 )
+                if business is not None:
+                    expires_at = getattr(business, "widget_token_expires_at", None)
+                    if expires_at is not None and expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=UTC)
+                    if expires_at is not None and expires_at < now:
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Widget token expired",
+                        )
+                    try:
+                        business.widget_token_last_used_at = now  # type: ignore[attr-defined]
+                        session.add(business)
+                        session.commit()
+                    except HTTPException:
+                        session.rollback()
+                        raise
+                    except Exception:
+                        session.rollback()
+            if business is not None:
+                business_id_value = cast(str, business.id)
         finally:
             session.close()
 
@@ -94,7 +125,7 @@ async def get_business_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid tenant credentials",
             )
-        return cast(str, business.id)
+        return cast(str, business_id_value)
 
     # If configured, do not allow silent fallback to the default tenant when no
     # tenant-identifying headers are present.
@@ -225,6 +256,7 @@ async def require_admin_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin API key",
         )
+    metrics.admin_token_last_used_at = datetime.now(UTC).isoformat()
 
 
 async def require_owner_dashboard_auth(
@@ -251,6 +283,7 @@ async def require_owner_dashboard_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid owner dashboard token",
         )
+    metrics.owner_token_last_used_at = datetime.now(UTC).isoformat()
 
 
 def require_dashboard_role(
@@ -298,6 +331,7 @@ def require_dashboard_role(
         user_id = token_user_id or x_user_id
 
         if settings.admin_api_key and x_admin_api_key == settings.admin_api_key:
+            metrics.admin_token_last_used_at = datetime.now(UTC).isoformat()
             roles.append("admin")
 
         if user_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
@@ -331,6 +365,7 @@ def require_dashboard_role(
             and x_owner_token == settings.owner_dashboard_token
         ):
             # Legacy/tenant-wide token grants owner-level access when no per-user role is provided.
+            metrics.owner_token_last_used_at = datetime.now(UTC).isoformat()
             roles.append("owner")
 
         # If a dashboard token is configured, credentials are mandatory.

@@ -62,6 +62,10 @@ class Metrics:
     alert_events_total: int = 0
     alerts_open: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     alert_last_fired: Dict[str, str] = field(default_factory=dict)
+    admin_token_last_used_at: str | None = None
+    admin_token_last_rotated_at: str | None = None
+    owner_token_last_used_at: str | None = None
+    owner_token_last_rotated_at: str | None = None
     appointments_scheduled: int = 0
     users_registered: int = 0
     sms_sent_total: int = 0
@@ -183,6 +187,10 @@ class Metrics:
             "alert_events_total": self.alert_events_total,
             "alerts_open": dict(self.alerts_open),
             "alert_last_fired": dict(self.alert_last_fired),
+            "admin_token_last_used_at": self.admin_token_last_used_at,
+            "admin_token_last_rotated_at": self.admin_token_last_rotated_at,
+            "owner_token_last_used_at": self.owner_token_last_used_at,
+            "owner_token_last_rotated_at": self.owner_token_last_rotated_at,
             "appointments_scheduled": self.appointments_scheduled,
             "users_registered": self.users_registered,
             "sms_sent_total": self.sms_sent_total,

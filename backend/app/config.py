@@ -154,6 +154,7 @@ class AppSettings(BaseModel):
     default_vertical: str = "plumbing"
     require_business_api_key: bool = False
     owner_dashboard_token: str | None = None
+    widget_token_ttl_minutes: int | None = None
     session_store_backend: str = "memory"
     default_language_code: str = "en"
     enforce_subscription: bool = False
@@ -346,6 +347,11 @@ class AppSettings(BaseModel):
         owner_dashboard_token = os.getenv("OWNER_DASHBOARD_TOKEN") or os.getenv(
             "DASHBOARD_OWNER_TOKEN"
         )
+        raw_widget_ttl = os.getenv("WIDGET_TOKEN_TTL_MINUTES")
+        try:
+            widget_token_ttl_minutes = int(raw_widget_ttl) if raw_widget_ttl else None
+        except ValueError:
+            widget_token_ttl_minutes = None
         session_store_backend = os.getenv("SESSION_STORE_BACKEND", "memory")
         rate_limit_per_minute = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
         rate_limit_burst = int(os.getenv("RATE_LIMIT_BURST", "20"))
@@ -392,6 +398,7 @@ class AppSettings(BaseModel):
             default_vertical=default_vertical,
             require_business_api_key=require_business_api_key,
             owner_dashboard_token=owner_dashboard_token,
+            widget_token_ttl_minutes=widget_token_ttl_minutes,
             session_store_backend=session_store_backend,
             default_language_code=default_language_code,
             enforce_subscription=enforce_subscription,

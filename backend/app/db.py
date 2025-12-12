@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Generator
+from datetime import datetime, UTC, timedelta
 
 try:
     from sqlalchemy import create_engine
@@ -93,6 +94,11 @@ def _reset_default_business(session) -> None:
         row.owner_email = None
         row.owner_profile_image_url = None
         row.owner_phone = None
+        row.api_key_last_used_at = None
+        row.api_key_last_rotated_at = None
+        row.widget_token_last_used_at = None
+        row.widget_token_last_rotated_at = None
+        row.widget_token_expires_at = None
         row.service_tier = None
         row.tts_voice = None
         row.terms_accepted_at = None
@@ -141,6 +147,26 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses "
                         "ADD COLUMN IF NOT EXISTS intent_threshold INTEGER"
+                    )
+                if "api_key_last_used_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS api_key_last_used_at TIMESTAMP NULL"
+                    )
+                if "api_key_last_rotated_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS api_key_last_rotated_at TIMESTAMP NULL"
+                    )
+                if "widget_token_last_used_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS widget_token_last_used_at TIMESTAMP NULL"
+                    )
+                if "widget_token_last_rotated_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS widget_token_last_rotated_at TIMESTAMP NULL"
+                    )
+                if "widget_token_expires_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS widget_token_expires_at TIMESTAMP NULL"
                     )
                 # Patch users table for new auth fields when using Postgres.
                 result_users = conn.exec_driver_sql(
@@ -362,6 +388,26 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN intent_threshold INTEGER NULL"
                     )
+                if "api_key_last_used_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN api_key_last_used_at TIMESTAMP NULL"
+                    )
+                if "api_key_last_rotated_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN api_key_last_rotated_at TIMESTAMP NULL"
+                    )
+                if "widget_token_last_used_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN widget_token_last_used_at TIMESTAMP NULL"
+                    )
+                if "widget_token_last_rotated_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN widget_token_last_rotated_at TIMESTAMP NULL"
+                    )
+                if "widget_token_expires_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN widget_token_expires_at TIMESTAMP NULL"
+                    )
                 # Patch users table for new auth fields.
                 user_cols = []
                 user_result = conn.exec_driver_sql("PRAGMA table_info(users)")
@@ -450,14 +496,24 @@ def init_db() -> None:
                 import secrets
 
                 default_widget_token = secrets.token_hex(16)
+            now = datetime.now(UTC)
+            default_widget_ttl = getattr(settings, "widget_token_ttl_minutes", None)
+            widget_expires_at = (
+                now + timedelta(minutes=int(default_widget_ttl))
+                if default_widget_ttl and int(default_widget_ttl) > 0
+                else None
+            )
             session.add(
                 BusinessDB(
                     id="default_business",
                     name="Default Business",
                     api_key=default_api_key,
+                    api_key_last_rotated_at=now,
                     calendar_id=default_calendar_id,
                     status="ACTIVE",
                     widget_token=default_widget_token,
+                    widget_token_last_rotated_at=now,
+                    widget_token_expires_at=widget_expires_at,
                 )
             )
             session.commit()

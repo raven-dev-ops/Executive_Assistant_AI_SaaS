@@ -25,6 +25,8 @@ if SQLALCHEMY_AVAILABLE:
         name = Column(String, nullable=False)  # type: ignore[call-arg]
         vertical = Column(String, nullable=True)  # type: ignore[call-arg]
         api_key = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        api_key_last_used_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        api_key_last_rotated_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
         calendar_id = Column(String, nullable=True)  # type: ignore[call-arg]
         status = Column(String, nullable=False, default="ACTIVE")  # type: ignore[call-arg]
         owner_phone = Column(String, nullable=True)  # type: ignore[call-arg]
@@ -47,6 +49,9 @@ if SQLALCHEMY_AVAILABLE:
         intent_threshold = Column(Integer, nullable=True)  # type: ignore[call-arg]
         created_at = Column(DateTime, nullable=False, default=_utcnow, index=True)  # type: ignore[call-arg]
         widget_token = Column(String, nullable=True, index=True)  # type: ignore[call-arg]
+        widget_token_last_used_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        widget_token_last_rotated_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
+        widget_token_expires_at = Column(DateTime, nullable=True)  # type: ignore[call-arg]
         retention_enabled = Column(Boolean, nullable=True, default=True)  # type: ignore[call-arg]
         retention_sms_template = Column(Text, nullable=True)  # type: ignore[call-arg]
         zip_code = Column(String(255), nullable=True)  # type: ignore[call-arg]
@@ -225,7 +230,12 @@ else:  # pragma: no cover - for environments without SQLAlchemy
         __tablename__ = "businesses"
         id: str
         api_key: str
+        api_key_last_used_at: datetime | None
+        api_key_last_rotated_at: datetime | None
         widget_token: str
+        widget_token_last_used_at: datetime | None
+        widget_token_last_rotated_at: datetime | None
+        widget_token_expires_at: datetime | None
         status: str
         twilio_phone_number: str | None
         intent_threshold: int | None
