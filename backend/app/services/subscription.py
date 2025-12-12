@@ -46,6 +46,9 @@ class SubscriptionState:
     grace_remaining_days: int = 0
     blocked: bool = False
     message: str | None = None
+    block_reason: str | None = None
+    degraded_mode: str | None = None
+    feature: str | None = None
     usage: UsageSnapshot | None = None
     usage_warnings: list[str] = field(default_factory=list)
 
@@ -214,10 +217,12 @@ async def check_access(
     feature: str = "core",
     upcoming_calls: int = 0,
     upcoming_appointments: int = 0,
+    graceful: bool = False,
 ) -> SubscriptionState:
     """Evaluate subscription state and enforce blocking/limits when enabled."""
     settings = get_settings()
     state = compute_state(business_id)
+    state.feature = feature
 
     # Even when enforcement is disabled, send reminders for non-active states and renewals.
     if not getattr(settings, "enforce_subscription", False):
@@ -270,8 +275,16 @@ async def check_access(
             )
             return state
         state.blocked = True
-        state.message = "Subscription inactive. Please upgrade or resume billing."
+        state.block_reason = "inactive"
+        state.degraded_mode = "voicemail_only" if feature == "calls" else "read_only"
+        state.message = state.message or (
+            "Subscription inactive. Calls will be routed to voicemail and automation is paused."
+            if feature == "calls"
+            else "Subscription inactive. Please upgrade or resume billing."
+        )
         await _notify_owner_if_needed(business, state)
+        if graceful:
+            return state
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,
@@ -309,7 +322,11 @@ async def check_access(
         )
         state.usage_warnings.append(warning)
         state.blocked = True
+        state.block_reason = "call_limit"
+        state.degraded_mode = "voicemail_only" if feature == "calls" else "read_only"
         state.message = warning
+        if graceful:
+            return state
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,
@@ -324,7 +341,11 @@ async def check_access(
         )
         state.usage_warnings.append(warning)
         state.blocked = True
+        state.block_reason = "appointment_limit"
+        state.degraded_mode = "read_only"
         state.message = warning
+        if graceful:
+            return state
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=state.message,

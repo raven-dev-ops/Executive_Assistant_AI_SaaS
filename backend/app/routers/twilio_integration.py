@@ -477,9 +477,16 @@ async def twilio_voice(
         },
     )
 
-    await subscription_service.check_access(
-        business_id, feature="calls", upcoming_calls=1
+    sub_state = await subscription_service.check_access(
+        business_id, feature="calls", upcoming_calls=1, graceful=True
     )
+    if sub_state.blocked:
+        msg = sub_state.message or "Subscription inactive. Calls are paused."
+        return Response(
+            content=f"<Response><Say>{escape(msg)}</Say></Response>",
+            media_type="text/xml",
+            status_code=status.HTTP_200_OK,
+        )
 
     # Track Twilio voice webhook usage.
     metrics.twilio_voice_requests += 1
@@ -1167,9 +1174,16 @@ async def twilio_voice_assistant(
         getattr(settings.telephony, "twilio_streaming_enabled", False)
     )
 
-    await subscription_service.check_access(
-        business_id, feature="calls", upcoming_calls=1
+    sub_state = await subscription_service.check_access(
+        business_id, feature="calls", upcoming_calls=1, graceful=True
     )
+    if sub_state.blocked:
+        msg = sub_state.message or "Subscription inactive. Calls are paused."
+        return Response(
+            content=f"<Response><Say>{escape(msg)}</Say></Response>",
+            media_type="text/xml",
+            status_code=status.HTTP_200_OK,
+        )
     metrics.twilio_voice_requests += 1
     per_tenant = metrics.twilio_by_business.setdefault(
         business_id, BusinessTwilioMetrics()
@@ -1452,9 +1466,15 @@ async def twilio_voice_stream(
     session_obj = sessions.session_store.get(link.session_id) if link else None
     if not session_obj:
         await ensure_onboarding_ready(business_id)
-        await subscription_service.check_access(
-            business_id, feature="calls", upcoming_calls=1
+        state = await subscription_service.check_access(
+            business_id, feature="calls", upcoming_calls=1, graceful=True
         )
+        if state.blocked:
+            return TwilioStreamResponse(
+                status="subscription_blocked",
+                reply_text=state.message,
+                completed=True,
+            )
         session_obj = sessions.session_store.create(
             caller_phone=payload.from_number,
             business_id=business_id,

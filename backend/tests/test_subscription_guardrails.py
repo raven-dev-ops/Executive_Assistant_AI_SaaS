@@ -78,6 +78,33 @@ async def test_voice_start_blocks_when_subscription_inactive(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_telephony_inbound_degrades_instead_of_blocking(monkeypatch):
+    monkeypatch.setenv("ENFORCE_SUBSCRIPTION", "true")
+    config.get_settings.cache_clear()
+
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, DEFAULT_BUSINESS_ID)
+        row.subscription_status = "canceled"
+        row.subscription_current_period_end = datetime.now(UTC) - timedelta(days=5)
+        session.add(row)
+        session.commit()
+    finally:
+        session.close()
+
+    resp = client.post(
+        "/telephony/inbound",
+        json={"caller_phone": "+15551234567"},
+        headers={"X-Business-ID": DEFAULT_BUSINESS_ID},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_id"] == "subscription_blocked"
+    assert "subscription" in data["reply_text"].lower()
+    config.get_settings.cache_clear()
+
+
+@pytest.mark.anyio
 async def test_subscription_warns_on_usage_and_expiry(monkeypatch):
     monkeypatch.setenv("ENFORCE_SUBSCRIPTION", "true")
     config.get_settings.cache_clear()

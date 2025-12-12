@@ -65,6 +65,8 @@ class SubscriptionStatusResponse(BaseModel):
     grace_remaining_days: int = 0
     blocked: bool = False
     message: str | None = None
+    block_reason: str | None = None
+    degraded_mode: str | None = None
     usage_warnings: list[str] = Field(default_factory=list)
     calls_used: int = 0
     calls_limit: int | None = None
@@ -311,6 +313,8 @@ async def get_subscription_status(
         grace_remaining_days=state.grace_remaining_days,
         blocked=state.blocked,
         message=state.message,
+        block_reason=state.block_reason,
+        degraded_mode=state.degraded_mode,
         usage_warnings=state.usage_warnings,
         calls_used=usage.calls,
         calls_limit=usage.call_limit,

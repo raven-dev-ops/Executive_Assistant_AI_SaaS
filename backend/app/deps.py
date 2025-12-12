@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, UTC
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status, Request
 from typing import cast
 
 from .config import get_settings
@@ -217,6 +217,7 @@ async def ensure_onboarding_ready(
 
 
 async def require_subscription_active(
+    request: Request,
     business_id: str = Depends(get_business_id),
 ):
     """Optionally enforce an active subscription when configured.
@@ -231,8 +232,29 @@ async def require_subscription_active(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing business context"
         )
-    # Delegate the heavy lifting (grace period, limits) to the subscription service.
-    await subscription_service.check_access(business_id, feature="core")
+    path = request.url.path
+    feature = "core"
+    graceful = False
+    upcoming_calls = 0
+    if path.startswith(("/telephony", "/v1/telephony", "/twilio", "/v1/twilio", "/v1/voice")):
+        feature = "calls"
+        graceful = True
+        upcoming_calls = 1
+    elif path.startswith("/v1/chat"):
+        feature = "chat"
+    state = await subscription_service.check_access(
+        business_id,
+        feature=feature,
+        upcoming_calls=upcoming_calls,
+        graceful=graceful,
+    )
+    request.state.subscription_state = state
+    if state.blocked and not graceful:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=state.message or "Subscription inactive",
+            headers={"X-Subscription-Status": state.status},
+        )
     return business_id
 
 

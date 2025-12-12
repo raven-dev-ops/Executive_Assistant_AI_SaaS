@@ -1,17 +1,18 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from ..deps import ensure_business_active, require_subscription_active
+from ..deps import ensure_business_active
 from ..metrics import BusinessVoiceSessionMetrics, metrics
 from ..repositories import conversations_repo, customers_repo
 from ..services import conversation, sessions
 from ..services import subscription as subscription_service
+from ..services.sms import sms_service
 from ..business_config import get_voice_for_business
 
 
-router = APIRouter(dependencies=[Depends(require_subscription_active)])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +51,7 @@ class CallEndResponse(BaseModel):
 
 @router.post("/inbound", response_model=InboundCallResponse)
 async def inbound_call(
+    request: Request,
     payload: InboundCallRequest,
     business_id: str = Depends(ensure_business_active),
 ) -> InboundCallResponse:
@@ -57,9 +59,36 @@ async def inbound_call(
 
     A real telephony provider (e.g., Twilio) would POST here when a call starts.
     """
-    await subscription_service.check_access(
-        business_id, feature="calls", upcoming_calls=1
-    )
+    state = getattr(request.state, "subscription_state", None)
+    if state is None:
+        state = await subscription_service.check_access(
+            business_id, feature="calls", upcoming_calls=1, graceful=True
+        )
+    if state.blocked:
+        msg = state.message or "Subscription inactive. Calls are routed to voicemail."
+        voice = get_voice_for_business(business_id)
+        try:
+            audio = await conversation.speech_service.synthesize(msg, voice=voice)
+        except Exception:
+            audio = None
+        # Best-effort owner notification so emergencies are not dropped silently.
+        try:
+            await sms_service.notify_owner(
+                f"Call blocked for {business_id}: {msg}",
+                business_id=business_id,
+            )
+        except Exception:
+            logger.warning(
+                "telephony_subscription_alert_failed",
+                exc_info=True,
+                extra={"business_id": business_id},
+            )
+        return InboundCallResponse(
+            session_id="subscription_blocked",
+            reply_text=msg,
+            session_state={"subscription_blocked": True, "status": state.status},
+            audio=audio,
+        )
     # Track voice/telephony session usage.
     metrics.voice_session_requests += 1
     per_tenant = metrics.voice_sessions_by_business.setdefault(
