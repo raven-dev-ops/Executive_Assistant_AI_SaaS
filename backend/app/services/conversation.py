@@ -935,36 +935,45 @@ class ConversationManager:
                 },
             )
 
-            # Notify owner via SMS if configured.
-            if sms_service.owner_number:
-                when_str = slot.start.strftime("%a %b %d at %I:%M %p UTC")
-                if language_code == "es":
-                    if session.is_emergency:
-                        owner_body = (
-                            f"[EMERGENCIA] Nueva cita de emergencia para {summary_name} el {when_str}.\n"
-                            f"Dirección: {session.address or 'n/a'}\n"
-                            f"Problema: {session.problem_summary or 'n/a'}"
-                        )
-                    else:
-                        owner_body = (
-                            f"[Estándar] Nueva cita para {summary_name} el {when_str}.\n"
-                            f"Dirección: {session.address or 'n/a'}\n"
-                            f"Problema: {session.problem_summary or 'n/a'}"
-                        )
+            # Notify owner with dedupe + fallback when configured.
+            when_str = slot.start.strftime("%a %b %d at %I:%M %p UTC")
+            if language_code == "es":
+                if session.is_emergency:
+                    owner_body = (
+                        f"[EMERGENCIA] Nueva cita de emergencia para {summary_name} el {when_str}.\n"
+                        f"Dirección: {session.address or 'n/a'}\n"
+                        f"Problema: {session.problem_summary or 'n/a'}"
+                    )
                 else:
-                    if session.is_emergency:
-                        owner_body = (
-                            f"[EMERGENCY] New emergency appointment for {summary_name} on {when_str}.\n"
-                            f"Address: {session.address or 'n/a'}\n"
-                            f"Problem: {session.problem_summary or 'n/a'}"
-                        )
-                    else:
-                        owner_body = (
-                            f"[Standard] New appointment for {summary_name} on {when_str}.\n"
-                            f"Address: {session.address or 'n/a'}\n"
-                            f"Problem: {session.problem_summary or 'n/a'}"
-                        )
-                await sms_service.notify_owner(owner_body, business_id=business_id)
+                    owner_body = (
+                        f"[Estándar] Nueva cita para {summary_name} el {when_str}.\n"
+                        f"Dirección: {session.address or 'n/a'}\n"
+                        f"Problema: {session.problem_summary or 'n/a'}"
+                    )
+            else:
+                if session.is_emergency:
+                    owner_body = (
+                        f"[EMERGENCY] New emergency appointment for {summary_name} on {when_str}.\n"
+                        f"Address: {session.address or 'n/a'}\n"
+                        f"Problem: {session.problem_summary or 'n/a'}"
+                    )
+                else:
+                    owner_body = (
+                        f"[Standard] New appointment for {summary_name} on {when_str}.\n"
+                        f"Address: {session.address or 'n/a'}\n"
+                        f"Problem: {session.problem_summary or 'n/a'}"
+                    )
+            from .owner_notifications import notify_owner_with_fallback
+
+            subject = (
+                "Emergency booking" if session.is_emergency else "New appointment booked"
+            )
+            await notify_owner_with_fallback(
+                business_id=business_id,
+                message=owner_body,
+                subject=subject,
+                dedupe_key=f"appt_{appointment.id}",
+            )
 
             # Send confirmation to customer if we have a phone number and they have not opted out.
             if session.caller_phone and not getattr(customer, "sms_opt_out", False):

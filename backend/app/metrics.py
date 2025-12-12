@@ -121,6 +121,12 @@ class Metrics:
     voice_sessions_by_business: Dict[str, BusinessVoiceSessionMetrics] = field(
         default_factory=dict
     )
+    owner_notification_status_by_business: Dict[str, Dict[str, Any]] = field(
+        default_factory=dict
+    )
+    owner_notification_events: Dict[str, list[Dict[str, Any]]] = field(
+        default_factory=dict
+    )
     route_metrics: Dict[str, RouteMetrics] = field(default_factory=dict)
     callbacks_by_business: Dict[str, Dict[str, CallbackItem]] = field(
         default_factory=dict

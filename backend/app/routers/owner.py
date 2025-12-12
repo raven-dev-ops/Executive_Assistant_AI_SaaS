@@ -989,6 +989,9 @@ class OwnerSmsMetricsResponse(BaseModel):
     opt_in_events: int = 0
     confirmation_share_via_sms: float | None = None
     cancellation_share_via_sms: float | None = None
+    last_owner_notification_status: str | None = None
+    last_owner_notification_channel: str | None = None
+    last_owner_notification_time: str | None = None
 
 
 @router.get("/sms-metrics", response_model=OwnerSmsMetricsResponse)
@@ -1026,6 +1029,10 @@ def owner_sms_metrics(
         if total_cancelled > 0 and cancellations > 0
         else None
     )
+    last_notify = metrics.owner_notification_status_by_business.get(business_id, {})
+    last_status = last_notify.get("status")
+    last_channel = last_notify.get("channel")
+    last_time = last_notify.get("timestamp")
     return OwnerSmsMetricsResponse(
         owner_messages=owner,
         customer_messages=customer,
@@ -1037,6 +1044,9 @@ def owner_sms_metrics(
         opt_in_events=opt_ins,
         confirmation_share_via_sms=confirmation_share,
         cancellation_share_via_sms=cancellation_share,
+        last_owner_notification_status=last_status,
+        last_owner_notification_channel=last_channel,
+        last_owner_notification_time=last_time,
     )
 
 

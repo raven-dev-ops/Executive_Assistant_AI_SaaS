@@ -314,28 +314,21 @@ async def _maybe_alert_on_speech_circuit(
     if last_error:
         base_message = f"Speech provider issue: {last_error}. Using fallback prompts."
     alert_sent = False
-    if owner_phone:
+    if owner_phone or (owner_email and _email_alerts_enabled(business_row)):
         try:
-            await sms_service.notify_owner(base_message, business_id=business_id)
-            alert_sent = True
+            from ..services.owner_notifications import notify_owner_with_fallback
+
+            result = await notify_owner_with_fallback(
+                business_id=business_id,
+                message=base_message,
+                subject="Speech provider degraded",
+                dedupe_key="speech_circuit_open",
+                send_email_copy=bool(owner_email and _email_alerts_enabled(business_row)),
+            )
+            alert_sent = result.delivered
         except Exception:
             logger.warning(
                 "speech_circuit_sms_alert_failed",
-                exc_info=True,
-                extra={"business_id": business_id, "call_sid": call_sid},
-            )
-    if owner_email and _email_alerts_enabled(business_row):
-        try:
-            await email_service.notify_owner(
-                subject="Speech provider degraded",
-                body=base_message,
-                business_id=business_id,
-                owner_email=owner_email,
-            )
-            alert_sent = True
-        except Exception:
-            logger.warning(
-                "speech_circuit_email_alert_failed",
                 exc_info=True,
                 extra={"business_id": business_id, "call_sid": call_sid},
             )
@@ -644,29 +637,20 @@ async def twilio_voice(
             reason = "Partial intake" if is_partial_lead else "Missed call"
             when_str = now.strftime("%Y-%m-%d %H:%M UTC")
             owner_message = f"{reason} from {phone} at {when_str}."
-            if owner_phone:
+            if owner_phone or owner_email:
                 try:
-                    await sms_service.notify_owner(
-                        owner_message,
+                    from ..services.owner_notifications import notify_owner_with_fallback
+
+                    await notify_owner_with_fallback(
                         business_id=business_id,
+                        message=owner_message,
+                        subject="Missed call alert",
+                        dedupe_key=f"missed_call_{phone}",
+                        send_email_copy=bool(owner_email and _email_alerts_enabled(business_row)),
                     )
                 except Exception:
                     logger.warning(
                         "owner_notify_failed",
-                        exc_info=True,
-                        extra={"business_id": business_id, "reason": reason},
-                    )
-            if owner_email and _email_alerts_enabled(business_row):
-                try:
-                    await email_service.notify_owner(
-                        subject="Missed call alert",
-                        body=owner_message,
-                        business_id=business_id,
-                        owner_email=owner_email,
-                    )
-                except Exception:
-                    logger.warning(
-                        "owner_email_notify_failed",
                         exc_info=True,
                         extra={"business_id": business_id, "reason": reason},
                     )
@@ -1046,8 +1030,13 @@ async def twilio_owner_voice(
                         language_code=language_code,
                         business_name=business_name,
                     )
-                    await sms_service.notify_owner(
-                        summary_text, business_id=business_id
+                    from ..services.owner_notifications import notify_owner_with_fallback
+
+                    await notify_owner_with_fallback(
+                        business_id=business_id,
+                        message=summary_text,
+                        subject="Owner summary",
+                        dedupe_key=f"summary_{selection_ctx}",
                     )
                     if language_code == "es":
                         ack = "De acuerdo, te he enviado este resumen por mensaje de texto. Adiós."
@@ -1408,7 +1397,14 @@ async def twilio_voice_assistant(
                 service = getattr(appt, "service_type", None) or "service"
                 body = f"New voice booking: {cust_name} on {when} ({service})."
                 try:
-                    await sms_service.notify_owner(body, business_id=business_id)
+                    from ..services.owner_notifications import notify_owner_with_fallback
+
+                    await notify_owner_with_fallback(
+                        business_id=business_id,
+                        message=body,
+                        subject="New voice booking",
+                        dedupe_key=f"voice_booking_{appt.id}",
+                    )
                 except Exception:
                     logger.warning(
                         "owner_notify_failed",
@@ -1558,31 +1554,20 @@ async def twilio_voice_stream(
                     existing.last_result = None
 
             owner_message = f"{'Partial intake' if is_partial_lead else 'Missed call'} from {phone} at {now.strftime('%Y-%m-%d %H:%M UTC')}."
-            if owner_phone:
+            if owner_phone or owner_email:
                 try:
-                    await sms_service.notify_owner(
-                        owner_message, business_id=business_id
+                    from ..services.owner_notifications import notify_owner_with_fallback
+
+                    await notify_owner_with_fallback(
+                        business_id=business_id,
+                        message=owner_message,
+                        subject="Missed call alert",
+                        dedupe_key=f"stream_missed_{phone}",
+                        send_email_copy=bool(owner_email),
                     )
                 except Exception:
                     logger.warning(
                         "twilio_stream_owner_sms_failed",
-                        exc_info=True,
-                        extra={
-                            "business_id": business_id,
-                            "call_sid": payload.call_sid,
-                        },
-                    )
-            if owner_email:
-                try:
-                    await email_service.notify_owner(
-                        subject="Missed call alert",
-                        body=owner_message,
-                        business_id=business_id,
-                        owner_email=owner_email,
-                    )
-                except Exception:
-                    logger.warning(
-                        "twilio_stream_owner_email_failed",
                         exc_info=True,
                         extra={
                             "business_id": business_id,
@@ -2188,25 +2173,18 @@ async def twilio_voicemail(
     owner_message = owner_message + callback_hint
     if owner_phone:
         try:
-            await sms_service.notify_owner(owner_message, business_id=business_id)
+            from ..services.owner_notifications import notify_owner_with_fallback
+
+            await notify_owner_with_fallback(
+                business_id=business_id,
+                message=owner_message,
+                subject="New voicemail",
+                dedupe_key=f"voicemail_{CallSid or owner_message}",
+                send_email_copy=bool(owner_email),
+            )
         except Exception:
             logger.warning(
                 "voicemail_owner_sms_failed",
-                exc_info=True,
-                extra={"business_id": business_id, "call_sid": CallSid},
-            )
-    if owner_email:
-        try:
-            if _email_alerts_enabled(business_row):
-                await email_service.notify_owner(
-                    subject="New voicemail",
-                    body=owner_message,
-                    business_id=business_id,
-                    owner_email=owner_email,
-                )
-        except Exception:
-            logger.warning(
-                "voicemail_owner_email_failed",
                 exc_info=True,
                 extra={"business_id": business_id, "call_sid": CallSid},
             )

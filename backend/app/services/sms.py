@@ -47,7 +47,8 @@ class SmsService:
         body: str,
         business_id: str | None = None,
         category: str | None = None,
-    ) -> None:
+        attempts: int = 1,
+    ) -> bool:
         # Always record locally for observability/tests.
         self._sent.append(
             SentMessage(to=to, body=body, business_id=business_id, category=category)
@@ -62,7 +63,7 @@ class SmsService:
             per_tenant.sms_sent_total += 1
 
         if self._settings.provider != "twilio":
-            return
+            return True
 
         sid = self._settings.twilio_account_sid
         token = self._settings.twilio_auth_token
@@ -76,20 +77,24 @@ class SmsService:
             finally:
                 session_db.close()
         if not sid or not token or not from_number:
-            return
+            return False
 
         url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
         data = {"From": from_number, "To": to, "Body": body}
-        try:
-            async with httpx.AsyncClient(timeout=10.0, auth=(sid, token)) as client:
-                resp = await client.post(url, data=data)
-                resp.raise_for_status()
-        except Exception as exc:
-            # Swallow errors and rely on stub recording for diagnostics.
-            record_notification_failure("sms", detail=exc.__class__.__name__)
-            return
+        for attempt in range(max(1, attempts)):
+            try:
+                async with httpx.AsyncClient(timeout=10.0, auth=(sid, token)) as client:
+                    resp = await client.post(url, data=data)
+                    resp.raise_for_status()
+                return True
+            except Exception as exc:
+                record_notification_failure("sms", detail=exc.__class__.__name__)
+                if attempt + 1 < max(1, attempts):
+                    continue
+                return False
+        return False
 
-    async def notify_owner(self, body: str, business_id: str | None = None) -> None:
+    async def notify_owner(self, body: str, business_id: str | None = None) -> bool:
         # Resolve per-tenant owner phone override when possible.
         to_number = self.owner_number
         if (
@@ -106,14 +111,17 @@ class SmsService:
             if row is not None and getattr(row, "owner_phone", None):
                 to_number = row.owner_phone  # type: ignore[assignment]
         if not to_number:
-            return
-        await self.send_sms(to_number, body, business_id=business_id, category="owner")
+            return False
+        success = await self.send_sms(
+            to_number, body, business_id=business_id, category="owner", attempts=2
+        )
         metrics.sms_sent_owner += 1
         if business_id:
             per_tenant = metrics.sms_by_business.setdefault(
                 business_id, BusinessSmsMetrics()
             )
             per_tenant.sms_sent_owner += 1
+        return success
 
     async def notify_customer(
         self,
