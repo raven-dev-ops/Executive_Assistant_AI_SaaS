@@ -79,11 +79,11 @@ Testing & coverage
 
 Docs & references
 -----------------
-- Product and policy: `WIKI.md`, `CHANGELOG.md`, `RELEASES.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, `BETA_GITHUB_ISSUES_TASKLIST.md`, and the Bristol PDFs (`Bristol_Plumbing_*.pdf`, `Project_Engineering_Whitepaper.pdf`).  
+- Product and policy: `WIKI.md`, `CHANGELOG.md`, `RELEASES.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, and the Bristol PDFs (`Bristol_Plumbing_*.pdf`, `Project_Engineering_Whitepaper.pdf`).  
 - Architecture and deployment: `backend/BACKEND.md`, `dashboard/DASHBOARD.md`, plus platform details in `WIKI.md`.  
 - ISMS and ISO prep: `docs/ISMS/ISMS_README.md` (links to scope, risk method, SoA, access control, secure SDLC, incident/DR, backups, logging/alerts, vendor register, and audit plan).  
 - Incident playbooks: `docs/ISMS/INCIDENT_RESPONSE_PLAN.md` and the wiki playbooks (`ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`).  
-- Beta tracking: `BETA_GITHUB_ISSUES_TASKLIST.md` (issue checklist), `BETA_DOD.md` (Definition of Done), and `BETA_KPIS.md` (top metrics).
+- Beta tracking (archived): `docs/archive/beta/BETA_GITHUB_ISSUES_TASKLIST.md` (issue checklist), `docs/archive/beta/BETA_DOD.md` (Definition of Done), and `docs/archive/beta/BETA_KPIS.md` (top metrics).
 
 New in this iteration
 ---------------------
