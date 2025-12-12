@@ -106,6 +106,50 @@ def _reset_default_onboarding_if_testing(session) -> None:
     _DEFAULT_ONBOARDING_RESET = True
 
 
+def _compute_onboarding_readiness(row: BusinessDB) -> dict[str, object]:
+    """Evaluate readiness for self-serve go-live."""
+
+    settings = get_settings()
+    missing: list[str] = []
+    notes: list[str] = []
+
+    if not getattr(row, "terms_accepted_at", None):
+        missing.append("terms_of_service")
+    if not getattr(row, "privacy_accepted_at", None):
+        missing.append("privacy_policy")
+    if not getattr(row, "owner_name", None):
+        missing.append("owner_name")
+    if not getattr(row, "owner_email", None):
+        missing.append("owner_email")
+    if not getattr(row, "owner_phone", None):
+        missing.append("owner_phone")
+    if not getattr(row, "service_tier", None):
+        missing.append("service_tier")
+
+    open_hour = getattr(row, "open_hour", None)
+    close_hour = getattr(row, "close_hour", None)
+    if open_hour is None or close_hour is None:
+        missing.append("business_hours")
+
+    calendar_id = getattr(row, "calendar_id", None)
+    gcal_status = (getattr(row, "integration_gcalendar_status", "") or "").lower()
+    if not calendar_id and gcal_status != "connected":
+        missing.append("calendar_connected")
+
+    sms_cfg = getattr(settings, "sms", None)
+    provider_name = getattr(sms_cfg, "provider", "stub") if sms_cfg else "stub"
+    twilio_number = getattr(row, "twilio_phone_number", None)
+    if provider_name == "twilio" and not twilio_number:
+        missing.append("twilio_phone_number")
+    if provider_name == "stub":
+        notes.append("SMS provider is stub; configure Twilio for live calls/SMS.")
+
+    if not getattr(row, "onboarding_completed", False):
+        missing.append("onboarding_completed")
+
+    return {"ready": len(missing) == 0, "missing": missing, "notes": notes}
+
+
 def _record_dashboard_audit(
     business_id: str, path: str, method: str, actor: str | None = None
 ) -> None:
@@ -1542,6 +1586,9 @@ def _business_onboarding_profile_from_row(
     service_tier = getattr(row, "service_tier", None)
     tts_voice = getattr(row, "tts_voice", None)
     twilio_phone_number = getattr(row, "twilio_phone_number", None)
+    open_hour = getattr(row, "open_hour", None)
+    close_hour = getattr(row, "close_hour", None)
+    closed_days = getattr(row, "closed_days", None)
     terms_accepted = bool(getattr(row, "terms_accepted_at", None))
     privacy_accepted = bool(getattr(row, "privacy_accepted_at", None))
     onboarding_step = getattr(row, "onboarding_step", None)
@@ -1613,8 +1660,11 @@ def _business_onboarding_profile_from_row(
         requirements_missing.append("owner_email")
     if not service_tier:
         requirements_missing.append("service_tier")
+    if open_hour is None or close_hour is None:
+        requirements_missing.append("business_hours")
 
     profile_complete = len(requirements_missing) == 0
+    readiness = _compute_onboarding_readiness(row)
 
     return OwnerOnboardingProfile(
         business_id=business_id,
@@ -1629,6 +1679,9 @@ def _business_onboarding_profile_from_row(
         privacy_accepted=privacy_accepted,
         tts_voice=tts_voice,
         twilio_phone_number=twilio_phone_number,
+        open_hour=open_hour,
+        close_hour=close_hour,
+        closed_days=closed_days,
         onboarding_step=onboarding_step,
         onboarding_completed=onboarding_completed,
         subscription_status=subscription_status,
@@ -1637,6 +1690,7 @@ def _business_onboarding_profile_from_row(
         profile_complete=profile_complete,
         requirements_missing=requirements_missing,
         owner_email_alerts_enabled=owner_email_alerts_enabled,
+        readiness=readiness,
     )
 
 
@@ -1676,6 +1730,9 @@ class OwnerOnboardingProfile(BaseModel):
     privacy_accepted: bool
     tts_voice: str | None = None
     twilio_phone_number: str | None = None
+    open_hour: int | None = None
+    close_hour: int | None = None
+    closed_days: str | None = None
     onboarding_step: str | None = None
     onboarding_completed: bool = False
     subscription_status: str | None = None
@@ -1684,6 +1741,18 @@ class OwnerOnboardingProfile(BaseModel):
     profile_complete: bool = False
     requirements_missing: list[str] = []
     owner_email_alerts_enabled: bool | None = True
+    readiness: dict[str, object] | None = None
+
+
+class OnboardingReadiness(BaseModel):
+    ready: bool
+    missing: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class OnboardingTestResult(BaseModel):
+    success: bool
+    detail: str | None = None
 
 
 @router.get("/onboarding/profile", response_model=OwnerOnboardingProfile)
@@ -1707,6 +1776,9 @@ def owner_onboarding_profile(
             tts_voice=get_voice_for_business(business_id),
             owner_email_alerts_enabled=True,
             twilio_phone_number=None,
+            open_hour=None,
+            close_hour=None,
+            closed_days=None,
             onboarding_step=None,
             onboarding_completed=False,
             subscription_status=None,
@@ -1738,7 +1810,9 @@ def owner_onboarding_profile(
                 "owner_name",
                 "owner_email",
                 "service_tier",
+                "business_hours",
             ],
+            readiness=None,
         )
 
     session = SessionLocal()
@@ -1755,6 +1829,78 @@ def owner_onboarding_profile(
         session.close()
 
 
+@router.get("/onboarding/readiness", response_model=OnboardingReadiness)
+def owner_onboarding_readiness(
+    business_id: str = Depends(ensure_business_active),
+) -> OnboardingReadiness:
+    """Return a readiness summary for self-serve go-live."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        return OnboardingReadiness(ready=False, missing=["database_unavailable"])
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+        readiness = _compute_onboarding_readiness(row)
+        return OnboardingReadiness(
+            ready=bool(readiness.get("ready")),
+            missing=list(readiness.get("missing", [])),
+            notes=list(readiness.get("notes", [])),
+        )
+    finally:
+        session.close()
+
+
+@router.post("/onboarding/test-sms", response_model=OnboardingTestResult)
+async def owner_onboarding_test_sms(
+    business_id: str = Depends(ensure_business_active),
+) -> OnboardingTestResult:
+    """Send a test SMS to the owner phone to verify delivery."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+        owner_phone = getattr(row, "owner_phone", None)
+        if not owner_phone:
+            raise HTTPException(status_code=400, detail="Owner phone not configured")
+    finally:
+        session.close()
+    await sms_service.notify_owner(
+        "Test SMS from AI Telephony onboarding. If you see this, SMS is configured.",
+        business_id=business_id,
+    )
+    return OnboardingTestResult(success=True, detail="Test SMS sent")
+
+
+@router.post("/onboarding/test-call", response_model=OnboardingTestResult)
+async def owner_onboarding_test_call(
+    business_id: str = Depends(ensure_business_active),
+) -> OnboardingTestResult:
+    """Return a simple diagnostic for voice readiness."""
+    if not SQLALCHEMY_AVAILABLE or SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+        twilio_number = getattr(row, "twilio_phone_number", None)
+        if not twilio_number:
+            raise HTTPException(
+                status_code=400, detail="Twilio phone number not configured"
+            )
+    finally:
+        session.close()
+    return OnboardingTestResult(
+        success=True,
+        detail=(
+            "Twilio number configured; place a manual test call to verify voice flows."
+        ),
+    )
+
 class OwnerOnboardingUpdateRequest(BaseModel):
     owner_name: str | None = None
     owner_email: EmailStr | None = None
@@ -1768,6 +1914,11 @@ class OwnerOnboardingUpdateRequest(BaseModel):
     accept_privacy: bool | None = None
     tts_voice: str | None = None
     owner_email_alerts_enabled: bool | None = None
+    open_hour: int | None = Field(default=None, ge=0, le=23)
+    close_hour: int | None = Field(default=None, ge=0, le=23)
+    closed_days: str | None = None
+    calendar_id: str | None = None
+    twilio_phone_number: str | None = None
     onboarding_step: str | None = Field(
         default=None,
         description="Current onboarding step (e.g. 'profile', 'data', 'ai', 'complete').",
@@ -1819,6 +1970,16 @@ def owner_onboarding_update(
             row.service_tier = payload.service_tier
         if payload.tts_voice is not None:
             row.tts_voice = payload.tts_voice
+        if payload.open_hour is not None:
+            row.open_hour = payload.open_hour
+        if payload.close_hour is not None:
+            row.close_hour = payload.close_hour
+        if payload.closed_days is not None:
+            row.closed_days = payload.closed_days
+        if payload.calendar_id is not None:
+            row.calendar_id = payload.calendar_id
+        if payload.twilio_phone_number is not None:
+            row.twilio_phone_number = payload.twilio_phone_number
         if payload.onboarding_step is not None:
             row.onboarding_step = payload.onboarding_step
         if payload.onboarding_completed is not None:
