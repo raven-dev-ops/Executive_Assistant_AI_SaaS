@@ -616,6 +616,25 @@ async def twilio_voice(
             if conv:
                 conversations_repo.append_message(conv.id, role="user", text=text)
 
+        if silent_turn and getattr(session, "no_input_count", 0) == 1:
+            if language_code == "es":
+                prompt = (
+                    "No alcancAc a escucharte bien. Por favor di tu respuesta o marca 1 para sA- o 2 para no."
+                )
+            else:
+                prompt = (
+                    "I'm having trouble hearing you. Please say your answer, or press 1 for yes or 2 for no."
+                )
+            safe_reply = escape(prompt)
+            gather_action = f"/twilio/voice?business_id={business_id}" if business_id_param else "/twilio/voice"
+            twiml = f"""
+  <Response>
+    <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
+    <Gather input="speech dtmf" numDigits="1" action="{gather_action}" method="POST" />
+  </Response>
+  """.strip()
+            return Response(content=twiml, media_type="text/xml")
+
         if silent_turn and getattr(session, "no_input_count", 0) >= 2:
             queue = metrics.callbacks_by_business.setdefault(business_id, {})
             now = datetime.now(UTC)
@@ -1136,6 +1155,25 @@ async def twilio_voice_assistant(
     conv = conversations_repo.get_by_session(session.id)
     if conv and text:
         conversations_repo.append_message(conv.id, role="user", text=text)
+
+    if silent_turn and getattr(session, "no_input_count", 0) == 1:
+        if language_code == "es":
+            reply_text = (
+                "No escuchA© tu respuesta. Por favor di tu respuesta o presiona 1 para sA- o 2 para no."
+            )
+        else:
+            reply_text = (
+                "I didn't catch that. Please say your answer, or press 1 for yes or 2 for no."
+            )
+        safe_reply = escape(reply_text)
+        gather_action = f"/twilio/voice-assistant?business_id={business_id}" if business_id_param else "/twilio/voice-assistant"
+        twiml = f"""
+<Response>
+  <Say voice="alice"{say_language_attr}>{safe_reply}</Say>
+  <Gather input="speech dtmf" numDigits="1" action="{gather_action}" method="POST" speechTimeout="auto" />
+</Response>
+""".strip()
+        return Response(content=twiml, media_type="text/xml")
 
     if silent_turn and getattr(session, "no_input_count", 0) >= 2:
         queue = metrics.callbacks_by_business.setdefault(business_id, {})
