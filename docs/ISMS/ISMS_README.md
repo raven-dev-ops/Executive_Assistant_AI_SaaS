@@ -1,0 +1,27 @@
+Information Security Management System (ISMS) - Working Draft
+=============================================================
+
+Purpose
+-------
+This folder documents the minimum viable ISMS for the AI Telephony Service & CRM as we move toward ISO 27001 certification. It captures scope, risk management, applicable controls, core policies, and operational evidence we can provide to auditors.
+
+Quick map
+---------
+- Scope: `ISMS_SCOPE.md`
+- Risk management: `RISK_METHOD.md`
+- Statement of Applicability: `STATEMENT_OF_APPLICABILITY.md`
+- Policies and processes:
+  - Access control (SSO/MFA, joiner/mover/leaver): `ACCESS_CONTROL_POLICY.md`
+  - Secure SDLC + CI/CD controls: `SECURE_SDLC.md`
+  - Incident response and alerting: `INCIDENT_RESPONSE_PLAN.md`
+  - Disaster recovery & business continuity: `DR_BCP.md`
+  - Backup and restore testing (RPO/RTO): `BACKUP_AND_RESTORE.md`
+  - Logging, monitoring, and alert rules: `LOGGING_AND_ALERTS.md`
+  - Vendor inventory and DPAs: `VENDOR_REGISTER.md`
+- Audit cadence and certification plan: `AUDIT_AND_MANAGEMENT_REVIEW.md`
+
+How to use
+----------
+- Keep these docs version-controlled; update after every tabletop, drill, or material change.
+- Track open actions in the risk register template (`RISK_METHOD.md`) and in GitHub issues for accountability.
+- Evidence (screenshots, exports) should be stored per release in the secure share; link from here when available.

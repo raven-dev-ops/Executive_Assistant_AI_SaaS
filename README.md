@@ -79,12 +79,11 @@ Testing & coverage
 
 Docs & references
 -----------------
-- Design and operating ground truth: `OUTLINE.md`, `BACKLOG.md`, `WIKI.md`, `ENGINEERING.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, `RUNBOOK.md`, `DEPLOYMENT_CHECKLIST.md`, and the Bristol PDFs (`Bristol_Plumbing_*.pdf`, `Project_Engineering_Whitepaper.pdf`).  
-- API details: `API_REFERENCE.md`; data model: `DATA_MODEL.md`.  
-- Dev workflow: `DEV_WORKFLOW.md`, `TOOLS.md`.  
-- Incident playbooks: `INCIDENT_RESPONSE.md`, `POST_INCIDENT_TEMPLATE.md`.
-- Closed beta Definition of Done: `BETA_DOD.md` (linked from planner and dashboard planner view).
-- Closed beta KPIs: `BETA_KPIS.md` (top-10 metrics and where to view them).
+- Product and policy: `WIKI.md`, `CHANGELOG.md`, `RELEASES.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, `BETA_GITHUB_ISSUES_TASKLIST.md`, and the Bristol PDFs (`Bristol_Plumbing_*.pdf`, `Project_Engineering_Whitepaper.pdf`).  
+- Architecture and deployment: `backend/BACKEND.md`, `dashboard/DASHBOARD.md`, plus platform details in `WIKI.md`.  
+- ISMS and ISO prep: `docs/ISMS/ISMS_README.md` (links to scope, risk method, SoA, access control, secure SDLC, incident/DR, backups, logging/alerts, vendor register, and audit plan).  
+- Incident playbooks: `docs/ISMS/INCIDENT_RESPONSE_PLAN.md` and the wiki playbooks (`ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`).  
+- Beta tracking: `BETA_GITHUB_ISSUES_TASKLIST.md` (issue checklist), `BETA_DOD.md` (Definition of Done), and `BETA_KPIS.md` (top metrics).
 
 New in this iteration
 ---------------------

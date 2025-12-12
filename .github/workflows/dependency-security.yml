@@ -1,0 +1,59 @@
+name: Dependency Security & SBOM
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/dependency-security.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/dependency-security.yml"
+  schedule:
+    - cron: "0 5 * * 1"
+
+jobs:
+  pip-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend (dev) and pip-audit
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          pip install -e .[dev]
+
+      - name: Run pip-audit (fail on vulnerabilities)
+        working-directory: backend
+        run: |
+          pip-audit --progress-spinner=off --strict --local
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build SBOM (backend)
+        uses: anchore/sbom-action@v0
+        with:
+          path: backend
+          format: spdx-json
+          output-file: sbom-backend.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-backend
+          path: sbom-backend.spdx.json
+          retention-days: 14

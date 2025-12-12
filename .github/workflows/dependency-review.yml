@@ -1,0 +1,26 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    paths:
+      - "**/pyproject.toml"
+      - "**/requirements*.txt"
+      - ".github/workflows/dependency-review.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Dependency review (fail on high/critical)
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: true

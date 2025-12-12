@@ -99,6 +99,38 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=85
 
+      - name: Publish coverage summary
+        if: always()
+        env:
+          PY_VERSION: ${{ matrix.python-version }}
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import os
+          import xml.etree.ElementTree as ET
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if not summary_path:
+              raise SystemExit("GITHUB_STEP_SUMMARY not set")
+
+          xml_path = "coverage.xml"
+          if not os.path.exists(xml_path):
+              raise SystemExit("coverage.xml missing")
+
+          tree = ET.parse(xml_path)
+          root = tree.getroot()
+          line_rate = float(root.attrib.get("line-rate", 0.0))
+          pct = round(line_rate * 100, 2)
+
+          content = f"### Coverage ({os.environ.get('PY_VERSION', 'python')})\\n" \
+                    f"- Line coverage: {pct:.2f}%\\n" \
+                    f"- Fail-under threshold: 85%\\n"
+
+          with open(summary_path, "a", encoding="utf-8") as fh:
+              fh.write(content)
+          PY
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4

@@ -15,9 +15,8 @@ on:
 jobs:
   analyze:
     name: Analyze
-    # Only run when Advanced Security/code scanning is enabled for this repo.
-    # Set repository variable ENABLE_CODE_SCANNING=true to turn CodeQL back on.
-    if: ${{ vars.ENABLE_CODE_SCANNING == 'true' }}
+    # Run by default; set repository variable ENABLE_CODE_SCANNING=false to skip (e.g., forks).
+    if: ${{ vars.ENABLE_CODE_SCANNING != 'false' }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -46,4 +45,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
-
