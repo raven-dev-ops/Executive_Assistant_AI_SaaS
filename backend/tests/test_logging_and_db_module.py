@@ -4,13 +4,14 @@ import pytest
 
 from app import db
 import app.config as app_config
-from app.logging_config import configure_logging
+from app.logging_config import RequestIdFilter, configure_logging
 
 
 def test_configure_logging_adds_stdout_handler_and_is_idempotent() -> None:
     root = logging.getLogger()
     # Preserve existing handlers so other tests are not affected.
     original_handlers = list(root.handlers)
+    original_level = root.level
     try:
         # Remove all handlers to force configure_logging to run its setup.
         for handler in list(root.handlers):
@@ -32,6 +33,35 @@ def test_configure_logging_adds_stdout_handler_and_is_idempotent() -> None:
             root.removeHandler(handler)
         for handler in original_handlers:
             root.addHandler(handler)
+        root.setLevel(original_level)
+
+
+def test_configure_logging_adds_request_id_filter_to_existing_handlers() -> None:
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    try:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+
+        handler = logging.StreamHandler()
+        root.addHandler(handler)
+        assert not any(isinstance(f, RequestIdFilter) for f in handler.filters)
+
+        configure_logging()
+        request_filters = [f for f in handler.filters if isinstance(f, RequestIdFilter)]
+        assert len(request_filters) == 1
+
+        # Subsequent calls should not add duplicate filters.
+        configure_logging()
+        request_filters = [f for f in handler.filters if isinstance(f, RequestIdFilter)]
+        assert len(request_filters) == 1
+    finally:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+        for handler in original_handlers:
+            root.addHandler(handler)
+        root.setLevel(original_level)
 
 
 def test_get_db_raises_when_sqlalchemy_unavailable(

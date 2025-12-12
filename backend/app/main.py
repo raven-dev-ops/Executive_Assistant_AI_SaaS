@@ -3,8 +3,10 @@ import os
 import sys
 import time
 from pathlib import Path
+import uuid
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -13,6 +15,7 @@ from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal, init_db
 from .logging_config import configure_logging
 from .metrics import RouteMetrics, metrics
+from .context import request_id_ctx
 from .services.audit import record_audit_event
 from .services.retention_purge import start_retention_scheduler
 from .services.rate_limit import RateLimiter, RateLimitError
@@ -241,113 +244,121 @@ def create_app() -> FastAPI:
         path = request.url.path
         exempt_paths = {"/healthz", "/readyz", "/metrics", "/metrics/prometheus"}
 
-        metrics.total_requests += 1
-        route_metrics = metrics.route_metrics.setdefault(path, RouteMetrics())
-        route_metrics.request_count += 1
-        start = time.time()
-
-        guarded_prefixes = (
-            "/v1/auth",
-            "/v1/chat",
-            "/v1/widget",
-            "/twilio/",
-            "/v1/twilio/",
-            "/telephony/",
-            "/v1/telephony/",
-            "/v1/voice/",
-        )
-        if path not in exempt_paths and path.startswith(guarded_prefixes):
-            client_ip = request.client.host if request.client else "unknown"
-            business_id = None
-            try:
-                # Best-effort resolve tenant so per-tenant buckets can be enforced.
-                from . import deps as _deps  # local import
-
-                business_id = await _deps.get_business_id(request)  # type: ignore[arg-type]
-            except Exception:
-                business_id = None
-
-            # Lockdown mode halts automation/widget/voice flows per tenant.
-            if business_id and _is_business_locked(business_id):
-                metrics.total_errors += 1
-                route_metrics.error_count += 1
-                response = Response(
-                    status_code=423,
-                    content="Tenant is in lockdown mode. Automation is paused.",
-                )
-                await record_audit_event(request, response.status_code)
-                if security_headers_enabled:
-                    _apply_security_headers(
-                        response,
-                        security_csp,
-                        security_hsts_enabled,
-                        security_hsts_max_age,
-                    )
-                return response
-
-            api_key = request.headers.get("X-API-Key") or request.headers.get(
-                "X-Widget-Token"
-            )
-            bucket_key = f"{business_id or 'anon'}:{api_key or 'anon'}"
-            ip_key = f"ip:{client_ip}"
-            try:
-                rate_limiter.check(key=bucket_key)
-                rate_limiter.check(key=ip_key)
-            except RateLimitError as exc:
-                metrics.total_errors += 1
-                route_metrics.error_count += 1
-                metrics.rate_limit_blocks_total += 1
-                metrics.rate_limit_blocks_by_business[
-                    business_id or "unknown"
-                ] = metrics.rate_limit_blocks_by_business.get(
-                    business_id or "unknown", 0
-                ) + 1
-                metrics.rate_limit_blocks_by_ip[client_ip] = (
-                    metrics.rate_limit_blocks_by_ip.get(client_ip, 0) + 1
-                )
-                response = Response(
-                    status_code=429,
-                    content="Rate limit exceeded. Please retry later.",
-                    headers={"Retry-After": str(exc.retry_after_seconds)},
-                )
-                # Record audit information for rejected requests as well.
-                await record_audit_event(request, response.status_code)
-                if security_headers_enabled:
-                    _apply_security_headers(
-                        response,
-                        security_csp,
-                        security_hsts_enabled,
-                        security_hsts_max_age,
-                    )
-                return response
+        incoming_rid = request.headers.get("X-Request-ID")
+        rid = incoming_rid or str(uuid.uuid4())
+        token = request_id_ctx.set(rid)
+        request.state.request_id = rid
 
         try:
-            response = await call_next(request)
-        except HTTPException as exc:
-            metrics.total_errors += 1
-            route_metrics.error_count += 1
-            # Record audit information for rejected requests as well.
-            await record_audit_event(request, exc.status_code)
-            raise
-        except Exception:
-            metrics.total_errors += 1
-            route_metrics.error_count += 1
-            await record_audit_event(request, 500)
-            raise
-        latency_ms = (time.time() - start) * 1000.0
-        route_metrics.total_latency_ms += latency_ms
-        if latency_ms > route_metrics.max_latency_ms:
-            route_metrics.max_latency_ms = latency_ms
-        if response.status_code >= 500:
-            metrics.total_errors += 1
-            route_metrics.error_count += 1
-        # Successful or handled responses are also audited.
-        await record_audit_event(request, response.status_code)
-        if security_headers_enabled:
-            _apply_security_headers(
-                response, security_csp, security_hsts_enabled, security_hsts_max_age
+            metrics.total_requests += 1
+            route_metrics = metrics.route_metrics.setdefault(path, RouteMetrics())
+            route_metrics.request_count += 1
+            start = time.time()
+            error_recorded = False
+
+            def _finalize_response(resp: Response) -> Response:
+                resp.headers["X-Request-ID"] = rid
+                if security_headers_enabled:
+                    _apply_security_headers(
+                        resp, security_csp, security_hsts_enabled, security_hsts_max_age
+                    )
+                return resp
+
+            guarded_prefixes = (
+                "/v1/auth",
+                "/v1/chat",
+                "/v1/widget",
+                "/twilio/",
+                "/v1/twilio/",
+                "/telephony/",
+                "/v1/telephony/",
+                "/v1/voice/",
             )
-        return response
+            if path not in exempt_paths and path.startswith(guarded_prefixes):
+                client_ip = request.client.host if request.client else "unknown"
+                business_id = None
+                try:
+                    # Best-effort resolve tenant so per-tenant buckets can be enforced.
+                    from . import deps as _deps  # local import
+
+                    business_id = await _deps.get_business_id(request)  # type: ignore[arg-type]
+                except Exception:
+                    business_id = None
+
+                # Lockdown mode halts automation/widget/voice flows per tenant.
+                if business_id and _is_business_locked(business_id):
+                    metrics.total_errors += 1
+                    route_metrics.error_count += 1
+                    response = Response(
+                        status_code=423,
+                        content="Tenant is in lockdown mode. Automation is paused.",
+                    )
+                    await record_audit_event(request, response.status_code)
+                    return _finalize_response(response)
+
+                api_key = request.headers.get("X-API-Key") or request.headers.get(
+                    "X-Widget-Token"
+                )
+                bucket_key = f"{business_id or 'anon'}:{api_key or 'anon'}"
+                ip_key = f"ip:{client_ip}"
+                try:
+                    rate_limiter.check(key=bucket_key)
+                    rate_limiter.check(key=ip_key)
+                except RateLimitError as exc:
+                    metrics.total_errors += 1
+                    route_metrics.error_count += 1
+                    metrics.rate_limit_blocks_total += 1
+                    metrics.rate_limit_blocks_by_business[
+                        business_id or "unknown"
+                    ] = metrics.rate_limit_blocks_by_business.get(
+                        business_id or "unknown", 0
+                    ) + 1
+                    metrics.rate_limit_blocks_by_ip[client_ip] = (
+                        metrics.rate_limit_blocks_by_ip.get(client_ip, 0) + 1
+                    )
+                    response = Response(
+                        status_code=429,
+                        content="Rate limit exceeded. Please retry later.",
+                        headers={"Retry-After": str(exc.retry_after_seconds)},
+                    )
+                    # Record audit information for rejected requests as well.
+                    await record_audit_event(request, response.status_code)
+                    return _finalize_response(response)
+
+            try:
+                response = await call_next(request)
+            except HTTPException as exc:
+                metrics.total_errors += 1
+                route_metrics.error_count += 1
+                # Record audit information for rejected requests as well.
+                await record_audit_event(request, exc.status_code)
+                response = await http_exception_handler(request, exc)
+                error_recorded = True
+            except Exception:
+                metrics.total_errors += 1
+                route_metrics.error_count += 1
+                await record_audit_event(request, 500)
+                logger.exception(
+                    "unhandled_request_exception", exc_info=True, extra={"path": path}
+                )
+                response = Response(
+                    status_code=500, content="Internal Server Error"
+                )
+                error_recorded = True
+            latency_ms = (time.time() - start) * 1000.0
+            route_metrics.total_latency_ms += latency_ms
+            if latency_ms > route_metrics.max_latency_ms:
+                route_metrics.max_latency_ms = latency_ms
+            if response.status_code >= 500 and not error_recorded:
+                metrics.total_errors += 1
+                route_metrics.error_count += 1
+            # Successful or handled responses are also audited.
+            if not error_recorded:
+                await record_audit_event(request, response.status_code)
+            response = _finalize_response(response)
+            return response
+        finally:
+            request_id_ctx.reset(token)
 
     @app.on_event("shutdown")
     async def _shutdown_services() -> None:  # pragma: no cover - wiring only
