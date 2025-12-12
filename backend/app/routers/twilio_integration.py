@@ -24,17 +24,22 @@ from ..metrics import (
     metrics,
 )
 from ..repositories import conversations_repo, customers_repo, appointments_repo
-from ..services import conversation, sessions, subscription as subscription_service
+from ..services import (
+    appointment_actions,
+    conversation,
+    sessions,
+    subscription as subscription_service,
+)
 from ..services.stt_tts import speech_service
 from ..services.calendar import calendar_service
 from ..services.sms import sms_service
 from ..services.email_service import email_service
 from ..business_config import get_calendar_id_for_business, get_language_for_business
-from ..services.twilio_state import twilio_state_store
+from ..services.twilio_state import PendingAction, twilio_state_store
 from . import owner as owner_routes
 
 if TYPE_CHECKING:
-    from ..models import Appointment
+    from ..models import Appointment, Conversation
 
 
 logger = logging.getLogger(__name__)
@@ -261,6 +266,25 @@ def _format_appointment_time(appt) -> str:
     if not when:
         return ""
     return when.strftime("%a %b %d at %I:%M %p UTC")
+
+
+def _ensure_sms_conversation(
+    business_id: str, from_phone: str
+) -> Conversation | None:
+    """Return or create the SMS conversation for a customer/phone."""
+
+    link = twilio_state_store.get_sms_conversation(business_id, from_phone)
+    conv = conversations_repo.get(link.conversation_id) if link else None
+    if conv:
+        return conv
+    customer = customers_repo.get_by_phone(from_phone, business_id=business_id)
+    conv = conversations_repo.create(
+        channel="sms",
+        customer_id=customer.id if customer else None,
+        business_id=business_id,
+    )
+    twilio_state_store.set_sms_conversation(business_id, from_phone, conv.id)
+    return conv
 
 
 def _email_alerts_enabled(business_row: BusinessDB | None) -> bool:
@@ -506,6 +530,7 @@ async def twilio_voice(
     owner_phone = None
     owner_email = None
     # If the business is suspended, reject early.
+    conv_id_for_log: str | None = None
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session_db = SessionLocal()
         try:
@@ -595,7 +620,7 @@ async def twilio_voice(
             lead_source = getattr(session, "lead_source", None)
             reason_code = "PARTIAL_INTAKE" if is_partial_lead else "MISSED_CALL"
             if existing is None:
-                queue[phone] = _metrics.CallbackItem(
+                queue[phone] = CallbackItem(
                     phone=phone,
                     first_seen=now,
                     last_seen=now,
@@ -706,11 +731,17 @@ async def twilio_voice(
                 if From
                 else None
             )
-            conversations_repo.create(
+            conv = conversations_repo.create(
                 channel="phone",
                 customer_id=customer.id if customer else None,
                 session_id=session_id,
                 business_id=business_id,
+            )
+            conv_id_for_log = conv.id
+            conversations_repo.append_message(
+                conv.id,
+                role="assistant",
+                text="Call started",
             )
 
         # Bridge Twilio's speech result into the conversation manager.
@@ -801,9 +832,10 @@ async def twilio_voice(
         )
 
         conv = conversations_repo.get_by_session(session_id)
-        if conv:
+        conv_id = conv.id if conv else conv_id_for_log
+        if conv_id:
             conversations_repo.append_message(
-                conv.id, role="assistant", text=result.reply_text
+                conv_id, role="assistant", text=result.reply_text
             )
 
         # Build TwiML response. Preserve the business_id query parameter on the
@@ -1736,11 +1768,16 @@ async def twilio_sms(
 
     try:
         normalized_body = Body.strip().lower()
-        opt_out_keywords = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+        opt_out_keywords = {"stop", "stopall", "unsubscribe", "end", "quit"}
         opt_in_keywords = {"start", "unstop"}
         confirm_keywords = {"yes", "y", "confirm"}
-        cancel_keywords = {"no", "n", "cancel"}
+        decline_keywords = {"no", "n"}
+        cancel_intent_keywords = {"cancel", "cancel appointment", "cancel appt"}
         reschedule_keywords = {"reschedule", "change time", "change appointment"}
+        per_sms = metrics.sms_by_business.setdefault(
+            business_id, BusinessSmsMetrics()
+        )
+        pending_action = twilio_state_store.get_pending_action(business_id, From)
 
         if normalized_body in opt_out_keywords:
             # Mark this customer/phone as opted out of SMS.
@@ -1801,128 +1838,175 @@ async def twilio_sms(
 """.strip()
             return Response(content=twiml, media_type="text/xml")
 
-        # Simple confirmation/cancellation for upcoming appointments.
-        if normalized_body in confirm_keywords or normalized_body in cancel_keywords:
-            appt = _find_next_appointment_for_phone(From, business_id)
-            if appt is not None:
-                when_str = _format_appointment_time(appt)
-                if normalized_body in confirm_keywords:
-                    # Mark the appointment as confirmed without changing the calendar.
-                    current_stage = getattr(appt, "job_stage", None)
-                    new_stage = current_stage or "Booked"
-                    appointments_repo.update(
-                        appt.id, status="CONFIRMED", job_stage=new_stage
-                    )
-                    per_sms = metrics.sms_by_business.setdefault(
-                        business_id, BusinessSmsMetrics()
-                    )
-                    per_sms.sms_confirmations_via_sms += 1
-                    if language_code == "es":
-                        safe_reply = escape(
-                            f"Gracias. Tu próxima cita el {when_str} ha sido confirmada."
-                        )
-                    else:
-                        safe_reply = escape(
-                            f"Thanks. Your upcoming appointment on {when_str} is confirmed."
-                        )
-                else:
-                    # Cancel the appointment and attempt to remove the calendar event.
-                    if getattr(appt, "calendar_event_id", None):
-                        calendar_id = get_calendar_id_for_business(business_id)
-                        await calendar_service.delete_event(
-                            event_id=appt.calendar_event_id,
-                            calendar_id=calendar_id,
-                            business_id=business_id,
-                        )
-                    current_stage = getattr(appt, "job_stage", None)
-                    new_stage = current_stage or "Cancelled"
-                    appointments_repo.update(
-                        appt.id, status="CANCELLED", job_stage=new_stage
-                    )
-                    per_sms = metrics.sms_by_business.setdefault(
-                        business_id, BusinessSmsMetrics()
+        if pending_action:
+            appt = appointments_repo.get(pending_action.appointment_id)
+            when_str = _format_appointment_time(appt) if appt else ""
+            conv = _ensure_sms_conversation(business_id, From)
+            if normalized_body in confirm_keywords:
+                if pending_action.action == "cancel" and appt:
+                    await appointment_actions.cancel_appointment(
+                        appointment_id=appt.id,
+                        business_id=business_id,
+                        actor="customer_sms",
+                        conversation_id=conv.id if conv else None,
+                        notify_customer=False,
                     )
                     per_sms.sms_cancellations_via_sms += 1
-                    if language_code == "es":
-                        safe_reply = escape(
-                            f"Tu próxima cita el {when_str} ha sido cancelada. "
-                            "Si necesitas reprogramarla, por favor llama o envía un mensaje de texto."
-                        )
-                    else:
-                        safe_reply = escape(
-                            f"Your upcoming appointment on {when_str} has been cancelled. "
-                            "If you need to reschedule, please call or text."
-                        )
+                    safe_reply = escape(
+                        f"Your appointment on {when_str} has been cancelled."
+                        if language_code != "es"
+                        else f"Tu cita el {when_str} ha sido cancelada."
+                    )
+                elif pending_action.action == "reschedule" and appt:
+                    await appointment_actions.mark_pending_reschedule(
+                        appointment_id=appt.id,
+                        business_id=business_id,
+                        actor="customer_sms",
+                        conversation_id=conv.id if conv else None,
+                    )
+                    per_sms.sms_reschedules_via_sms += 1
+                    safe_reply = escape(
+                        "Got it. We've marked your appointment for rescheduling."
+                        if language_code != "es"
+                        else "Entendido. Hemos marcado tu cita para reprogramar."
+                    )
+                else:
+                    safe_reply = escape(
+                        "Thanks, noted." if language_code != "es" else "Gracias, anotado."
+                    )
+                twilio_state_store.clear_pending_action(business_id, From)
                 twiml = f"""
 <Response>
   <Message>{safe_reply}</Message>
 </Response>
 """.strip()
                 return Response(content=twiml, media_type="text/xml")
-            # No upcoming appointment found for this number; respond clearly instead
-            # of falling back into the generic assistant flow.
-            business_name = _get_business_name(business_id)
-            if language_code == "es":
+            if normalized_body in decline_keywords:
+                twilio_state_store.clear_pending_action(business_id, From)
                 safe_reply = escape(
-                    "No pudimos encontrar una próxima cita vinculada a este número para "
-                    f"{business_name}. Si crees que esto es un error, por favor llama o envíanos un mensaje de texto con más detalles."
+                    "Okay, keeping your current appointment."
+                    if language_code != "es"
+                    else "Listo, mantenemos tu cita actual."
+                )
+                twiml = f"""
+<Response>
+  <Message>{safe_reply}</Message>
+</Response>
+""".strip()
+                return Response(content=twiml, media_type="text/xml")
+            remind = escape(
+                "Please reply YES to confirm or NO to keep your current time."
+                if language_code != "es"
+                else "Responde SI para confirmar o NO para mantener tu hora actual."
+            )
+            twiml = f"""
+<Response>
+  <Message>{remind}</Message>
+</Response>
+""".strip()
+            return Response(content=twiml, media_type="text/xml")
+
+
+        # Cancellation intent requires explicit confirmation.
+        if normalized_body in cancel_intent_keywords:
+            appt = _find_next_appointment_for_phone(From, business_id)
+            if appt is not None:
+                when_str = _format_appointment_time(appt)
+                twilio_state_store.set_pending_action(
+                    business_id,
+                    From,
+                    PendingAction(
+                        action='cancel',
+                        appointment_id=appt.id,
+                        business_id=business_id,
+                        created_at=datetime.now(UTC),
+                    ),
+                )
+                safe_reply = escape(
+                    f"Reply YES to cancel your appointment on {when_str}, or NO to keep it."
+                    if language_code != "es"
+                    else f"Responde SI para cancelar tu cita el {when_str}, o NO para mantenerla."
                 )
             else:
+                business_name = _get_business_name(business_id)
                 safe_reply = escape(
                     "We could not find an upcoming appointment linked to this number for "
                     f"{business_name}. If this seems wrong, please call or text us with more details."
+                    if language_code != "es"
+                    else "No pudimos encontrar una pr?xima cita vinculada a este n?mero. Si crees que esto es un error, por favor llama o env?anos un mensaje de texto con m?s detalles."
                 )
             twiml = f"""
 <Response>
   <Message>{safe_reply}</Message>
 </Response>
 """.strip()
-            return Response(content=twiml, media_type="text/xml")
+            return Response(content=twiml.strip(), media_type="text/xml")
 
-        # Simple reschedule request for upcoming appointments.
+        # Reschedule intent requires confirmation to avoid accidental changes.
         if normalized_body in reschedule_keywords:
             appt = _find_next_appointment_for_phone(From, business_id)
             if appt is not None:
                 when_str = _format_appointment_time(appt)
-                # Mark appointment as pending reschedule but do not change calendar automatically.
-                current_stage = getattr(appt, "job_stage", None)
-                new_stage = current_stage or "Pending Reschedule"
-                appointments_repo.update(
-                    appt.id, status="PENDING_RESCHEDULE", job_stage=new_stage
+                twilio_state_store.set_pending_action(
+                    business_id,
+                    From,
+                    PendingAction(
+                        action='reschedule',
+                        appointment_id=appt.id,
+                        business_id=business_id,
+                        created_at=datetime.now(UTC),
+                    ),
                 )
-                per_sms = metrics.sms_by_business.setdefault(
-                    business_id, BusinessSmsMetrics()
+                safe_reply = escape(
+                    f"Reply YES to mark your appointment on {when_str} for rescheduling, or NO to keep it."
+                    if language_code != "es"
+                    else f"Responde SI para marcar tu cita el {when_str} para reprogramar, o NO para mantenerla."
                 )
-                per_sms.sms_reschedules_via_sms += 1
-                if language_code == "es":
-                    safe_reply = escape(
-                        f"Entendido. Tu próxima cita el {when_str} ha sido marcada para reprogramarse. "
-                        "Nos pondremos en contacto contigo para escoger una nueva hora."
-                    )
-                else:
-                    safe_reply = escape(
-                        f"Got it. Your upcoming appointment on {when_str} has been marked for rescheduling. "
-                        "We will contact you to pick a new time."
-                    )
             else:
                 business_name = _get_business_name(business_id)
-                if language_code == "es":
-                    safe_reply = escape(
-                        "No pudimos encontrar una próxima cita vinculada a este número para "
-                        f"{business_name}. Si crees que esto es un error, por favor llama o envíanos un mensaje de texto con más detalles."
-                    )
-                else:
-                    safe_reply = escape(
-                        "We could not find an upcoming appointment linked to this number for "
-                        f"{business_name}. If this seems wrong, please call or text us with more details."
-                    )
+                safe_reply = escape(
+                    "We could not find an upcoming appointment linked to this number for "
+                    f"{business_name}. If this seems wrong, please call or text us with more details."
+                    if language_code != "es"
+                    else "No pudimos encontrar una pr?xima cita vinculada a este n?mero. Si crees que esto es un error, por favor llama o env?anos un mensaje de texto con m?s detalles."
+                )
             twiml = f"""
 <Response>
   <Message>{safe_reply}</Message>
 </Response>
 """.strip()
-            return Response(content=twiml, media_type="text/xml")
+            return Response(content=twiml.strip(), media_type="text/xml")
 
+        # Simple confirmation for upcoming appointments when there is no pending action.
+        if normalized_body in confirm_keywords:
+            appt = _find_next_appointment_for_phone(From, business_id)
+            if appt is not None:
+                when_str = _format_appointment_time(appt)
+                current_stage = getattr(appt, "job_stage", None)
+                new_stage = current_stage or "Booked"
+                appointments_repo.update(
+                    appt.id, status="CONFIRMED", job_stage=new_stage
+                )
+                per_sms.sms_confirmations_via_sms += 1
+                safe_reply = escape(
+                    f"Gracias. Tu pr?xima cita el {when_str} ha sido confirmada."
+                    if language_code == "es"
+                    else f"Thanks. Your upcoming appointment on {when_str} is confirmed."
+                )
+            else:
+                business_name = _get_business_name(business_id)
+                safe_reply = escape(
+                    "We could not find an upcoming appointment linked to this number for "
+                    f"{business_name}. If this seems wrong, please call or text us with more details."
+                    if language_code != "es"
+                    else "No pudimos encontrar una pr?xima cita vinculada a este n?mero. Si crees que esto es un error, por favor llama o env?anos un mensaje de texto con m?s detalles."
+                )
+            twiml = f"""
+<Response>
+  <Message>{safe_reply}</Message>
+</Response>
+""".strip()
+            return Response(content=twiml.strip(), media_type="text/xml")
         from_phone = From or ""
         link = twilio_state_store.get_sms_conversation(business_id, from_phone)
         if link:

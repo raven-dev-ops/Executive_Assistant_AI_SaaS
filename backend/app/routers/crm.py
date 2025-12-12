@@ -17,6 +17,7 @@ from ..deps import (
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..business_config import get_calendar_id_for_business
 from ..services.calendar import TimeSlot, calendar_service
+from ..services import appointment_actions
 from ..services import subscription as subscription_service
 
 
@@ -617,9 +618,52 @@ async def update_appointment(
 
     new_start = payload.start_time or appt.start_time
     new_end = payload.end_time or appt.end_time
+    customer = customers_repo.get(appt.customer_id)
+    technician_id = (
+        payload.technician_id
+        if payload.technician_id is not None
+        else getattr(appt, "technician_id", None)
+    )
+
+    reschedule_performed = False
+    # If times or technician changed, perform a safe reschedule with conflict checks.
+    if (
+        new_start != appt.start_time
+        or new_end != appt.end_time
+        or technician_id != getattr(appt, "technician_id", None)
+    ):
+        result = await appointment_actions.reschedule_appointment(
+            appointment_id=appointment_id,
+            business_id=business_id,
+            new_start=new_start,
+            new_end=new_end,
+            actor="dashboard",
+            technician_id=technician_id,
+            address=getattr(customer, "address", None) if customer else None,
+            is_emergency=payload.is_emergency or appt.is_emergency,
+            service_type=payload.service_type if payload.service_type is not None else appt.service_type,
+            description=payload.description if payload.description is not None else appt.description,
+        )
+        if result.code == "conflict":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Requested time slot is unavailable",
+            )
+        if result.code == "invalid_range":
+            raise HTTPException(status_code=400, detail="Start time must precede end time")
+        if result.code not in {"rescheduled", "no_change"}:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to reschedule appointment",
+            )
+        # Refresh appointment after reschedule to keep fields consistent.
+        appt = appointments_repo.get(appointment_id) or appt
+        new_start = appt.start_time
+        new_end = appt.end_time
+        reschedule_performed = result.code == "rescheduled"
 
     # Update calendar event if we have one.
-    if appt.calendar_event_id:
+    if appt.calendar_event_id and not reschedule_performed:
         slot = TimeSlot(start=new_start, end=new_end)
         calendar_id = get_calendar_id_for_business(business_id)
         await calendar_service.update_event(
@@ -766,15 +810,17 @@ async def cancel_appointment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
         )
 
-    if appt.calendar_event_id:
-        calendar_id = get_calendar_id_for_business(business_id)
-        await calendar_service.delete_event(
-            event_id=appt.calendar_event_id,
-            calendar_id=calendar_id,
-            business_id=business_id,
+    result = await appointment_actions.cancel_appointment(
+        appointment_id=appointment_id,
+        business_id=business_id,
+        actor="dashboard",
+        conversation_id=None,
+        notify_customer=True,
+    )
+    if result.code == "not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
         )
-
-    appointments_repo.update(appointment_id, status="CANCELLED")
 
 
 @router.get("/conversations", response_model=list[ConversationSummaryResponse])

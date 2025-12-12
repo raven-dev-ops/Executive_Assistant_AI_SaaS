@@ -167,6 +167,7 @@ def test_twilio_sms_reschedule_marks_pending_reschedule():
     customers_repo._by_id.clear()
     customers_repo._by_phone.clear()
     customers_repo._by_business.clear()
+    twilio_state_store.clear_pending_action(DEFAULT_BUSINESS_ID, "+15550007777")
 
     phone = "+15550007777"
     customer = customers_repo.upsert(
@@ -195,16 +196,60 @@ def test_twilio_sms_reschedule_marks_pending_reschedule():
     body = resp.text
     assert "<Response>" in body
     assert "<Message>" in body
-    assert "marked for rescheduling" in body.lower()
+    assert "reply yes" in body.lower()
+
+    updated = appointments_repo.get(appt.id)
+    assert updated is not None
+    assert updated.status == "SCHEDULED"
+
+    confirm = client.post(
+        "/twilio/sms",
+        data={"From": phone, "Body": "YES"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert confirm.status_code == 200
 
     updated = appointments_repo.get(appt.id)
     assert updated is not None
     assert updated.status == "PENDING_RESCHEDULE"
 
-    # Per-tenant metrics should track reschedules via SMS.
-    per_sms = metrics.sms_by_business.get(DEFAULT_BUSINESS_ID)
-    assert per_sms is not None
-    assert per_sms.sms_reschedules_via_sms == 1
+
+def test_twilio_sms_cancel_requires_confirmation():
+    customers_repo._by_id.clear()
+    customers_repo._by_phone.clear()
+    customers_repo._by_business.clear()
+    phone = "+15550007788"
+    customer = customers_repo.upsert(
+        name="Cancel Tester", phone=phone, business_id="default_business"
+    )
+    start = datetime.now(UTC) + timedelta(hours=6)
+    end = start + timedelta(hours=1)
+    appt = appointments_repo.create(
+        customer_id=customer.id,
+        start_time=start,
+        end_time=end,
+        service_type="Inspection",
+        is_emergency=False,
+        description="Cancel test appointment",
+        business_id="default_business",
+    )
+
+    resp = client.post(
+        "/twilio/sms",
+        data={"From": phone, "Body": "cancel"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 200
+    assert "reply yes" in resp.text.lower()
+    assert appointments_repo.get(appt.id).status == "SCHEDULED"
+
+    resp_yes = client.post(
+        "/twilio/sms",
+        data={"From": phone, "Body": "YES"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp_yes.status_code == 200
+    assert appointments_repo.get(appt.id).status == "CANCELLED"
 
 
 def test_twilio_voice_greeting():

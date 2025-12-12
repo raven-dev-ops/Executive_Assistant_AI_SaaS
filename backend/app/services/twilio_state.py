@@ -33,6 +33,14 @@ class SmsConversationLink:
     created_at: datetime
 
 
+@dataclass
+class PendingAction:
+    action: str  # "cancel" or "reschedule"
+    appointment_id: str
+    business_id: str
+    created_at: datetime
+
+
 class TwilioStateStore(Protocol):
     """Abstract interface for Twilio call/SMS state.
 
@@ -64,6 +72,25 @@ class TwilioStateStore(Protocol):
         from_phone: str,
     ) -> Optional[SmsConversationLink]: ...
 
+    def get_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]: ...
+
+    def set_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+        action: PendingAction,
+    ) -> None: ...
+
+    def clear_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]: ...
+
 
 class InMemoryTwilioStateStore:
     """In-process Twilio state with bounded TTL.
@@ -73,10 +100,12 @@ class InMemoryTwilioStateStore:
 
     _CALL_SESSION_TTL = timedelta(hours=1)
     _SMS_CONV_TTL = timedelta(days=7)
+    _PENDING_ACTION_TTL = timedelta(minutes=30)
 
     def __init__(self) -> None:
         self._call_map: Dict[str, CallSessionLink] = {}
         self._sms_map: Dict[Tuple[str, str], SmsConversationLink] = {}
+        self._pending_actions: Dict[Tuple[str, str], PendingAction] = {}
 
     def _prune_call_sessions(self) -> None:
         if not self._call_map:
@@ -101,6 +130,18 @@ class InMemoryTwilioStateStore:
         ]
         for key in expired:
             self._sms_map.pop(key, None)
+
+    def _prune_pending_actions(self) -> None:
+        if not self._pending_actions:
+            return
+        now = datetime.now(UTC)
+        expired = [
+            key
+            for key, link in self._pending_actions.items()
+            if link.created_at + self._PENDING_ACTION_TTL < now
+        ]
+        for key in expired:
+            self._pending_actions.pop(key, None)
 
     def get_call_session(self, call_sid: str) -> Optional[CallSessionLink]:
         self._prune_call_sessions()
@@ -153,6 +194,34 @@ class InMemoryTwilioStateStore:
         key = (business_id, from_phone)
         return self._sms_map.pop(key, None)
 
+    def get_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]:
+        self._prune_pending_actions()
+        key = (business_id, from_phone)
+        return self._pending_actions.get(key)
+
+    def set_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+        action: PendingAction,
+    ) -> None:
+        self._prune_pending_actions()
+        key = (business_id, from_phone)
+        self._pending_actions[key] = action
+
+    def clear_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]:
+        self._prune_pending_actions()
+        key = (business_id, from_phone)
+        return self._pending_actions.pop(key, None)
+
 
 class RedisTwilioStateStore:
     """Redis-backed Twilio state store.
@@ -164,6 +233,7 @@ class RedisTwilioStateStore:
 
     _CALL_SESSION_TTL_SECONDS = int(timedelta(hours=1).total_seconds())
     _SMS_CONV_TTL_SECONDS = int(timedelta(days=7).total_seconds())
+    _PENDING_ACTION_TTL_SECONDS = int(timedelta(minutes=30).total_seconds())
 
     def __init__(self, client: "redis.Redis", key_prefix: str = "twilio_state") -> None:
         self._client = client
@@ -174,6 +244,9 @@ class RedisTwilioStateStore:
 
     def _sms_key(self, business_id: str, from_phone: str) -> str:
         return f"{self._prefix}:sms:{business_id}:{from_phone}"
+
+    def _pending_key(self, business_id: str, from_phone: str) -> str:
+        return f"{self._prefix}:pending:{business_id}:{from_phone}"
 
     def get_call_session(self, call_sid: str) -> Optional[CallSessionLink]:
         raw = self._client.get(self._call_key(call_sid))
@@ -280,6 +353,64 @@ class RedisTwilioStateStore:
             self._client.delete(self._sms_key(business_id, from_phone))
         except Exception:
             logger.warning("redis_twilio_state_clear_sms_failed", exc_info=True)
+        return link
+
+    def get_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]:
+        raw = self._client.get(self._pending_key(business_id, from_phone))
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+            created_at_raw = data.get("created_at")
+            created_at = (
+                datetime.fromisoformat(created_at_raw)
+                if isinstance(created_at_raw, str)
+                else datetime.now(UTC)
+            )
+            return PendingAction(
+                action=data.get("action", ""),
+                appointment_id=data.get("appointment_id", ""),
+                business_id=data.get("business_id", business_id),
+                created_at=created_at,
+            )
+        except Exception:
+            return None
+
+    def set_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+        action: PendingAction,
+    ) -> None:
+        payload = {
+            "action": action.action,
+            "appointment_id": action.appointment_id,
+            "business_id": action.business_id,
+            "created_at": action.created_at.isoformat(),
+        }
+        try:
+            self._client.setex(
+                self._pending_key(business_id, from_phone),
+                self._PENDING_ACTION_TTL_SECONDS,
+                json.dumps(payload),
+            )
+        except Exception:
+            logger.warning("redis_twilio_state_set_pending_failed", exc_info=True)
+
+    def clear_pending_action(
+        self,
+        business_id: str,
+        from_phone: str,
+    ) -> Optional[PendingAction]:
+        link = self.get_pending_action(business_id, from_phone)
+        try:
+            self._client.delete(self._pending_key(business_id, from_phone))
+        except Exception:
+            logger.warning("redis_twilio_state_clear_pending_failed", exc_info=True)
         return link
 
 
