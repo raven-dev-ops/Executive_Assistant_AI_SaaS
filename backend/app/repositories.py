@@ -21,6 +21,7 @@ from .models import (
     new_conversation_id,
     new_customer_id,
 )
+from .services.privacy import redact_text
 
 
 def _split_tags(raw: str | None) -> list[str]:
@@ -124,6 +125,17 @@ class InMemoryCustomerRepository:
         ids = self._by_business.get(business_id, [])
         return [self._by_id[i] for i in ids]
 
+    def delete(self, customer_id: str) -> None:
+        """Delete a customer and remove from indexes."""
+        customer = self._by_id.pop(customer_id, None)
+        if not customer:
+            return
+        for phone, cid in list(self._by_phone.items()):
+            if cid == customer_id:
+                self._by_phone.pop(phone, None)
+        for biz, ids in list(self._by_business.items()):
+            self._by_business[biz] = [cid for cid in ids if cid != customer_id]
+
     def set_sms_opt_out(
         self,
         phone: str,
@@ -195,6 +207,14 @@ class InMemoryAppointmentRepository:
     def list_for_business(self, business_id: str) -> List[Appointment]:
         ids = self._by_business.get(business_id, [])
         return [self._by_id[i] for i in ids]
+
+    def delete_for_customer(self, customer_id: str) -> None:
+        """Delete appointments for a customer and clean indexes."""
+        ids = self._by_customer.pop(customer_id, [])
+        for appt_id in ids:
+            self._by_id.pop(appt_id, None)
+        for biz, appts in list(self._by_business.items()):
+            self._by_business[biz] = [aid for aid in appts if aid not in ids]
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         return self._by_id.get(appointment_id)
@@ -305,13 +325,25 @@ class InMemoryConversationRepository:
             return None
         return self._by_id.get(conv_id)
 
+    def list_for_customer(self, customer_id: str) -> List[Conversation]:
+        return [c for c in self._by_id.values() if c.customer_id == customer_id]
+
+    def delete_for_customer(self, customer_id: str) -> None:
+        """Delete all conversations and messages for a customer."""
+        for conv_id, conv in list(self._by_id.items()):
+            if conv.customer_id == customer_id:
+                self._by_id.pop(conv_id, None)
+                if conv.session_id:
+                    self._by_session.pop(conv.session_id, None)
+                # No separate messages store in memory; messages are on the conversation.
+
     def append_message(self, conversation_id: str, role: str, text: str) -> None:
         conv = self._by_id.get(conversation_id)
         if not conv:
             return
         if not _capture_transcripts_allowed(getattr(conv, "business_id", None)):
             return
-        conv.messages.append(ConversationMessage(role=role, text=text))
+        conv.messages.append(ConversationMessage(role=role, text=redact_text(text)))
 
     def set_intent(
         self, conversation_id: str, intent: str | None, confidence: float | None
@@ -330,6 +362,20 @@ class InMemoryConversationRepository:
         ids = self._by_business.get(business_id, [])
         return [self._by_id[i] for i in ids]
 
+    def list_for_customer(self, customer_id: str) -> List[Conversation]:
+        return [c for c in self._by_id.values() if c.customer_id == customer_id]
+
+    def delete_for_customer(self, customer_id: str) -> None:
+        """Delete all conversations for a customer."""
+        for conv_id, conv in list(self._by_id.items()):
+            if conv.customer_id == customer_id:
+                self._by_id.pop(conv_id, None)
+                if conv.session_id:
+                    self._by_session.pop(conv.session_id, None)
+                if conv.business_id in self._by_business:
+                    self._by_business[conv.business_id] = [
+                        cid for cid in self._by_business[conv.business_id] if cid != conv_id
+                    ]
 
 class DbCustomerRepository:
     """Customer repository backed by the SQLAlchemy database.
@@ -480,6 +526,18 @@ class DbCustomerRepository:
         finally:
             session.close()
 
+    def delete(self, customer_id: str) -> None:
+        if SessionLocal is None:
+            raise RuntimeError("Database session factory is not available")
+        session = SessionLocal()
+        try:
+            row = session.get(CustomerDB, customer_id)
+            if row:
+                session.delete(row)
+                session.commit()
+        finally:
+            session.close()
+
 
 USE_DB_CUSTOMERS = os.getenv("USE_DB_CUSTOMERS", "false").lower() == "true"
 
@@ -599,6 +657,18 @@ class DbAppointmentRepository:
                 .all()
             )
             return [self._to_model(r) for r in rows]
+        finally:
+            session.close()
+
+    def delete_for_customer(self, customer_id: str) -> None:
+        if SessionLocal is None:
+            raise RuntimeError("Database session factory is not available")
+        session = SessionLocal()
+        try:
+            session.query(AppointmentDB).filter(
+                AppointmentDB.customer_id == customer_id
+            ).delete()
+            session.commit()
         finally:
             session.close()
 
@@ -792,7 +862,7 @@ class DbConversationRepository:
                 id=new_conversation_id(),
                 conversation_id=conversation_id,
                 role=role,
-                text=text,
+                text=redact_text(text),
             )  # type: ignore[call-arg]
             session.add(msg)
             session.commit()
@@ -858,6 +928,48 @@ class DbConversationRepository:
                 )
                 conversations.append(self._to_model(row, messages))
             return conversations
+        finally:
+            session.close()
+
+    def list_for_customer(self, customer_id: str) -> List[Conversation]:
+        if SessionLocal is None:
+            raise RuntimeError("Database session factory is not available")
+        session = SessionLocal()
+        try:
+            rows = (
+                session.query(ConversationDB)
+                .filter(ConversationDB.customer_id == customer_id)
+                .all()
+            )
+            conversations: List[Conversation] = []
+            for row in rows:
+                messages = (
+                    session.query(ConversationMessageDB)
+                    .filter(ConversationMessageDB.conversation_id == row.id)
+                    .order_by(ConversationMessageDB.timestamp.asc())
+                    .all()
+                )
+                conversations.append(self._to_model(row, messages))
+            return conversations
+        finally:
+            session.close()
+
+    def delete_for_customer(self, customer_id: str) -> None:
+        if SessionLocal is None:
+            raise RuntimeError("Database session factory is not available")
+        session = SessionLocal()
+        try:
+            conv_rows = (
+                session.query(ConversationDB)
+                .filter(ConversationDB.customer_id == customer_id)
+                .all()
+            )
+            for conv in conv_rows:
+                session.query(ConversationMessageDB).filter(
+                    ConversationMessageDB.conversation_id == conv.id
+                ).delete()
+                session.delete(conv)
+            session.commit()
         finally:
             session.close()
 

@@ -40,6 +40,7 @@ from ..services.geo_utils import derive_neighborhood_label, geocode_address
 from ..services.zip_enrichment import fetch_zip_income
 from ..business_config import get_voice_for_business
 from ..services.auth import decode_token, TokenError
+from ..services.privacy import redact_text
 
 
 router = APIRouter(
@@ -3518,6 +3519,22 @@ class OwnerConversationReviewResponse(BaseModel):
     items: list[OwnerConversationItem]
 
 
+class PrivacyExportRequest(BaseModel):
+    customer_phone: str
+
+
+class PrivacyExportConversation(BaseModel):
+    id: str
+    channel: str
+    messages: list[str]
+
+
+class PrivacyExportResponse(BaseModel):
+    customer: dict
+    appointments: list[dict]
+    conversations: list[PrivacyExportConversation]
+
+
 @router.get("/conversations/review", response_model=OwnerConversationReviewResponse)
 def owner_conversations_review(
     business_id: str = Depends(ensure_business_active),
@@ -3585,3 +3602,77 @@ def owner_conversations_review(
         emergency_conversations=emergency,
         items=items,
     )
+
+
+@router.post("/privacy/export", response_model=PrivacyExportResponse)
+def privacy_export(
+    payload: PrivacyExportRequest, business_id: str = Depends(ensure_business_active)
+) -> PrivacyExportResponse:
+    """Export PII-related data for a customer (owner scope)."""
+    customer = customers_repo.get_by_phone(payload.customer_phone, business_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    appts = [
+        appt
+        for appt in appointments_repo.list_for_customer(customer.id)
+        if getattr(appt, "business_id", business_id) == business_id
+    ]
+    conversations = [
+        conv
+        for conv in conversations_repo.list_for_customer(customer.id)
+        if getattr(conv, "business_id", business_id) == business_id
+    ]
+
+    conv_exports: list[PrivacyExportConversation] = []
+    for conv in conversations:
+        conv_exports.append(
+            PrivacyExportConversation(
+                id=conv.id,
+                channel=conv.channel,
+                messages=[redact_text(m.text) for m in conv.messages],
+            )
+        )
+
+    customer_sanitized = {
+        "id": customer.id,
+        "name": redact_text(customer.name or ""),
+        "phone": redact_text(customer.phone or ""),
+        "email": redact_text(getattr(customer, "email", "") or ""),
+        "address": redact_text(getattr(customer, "address", "") or ""),
+    }
+    appt_exports = []
+    for appt in appts:
+        appt_exports.append(
+            {
+                "id": appt.id,
+                "start_time": getattr(appt, "start_time", None),
+                "end_time": getattr(appt, "end_time", None),
+                "service_type": getattr(appt, "service_type", None),
+                "is_emergency": getattr(appt, "is_emergency", False),
+                "description": redact_text(getattr(appt, "description", "") or ""),
+                "status": getattr(appt, "status", None),
+            }
+        )
+
+    return PrivacyExportResponse(
+        customer=customer_sanitized,
+        appointments=appt_exports,
+        conversations=conv_exports,
+    )
+
+
+@router.post("/privacy/delete")
+def privacy_delete(
+    payload: PrivacyExportRequest, business_id: str = Depends(ensure_business_active)
+) -> dict:
+    """Delete customer data (owner scope) for privacy requests."""
+    customer = customers_repo.get_by_phone(payload.customer_phone, business_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    appointments_repo.delete_for_customer(customer.id)
+    conversations_repo.delete_for_customer(customer.id)
+    customers_repo.delete(customer.id)
+
+    return {"status": "deleted", "customer_id": customer.id}

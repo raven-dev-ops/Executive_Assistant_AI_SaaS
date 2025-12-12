@@ -8,6 +8,7 @@ from fastapi import Request
 
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import AuditEventDB, BusinessDB
+from .privacy import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ async def record_audit_event(request: Request, status_code: int) -> None:
             extra={
                 "actor_type": actor.role,
                 "business_id": actor.business_id,
-                "path": request.url.path,
+                "path": redact_text(request.url.path),
                 "method": request.method,
                 "status_code": status_code,
             },
@@ -105,7 +106,7 @@ async def record_audit_event(request: Request, status_code: int) -> None:
     session = SessionLocal()
     try:
         now = datetime.now(UTC)
-        path = request.url.path
+        path = redact_text(request.url.path)
         # Keep path reasonably bounded for storage.
         if len(path) > 255:
             path = path[:252] + "..."
