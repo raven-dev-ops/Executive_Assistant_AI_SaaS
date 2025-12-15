@@ -150,14 +150,21 @@ async def ensure_business_active(
 
     If the Business row exists and its status is not ACTIVE, requests are
     rejected with 403 Forbidden. When the database is unavailable, this
-    behaves like a passthrough.
+        behaves like a passthrough.
     """
     if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
         session = SessionLocal()
         try:
             row = session.get(BusinessDB, business_id)
+            business_count = session.query(BusinessDB).count()
         finally:
             session.close()
+        # In multi-tenant mode or when tenant auth is required, missing tenants are rejected.
+        if row is None and business_count > 1:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Business not found",
+            )
         if row is not None and getattr(row, "status", "ACTIVE") != "ACTIVE":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -328,6 +335,7 @@ def require_dashboard_role(
         x_admin_api_key: str | None = Header(default=None, alias="X-Admin-API-Key"),
         x_user_id: str | None = Header(default=None, alias="X-User-ID"),
         authorization: str | None = Header(default=None, alias="Authorization"),
+        x_business_id: str | None = Header(default=None, alias="X-Business-ID"),
         business_id: str = Depends(get_business_id),
     ) -> None:
         settings = get_settings()
@@ -389,6 +397,23 @@ def require_dashboard_role(
             # Legacy/tenant-wide token grants owner-level access when no per-user role is provided.
             metrics.owner_token_last_used_at = datetime.now(UTC).isoformat()
             roles.append("owner")
+            # In multi-tenant scenarios, force explicit tenant selection when using the shared owner token.
+            if SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+                session = SessionLocal()
+                try:
+                    business_count = session.query(BusinessDB).count()
+                finally:
+                    session.close()
+                if business_count > 1 and not x_business_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="X-Business-ID is required for dashboard access in multi-tenant mode",
+                    )
+                if x_business_id and x_business_id != business_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Business mismatch",
+                    )
 
         # If a dashboard token is configured, credentials are mandatory.
         if settings.owner_dashboard_token:

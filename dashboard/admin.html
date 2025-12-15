@@ -144,6 +144,51 @@
       button.danger:hover {
         background: #b91c1c;
       }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid #1e3a8a;
+        outline-offset: 2px;
+      }
+      .skip-link {
+        position: absolute;
+        left: -999px;
+        top: 8px;
+        background: #1e3a8a;
+        color: #fff;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        z-index: 2000;
+      }
+      .skip-link:focus-visible {
+        left: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .header-bar {
+          padding: 0.75rem 1rem;
+        }
+        .container {
+          padding: 1.25rem;
+        }
+        .dashboard-grid {
+          grid-template-columns: 1fr;
+          gap: 1rem;
+        }
+        .card {
+          width: 100%;
+        }
+        .card table {
+          display: block;
+          overflow-x: auto;
+        }
+        .info-grid {
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+        .status-bar {
+          width: 100%;
+          justify-content: flex-start;
+        }
+      }
       
       .container {
         max-width: 1600px;
@@ -574,6 +619,7 @@
     </style>
   </head>
   <body>
+    <a href="#admin-main" class="skip-link">Skip to main content</a>
     <!-- Tour Overlay -->
     <div id="admin-tour-overlay" class="tour-overlay" aria-hidden="true">
       <div class="tour-panel" role="dialog" aria-modal="true" aria-labelledby="admin-tour-heading">
@@ -642,7 +688,7 @@
     </div>
 
     <!-- Main Container -->
-    <div class="container">
+    <div class="container" id="admin-main" role="main">
       <!-- Admin Key Input -->
       <div class="card">
         <div class="card-header">
@@ -673,6 +719,40 @@
 
       <!-- Dashboard Grid -->
       <div class="dashboard-grid">
+        <!-- Backups / Prune (dev/stub) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon warning">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 4h14a2 2 0 0 1 2 2v11.5a1.5 1.5 0 0 1-2.382 1.18L12 14l-6.618 4.68A1.5 1.5 0 0 1 3 17.5V6a2 2 0 0 1 2-2zm0 2v10.62L11.382 12a1.5 1.5 0 0 1 1.236 0L19 16.62V6H5z"/>
+              </svg>
+            </div>
+            <h2>Backups (dev/stub)</h2>
+          </div>
+          <p class="muted" style="margin-bottom:0.5rem;">SQLite only. Use managed backups in prod.</p>
+          <ul class="checklist" style="list-style:none; padding:0; margin:0;">
+            <li style="background:#f8fafc; color:#1f2937;">
+              <div>
+                <div style="font-weight:600;">Backup</div>
+                <div class="muted">python backend/scripts/backup_db.py --db ./backend/app.db --out ./backups</div>
+              </div>
+            </li>
+            <li style="background:#f8fafc; color:#1f2937;">
+              <div>
+                <div style="font-weight:600;">Prune</div>
+                <div class="muted">python backend/scripts/prune_backups.py --dir ./backups --keep 10</div>
+              </div>
+            </li>
+            <li style="background:#f8fafc; color:#1f2937;">
+              <div>
+                <div style="font-weight:600;">K8s CronJobs</div>
+                <div class="muted">See docs/k8s/sqlite-backup-and-prune.yaml</div>
+                <div class="muted">Prune KEEP configurable via env (default 10)</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+
         <!-- Tenants Management -->
         <div class="card" style="grid-column: span 2;">
           <div class="card-header">
@@ -797,6 +877,42 @@
             <div class="loading">Loading</div>
           </div>
           <button id="refresh-twilio" type="button" style="width: 100%; margin-top: 1rem;">Refresh</button>
+        </div>
+
+        <!-- Security Anomalies -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+              </svg>
+            </div>
+            <h2>Security Anomalies</h2>
+          </div>
+          <div id="security-anomalies-content">
+            <div class="loading">Loading</div>
+          </div>
+          <button id="refresh-security-anomalies" type="button" style="width: 100%; margin-top: 1rem;">Refresh</button>
+        </div>
+
+        <!-- Feedback -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 4h16v12H5.17L4 17.17V4zm0-2c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2H4zm4 9h8v2H8v-2zm0-3h8v2H8V8z"/>
+              </svg>
+            </div>
+            <h2>Feedback</h2>
+          </div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+            <input id="feedback-filter-biz" type="text" placeholder="Business ID (optional)" style="flex:1; min-width:180px;" />
+            <input id="feedback-limit" type="number" min="1" max="200" value="50" style="width:100px;" />
+            <button id="refresh-feedback" type="button">Refresh</button>
+          </div>
+          <div id="feedback-content">
+            <div class="loading">Loading</div>
+          </div>
         </div>
 
         <!-- Stripe Health -->
@@ -1256,14 +1372,27 @@
           const sms = data.twilio_sms_requests ?? 0;
           const voiceErrors = data.twilio_voice_errors ?? 0;
           const smsErrors = data.twilio_sms_errors ?? 0;
+          const rateLimitPhones = data.rate_limit_blocks_by_phone || {};
+          const topRateLimit = Object.entries(rateLimitPhones)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+          const sigFailures = data.signature_failures || {};
+          const sigTotal = Object.values(sigFailures).reduce((a, b) => a + (Number(b) || 0), 0);
+          const sigDetail = Object.entries(sigFailures)
+            .map(([k, v]) => `<div class="info-sub">${escapeHtml(k)}: ${formatNumber(v)}</div>`)
+            .join("");
 
           el.innerHTML = `
-            <div class="info-grid">
-              <div class="info-item">
-                <div class="info-label">Provider</div>
-                <div class="info-value">${cfg.provider || "stub"}</div>
-                <div class="info-sub">From: ${cfg.from_number_set ? "set" : "not set"}</div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Provider</div>
+            <div class="info-value">${cfg.provider || "stub"}</div>
+            <div class="info-sub">From: ${cfg.from_number_set ? "set" : "not set"}</div>
                 <div class="info-sub">Owner: ${cfg.owner_number_set ? "set" : "not set"}</div>
+                <div class="info-sub">Stream TTL: ${cfg.stream_dedupe_ttl_seconds ?? "n/a"}s</div>
+                <div class="info-sub">SMS TTL: ${cfg.sms_event_dedupe_ttl_seconds ?? "n/a"}s</div>
+                <div class="info-sub" title="SHA-256 of last Twilio signature (for forensics)">Sig hash: ${cfg.signature_hash_sample || "n/a"}</div>
+                <div class="info-sub">Last sig: ${cfg.last_signature_at || "n/a"}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">Credentials</div>
@@ -1279,6 +1408,27 @@
                 <div class="info-label">Errors</div>
                 <div class="info-value">${formatNumber(voiceErrors + smsErrors)}</div>
                 <div class="info-sub">${formatNumber(voiceErrors)} voice / ${formatNumber(smsErrors)} sms</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Signature failures</div>
+                <div class="info-value">${formatNumber(sigTotal)}</div>
+                ${sigDetail || '<div class="info-sub muted">None recorded.</div>'}
+              </div>
+              <div class="info-item">
+                <div class="info-label">Per-number rate limits</div>
+                ${
+                  topRateLimit.length
+                    ? topRateLimit
+                        .map(
+                          ([phone, count]) =>
+                            `<div class="info-sub">${escapeHtml(phone)} blocked ${formatNumber(count)}x</div>`
+                        )
+                        .join("")
+                    : '<div class="info-sub muted">No per-number blocks recorded.</div>'
+                }
+                <div style="margin-top:0.5rem;">
+                  <button id="download-phone-blocks" type="button" class="secondary">Download phone blocks (CSV)</button>
+                </div>
               </div>
             </div>
             <div style="margin-top: 0.75rem;">
@@ -1302,6 +1452,102 @@
         }
       }
 
+      async function loadSecurityAnomalies() {
+        const el = document.getElementById("security-anomalies-content");
+        if (!el) return;
+        el.innerHTML = '<div class="loading">Loading</div>';
+        try {
+          const data = await fetchJson("/v1/admin/security/anomalies");
+          const recent = await fetchJson("/v1/admin/security/events?limit=30");
+          const sig = data.signature_failures || {};
+          const auth = data.invalid_auth_spikes || {};
+          const rateIp = data.rate_limit_blocks_by_ip || {};
+          const rateBiz = data.rate_limit_blocks_by_business || {};
+          const securityEvents = data.security_events || {};
+          const routeErrors = data.route_error_counts || {};
+          const recentList = (recent.events || []).map((e) => {
+            const ts = e.created_at ? new Date(e.created_at).toLocaleString() : "n/a";
+            return `<div class="info-row"><div class="info-label">${escapeHtml(e.business_id || "unknown")}</div><div class="info-value">${escapeHtml(e.event)} • ${escapeHtml(e.detail || "")}</div></div><div class="muted" style="margin-left:0.25rem;">${escapeHtml(ts)}${e.call_sid ? " • CallSid " + escapeHtml(e.call_sid) : ""}${e.message_sid ? " • MsgSid " + escapeHtml(e.message_sid) : ""}</div>`;
+          });
+          const renderList = (obj, empty) =>
+            Object.keys(obj).length
+              ? Object.entries(obj)
+                  .map(
+                    ([k, v]) =>
+                      `<div class="info-row"><div class="info-label">${escapeHtml(k)}</div><div class="info-value">${formatNumber(
+                        v
+                      )}</div></div>`
+                  )
+                  .join("")
+              : `<div class="muted">${empty}</div>`;
+          el.innerHTML = `
+            <div class="info-grid">
+              <div>
+                <div class="info-label">Security events</div>
+                ${renderList(securityEvents, "No security events recorded.")}
+              </div>
+              <div>
+                <div class="info-label">Signature failures</div>
+                ${renderList(sig, "No signature failures recorded.")}
+              </div>
+              <div>
+                <div class="info-label">Invalid auth spikes</div>
+                ${renderList(auth, "No auth spikes recorded.")}
+              </div>
+              <div>
+                <div class="info-label">Rate limit (IP)</div>
+                ${renderList(rateIp, "No IP spikes recorded.")}
+              </div>
+              <div>
+                <div class="info-label">Rate limit (tenant)</div>
+                ${renderList(rateBiz, "No tenant spikes recorded.")}
+              </div>
+              <div>
+                <div class="info-label">Route 4xx/5xx counts</div>
+                ${renderList(routeErrors, "No route errors recorded.")}
+              </div>
+            </div>
+            <div style="margin-top:1rem;">
+              <div class="info-label">Recent security events</div>
+              ${recentList.join("") || '<div class="muted">No recent events.</div>'}
+            </div>
+          `;
+        } catch (err) {
+          el.innerHTML = `<div class="error">Failed to load anomalies: ${escapeHtml(err.message || err)}</div>`;
+        }
+      }
+
+      async function loadFeedbackAdmin() {
+        const el = document.getElementById("feedback-content");
+        if (!el) return;
+        el.innerHTML = '<div class="loading">Loading</div>';
+        try {
+          const biz = document.getElementById("feedback-filter-biz")?.value || "";
+          const limitRaw = document.getElementById("feedback-limit")?.value || "50";
+          const limit = Math.max(1, Math.min(200, parseInt(limitRaw, 10) || 50));
+          const params = new URLSearchParams({ limit: String(limit) });
+          if (biz.trim()) params.set("business_id", biz.trim());
+          const data = await fetchJson(`/v1/admin/feedback?${params.toString()}`);
+          const items = (data.feedback || []).map((f) => {
+            const created = f.created_at ? new Date(f.created_at).toLocaleString() : "n/a";
+            const contact = f.contact || "no contact";
+            const category = f.category || "idea";
+            const callSid = f.call_sid ? ` • CallSid ${escapeHtml(f.call_sid)}` : "";
+            return `
+              <div class="info-row">
+                <div class="info-label">${escapeHtml(f.business_id || "unknown")}</div>
+                <div class="info-value">${escapeHtml(category)} • ${escapeHtml(f.summary || "")}</div>
+              </div>
+              <div class="muted" style="margin-left:0.25rem;">${escapeHtml(created)} — ${escapeHtml(contact)}${callSid}${f.url ? " • " + escapeHtml(f.url) : ""}</div>
+            `;
+          });
+          el.innerHTML =
+            items.join("") || '<div class="muted">No feedback submitted yet.</div>';
+        } catch (err) {
+          el.innerHTML = `<div class="error">Failed to load feedback: ${escapeHtml(err.message || err)}</div>`;
+        }
+      }
+
       async function loadStripeHealth() {
         const el = document.getElementById("stripe-content");
         if (!el) return;
@@ -1310,6 +1556,12 @@
           const data = await fetchJson("/v1/admin/stripe/health");
           const cfg = data.config || {};
           const subCounts = data.subscriptions_by_status || {};
+          const stripeSigFails = data.signature_failures?.stripe_invalid_sig || 0;
+          const totalSigFails =
+            (data.signature_failures?.stripe_invalid_sig || 0) +
+            (data.signature_failures?.twilio_missing_sig || 0) +
+            (data.signature_failures?.twilio_invalid_sig || 0) +
+            (data.signature_failures?.twilio_missing_token || 0);
           const cfgBadges = [
             { label: "API key", ok: cfg.api_key_set },
             { label: "Publishable key", ok: cfg.publishable_key_set },
@@ -1318,12 +1570,14 @@
             { label: "Price growth", ok: cfg.price_growth_set },
             { label: "Price scale", ok: cfg.price_scale_set },
             { label: "Verify sigs", ok: cfg.verify_signatures },
+            { label: `Replay window ${cfg.replay_protection_seconds || "n/a"}s`, ok: true },
+            { label: `Sig hash sample ${cfg.signature_hash_sample || "n/a"}`, ok: true },
             { label: cfg.use_stub ? "Stub mode" : "Live mode", ok: true },
           ];
           const badgeHtml = cfgBadges
             .map(
               (b) =>
-                `<span class="status-badge ${b.ok ? "success" : "warning"}" style="margin-bottom:0.35rem;">${escapeHtml(
+                `<span class="status-badge ${b.ok ? "success" : "warning"}" style="margin-bottom:0.35rem;" title="Signature hash shown when first webhook is processed">${escapeHtml(
                   b.label
                 )}: ${b.ok ? "set" : "missing"}</span>`
             )
@@ -1342,17 +1596,21 @@
               : '<div class="muted">No subscription status data yet.</div>';
 
           el.innerHTML = `
-            <div class="info-grid">
-              <div>
-                <div class="info-label">Config</div>
-                <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">${badgeHtml}</div>
-              </div>
-              <div>
+        <div class="info-grid">
+          <div>
+            <div class="info-label">Config</div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">${badgeHtml}</div>
+            <div class="info-sub" title="SHA-256 of last Stripe signature (for forensics)">Sig hash: ${cfg.signature_hash_sample || "n/a"}</div>
+            <div class="info-sub">Last sig: ${cfg.last_signature_at || "n/a"}</div>
+            <div class="info-sub">Signature failures: ${formatNumber(stripeSigFails)}</div>
+          </div>
+          <div>
                 <div class="info-label">Activations</div>
                 <div class="info-value">${formatNumber(data.subscription_activations || 0)}</div>
                 <div class="info-sub">Failures: ${formatNumber(data.subscription_failures || 0)} | Webhook errors: ${formatNumber(
                   data.billing_webhook_failures || 0
                 )}</div>
+                <div class="info-sub">Signature failures (Stripe + Twilio): ${formatNumber(totalSigFails)}</div>
               </div>
               <div>
                 <div class="info-label">Stripe IDs</div>
@@ -1452,6 +1710,29 @@
       document.getElementById("refresh-gcp-storage")?.addEventListener("click", loadGcpStorageHealth);
       document.getElementById("refresh-governance")?.addEventListener("click", loadGovernance);
       document.getElementById("refresh-audit")?.addEventListener("click", loadAudit);
+      document.getElementById("refresh-security-anomalies")?.addEventListener("click", loadSecurityAnomalies);
+      document.getElementById("refresh-feedback")?.addEventListener("click", loadFeedbackAdmin);
+      document.getElementById("download-phone-blocks")?.addEventListener("click", async () => {
+        try {
+          const data = await fetchJson("/v1/admin/twilio/health");
+          const blocks = data.rate_limit_blocks_by_phone || {};
+          const rows = Object.entries(blocks)
+            .map(([phone, count]) => `${phone},${count}`)
+            .join("\n");
+          const header = "phone,blocked_count\n";
+          const blob = new Blob([header + rows], { type: "text/csv" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "phone_rate_limit_blocks.csv";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert(err?.message || "Unable to download phone blocks right now.");
+        }
+      });
 
       // Tour functionality
       const tourOverlay = document.getElementById("admin-tour-overlay");
@@ -1484,6 +1765,13 @@
       loadTenants();
       loadUsage();
       loadTwilioHealth();
+      loadFeedbackAdmin();
+      loadStripeHealth();
+      loadGcpStorageHealth();
+      loadGovernance();
+      loadAudit();
+      loadSecurityAnomalies();
+      loadSecurityAnomalies();
       loadStripeHealth();
       loadGcpStorageHealth();
       loadGovernance();
@@ -1549,6 +1837,7 @@
         const u = usageCache.find((x) => x.id === tenantId);
         if (!u) return;
         const health = usageHealth(u);
+        const locked = !!u.lockdown_mode;
         title.textContent = u.name || u.id;
         subtitle.textContent = `${u.id} • ${u.status || "ACTIVE"} • ${u.vertical || "n/a"}`;
         const errRate = (u.twilio_error_rate || 0).toFixed(3);
@@ -1557,6 +1846,14 @@
             <div>
               <div class="pill">Health: ${health.label}</div>
               <div class="muted" style="margin-top:0.25rem;">Twilio error rate: ${errRate}</div>
+            </div>
+            <div class="info-item" style="border:1px solid #e2e8f0; border-radius:8px; padding:0.75rem;">
+              <div class="info-label">Lockdown</div>
+              <div class="info-value">${locked ? "Locked down" : "Automation enabled"}</div>
+              <div class="info-sub">Blocks widget/chat/voice automation while locked.</div>
+              <button id="toggle-lockdown-btn" type="button" class="${locked ? "secondary" : "danger"}" data-tenant="${escapeHtml(u.id)}">
+                ${locked ? "Disable lockdown" : "Enable lockdown"}
+              </button>
             </div>
             <div class="info-grid">
               <div class="info-item">
@@ -1607,6 +1904,34 @@
         `;
         overlay.style.display = "flex";
         overlay.setAttribute("aria-hidden", "false");
+
+        const toggleBtn = document.getElementById("toggle-lockdown-btn");
+        if (toggleBtn) {
+          toggleBtn.addEventListener("click", async () => {
+            const tenant = toggleBtn.getAttribute("data-tenant");
+            if (!tenant) return;
+            const desired = !locked;
+            toggleBtn.disabled = true;
+            toggleBtn.textContent = desired ? "Enabling..." : "Disabling...";
+            try {
+              const data = await fetchJson(`/v1/admin/businesses/${tenant}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ lockdown_mode: desired }),
+              });
+              const updatedLock = !!(data?.lockdown_mode);
+              usageCache = usageCache.map((x) => (x.id === tenant ? { ...x, lockdown_mode: updatedLock } : x));
+              tenantCache = tenantCache.map((t) => (t.id === tenant ? { ...t, lockdown_mode: updatedLock } : t));
+              renderUsageTable();
+              renderUsageDetail(tenant);
+            } catch (err) {
+              console.error("toggleLockdown failed", err);
+              toggleBtn.disabled = false;
+              toggleBtn.textContent = desired ? "Enable lockdown" : "Disable lockdown";
+              alert(err?.message || "Unable to toggle lockdown right now.");
+            }
+          });
+        }
       }
 
       function closeUsageDetail() {
@@ -1718,6 +2043,7 @@
             const health = usageHealth(u);
             const statusClass = String(u.status || "ACTIVE").toUpperCase() === "ACTIVE" ? "status-active" : "status-suspended";
             const statusLabel = escapeHtml((u.status || "ACTIVE").toUpperCase());
+            const lockdownTag = u.lockdown_mode ? '<span class="status-tag status-suspended" style="margin-left:4px;">Locked</span>' : "";
             const alertFlag = (u.twilio_voice_errors || 0) > 0 || (u.twilio_sms_errors || 0) > 0;
             const muted = (u.appointments_last_30_days || 0) === 0 ? ' style="opacity:0.7;"' : "";
             const appts30 = u.appointments_last_30_days || 0;
@@ -1736,7 +2062,7 @@
                   <small class="muted">${escapeHtml(u.id)}</small>
                 </td>
                 <td>${escapeHtml(u.vertical || "n/a")}</td>
-                <td><span class="status-tag ${statusClass}">${statusLabel}</span></td>
+                <td><span class="status-tag ${statusClass}">${statusLabel}</span>${lockdownTag}</td>
                 <td><span class="status-tag ${health.state === "critical" ? "status-suspended" : health.state === "warn" ? "status-pending" : "status-active"}">${health.label}</span><br/><small class="muted">${formatNumber(u.twilio_voice_errors || 0)} voice / ${formatNumber(u.twilio_sms_errors || 0)} sms errors</small></td>
                 <td>${formatNumber(appts30)} (30d)<br/><small class="muted">${formatNumber(u.appointments_last_7_days)} in 7d</small>${apptSpark(u)}</td>
                 <td>${formatNumber(u.emergencies_last_30_days)}<br/><small class="muted">${formatNumber(u.emergencies_last_7_days)} in 7d</small></td>

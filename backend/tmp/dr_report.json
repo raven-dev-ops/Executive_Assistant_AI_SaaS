@@ -1,0 +1,14 @@
+{
+  "backup": "app.db",
+  "restored_db": "tmp\\dr_restore.db",
+  "started_at": "2025-12-13T02:03:50.640916+00:00",
+  "completed_at": "2025-12-13T02:03:50.645755+00:00",
+  "duration_seconds": 0.0,
+  "tables": {
+    "businesses": 310,
+    "appointments": 104,
+    "conversations": 1,
+    "users": 360
+  },
+  "rpo_minutes": 4.25
+}

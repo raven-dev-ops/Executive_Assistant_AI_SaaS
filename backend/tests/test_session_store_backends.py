@@ -125,6 +125,50 @@ def test_session_store_prefers_redis_when_url_present(monkeypatch) -> None:
     assert isinstance(store, sessions.RedisSessionStore)
 
 
+def test_session_store_shares_sessions_across_instances(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sessions,
+        "get_settings",
+        lambda: _DummySettings(session_store_backend="redis"),
+    )
+
+    class SharedRedisClient:
+        def __init__(self) -> None:
+            self._data: dict[str, str] = {}
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            self._data[key] = value
+
+        def get(self, key: str) -> str | None:
+            return self._data.get(key)
+
+    class DummyRedisModule:
+        def __init__(self) -> None:
+            self.client = SharedRedisClient()
+
+        def from_url(self, url: str) -> SharedRedisClient:
+            return self.client
+
+    dummy_module = DummyRedisModule()
+    monkeypatch.setattr(sessions, "redis", dummy_module)
+    monkeypatch.setenv("REDIS_URL", "redis://shared:6379/0")
+
+    store_a = sessions._create_session_store()
+    store_b = sessions._create_session_store()
+
+    assert isinstance(store_a, sessions.RedisSessionStore)
+    assert isinstance(store_b, sessions.RedisSessionStore)
+
+    session = store_a.create(caller_phone="555-0200", business_id="b-shared")
+    fetched = store_b.get(session.id)
+    assert fetched is not None
+    assert fetched.caller_phone == "555-0200"
+    store_b.end(session.id)
+    ended = store_a.get(session.id)
+    assert ended is not None
+    assert ended.status == "COMPLETED"
+
+
 def test_parse_iso_datetime_handles_invalid_strings() -> None:
     assert sessions._parse_iso_datetime("") is None
     assert sessions._parse_iso_datetime("not-a-date") is None

@@ -112,6 +112,81 @@ def test_twilio_replay_event_blocked(monkeypatch):
     assert second.status_code == 409
 
 
+def test_twilio_voice_missing_signature_rejected(monkeypatch):
+    _setup_twilio_env(monkeypatch)
+    resp = client.post(
+        "/twilio/voice",
+        data={"CallSid": "CA123", "From": "+15550004444", "CallStatus": "ringing"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 401
+
+
+def test_twilio_signature_required_when_token_missing(monkeypatch):
+    # In prod with Twilio provider, missing token should surface a configuration error.
+    monkeypatch.setenv("ENVIRONMENT", "prod")
+    monkeypatch.setenv("SMS_PROVIDER", "twilio")
+    monkeypatch.setenv("VERIFY_TWILIO_SIGNATURES", "true")
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+    config.get_settings.cache_clear()
+    deps.get_settings.cache_clear()
+    resp = client.post(
+        "/twilio/sms",
+        data={"From": "+15550005555", "Body": "Hello"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 503
+
+
+def test_twilio_replay_logging(monkeypatch, caplog):
+    token = _setup_twilio_env(monkeypatch)
+    params = {"From": "+15550006666", "Body": "Hello"}
+    url = "http://testserver/twilio/sms"
+    sig = _twilio_signature(url, params, token)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Twilio-Signature": sig,
+        "X-Twilio-Request-Timestamp": str(int(time.time())),
+        "X-Twilio-EventId": "EV_TEST_LOG",
+    }
+    with caplog.at_level("INFO"):
+        first = client.post("/twilio/sms", data=params, headers=headers)
+        assert first.status_code == 200
+        assert any("twilio_webhook_seen_event" in rec.message or "twilio_sms_webhook" in rec.message for rec in caplog.records)
+
+
+def test_stripe_replay_logging(monkeypatch, caplog):
+    secret = _setup_stripe_env(monkeypatch)
+    payload = json.dumps({"id": "evt_replay_log", "type": "unknown.event", "data": {"object": {"metadata": {"business_id": "default_business"}}}})
+    sig_header = _stripe_signature(payload, secret)
+    headers = {"Content-Type": "application/json", "Stripe-Signature": sig_header}
+    with caplog.at_level("INFO"):
+        resp = client.post("/v1/billing/webhook", data=payload, headers=headers)
+        assert resp.status_code in {200, 202}
+        assert any("stripe_webhook_event_received" in rec.message for rec in caplog.records)
+
+
+def test_twilio_voice_duplicate_event_blocked(monkeypatch):
+    token = _setup_twilio_env(monkeypatch)
+    params = {
+        "CallSid": "CA_DUP_TEST",
+        "From": "+15550007777",
+        "CallStatus": "ringing",
+    }
+    url = "http://testserver/twilio/voice"
+    sig = _twilio_signature(url, params, token)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Twilio-Signature": sig,
+        "X-Twilio-Request-Timestamp": str(int(time.time())),
+        "X-Twilio-EventId": "EV_DUP_VOICE",
+    }
+    first = client.post("/twilio/voice", data=params, headers=headers)
+    assert first.status_code == 200
+    second = client.post("/twilio/voice", data=params, headers=headers)
+    assert second.status_code == 409
+
+
 def test_stripe_missing_signature_rejected(monkeypatch):
     _setup_stripe_env(monkeypatch)
     payload = json.dumps({"id": "evt_missing", "type": "unknown.event", "data": {"object": {"metadata": {"business_id": "default_business"}}}})

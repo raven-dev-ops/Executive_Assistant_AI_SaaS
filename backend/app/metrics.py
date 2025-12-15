@@ -17,6 +17,7 @@ class BusinessSmsMetrics:
     sms_reschedules_via_sms: int = 0
     sms_opt_out_events: int = 0
     sms_opt_in_events: int = 0
+    last_sms_signature_hash: str | None = None
 
 
 @dataclass
@@ -25,6 +26,7 @@ class BusinessTwilioMetrics:
     voice_errors: int = 0
     sms_requests: int = 0
     sms_errors: int = 0
+    last_signature_hash: str | None = None
 
 
 @dataclass
@@ -100,6 +102,10 @@ class Metrics:
     retention_appointments_deleted: int = 0
     retention_conversations_deleted: int = 0
     retention_messages_deleted: int = 0
+    last_twilio_signature_hash: str | None = None
+    last_twilio_signature_at: str | None = None
+    last_stripe_signature_hash: str | None = None
+    last_stripe_signature_at: str | None = None
     job_queue_enqueued: int = 0
     job_queue_completed: int = 0
     job_queue_failed: int = 0
@@ -108,6 +114,10 @@ class Metrics:
     rate_limit_blocks_total: int = 0
     rate_limit_blocks_by_business: Dict[str, int] = field(default_factory=dict)
     rate_limit_blocks_by_ip: Dict[str, int] = field(default_factory=dict)
+    rate_limit_blocks_by_phone: Dict[str, int] = field(default_factory=dict)
+    invalid_token_spikes: Dict[str, int] = field(default_factory=dict)
+    signature_failures: Dict[str, int] = field(default_factory=dict)
+    security_events: Dict[str, int] = field(default_factory=dict)
     sms_by_business: Dict[str, BusinessSmsMetrics] = field(default_factory=dict)
     twilio_voice_requests: int = 0
     twilio_voice_errors: int = 0
@@ -235,6 +245,7 @@ class Metrics:
             "rate_limit_blocks_total": self.rate_limit_blocks_total,
             "rate_limit_blocks_by_business": dict(self.rate_limit_blocks_by_business),
             "rate_limit_blocks_by_ip": dict(self.rate_limit_blocks_by_ip),
+            "security_events": dict(self.security_events),
             "billing_webhook_failures": self.billing_webhook_failures,
             "background_job_errors": self.background_job_errors,
             "retention_purge_runs": self.retention_purge_runs,

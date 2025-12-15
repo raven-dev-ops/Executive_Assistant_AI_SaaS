@@ -13,6 +13,8 @@ Testing (quarterly)
 - Deploy backend to staging (new instance) with restored DB; run `python -m pytest backend/tests/test_twilio_integration.py backend/tests/test_calendar_conflicts.py backend/tests/test_conversation.py`.
 - Validate: owner notification hub works (SMS retry + email fallback), webhook signatures enforced, scheduling creates events, auth tokens issued.
 - Record RPO (backup timestamp vs. restore point) and RTO (start of restore to app healthy) in the log below.
+- For local dev/stub SQLite: `python backend/scripts/backup_db.py --db ./backend/app.db --out ./backups` and restore with `python backend/scripts/backup_db.py restore --db ./backend/app.db --backup <file>`.
+- DR drill helper (SQLite dev/stub): `python backend/scripts/dr_drill.py --backup ./backups/app-<ts>.db --out ./tmp/dr_report.json` to restore into a temp DB, run basic smoke counts, and capture RPO estimate.
 
 Restore log (sample)
 --------------------

@@ -25,12 +25,16 @@ class CallSessionLink:
     state: str | None = None  # e.g., initiated, active, ended
     last_event_id: str | None = None
     last_event_at: datetime | None = None
+    last_stream_event: str | None = None
+    last_stream_at: datetime | None = None
 
 
 @dataclass
 class SmsConversationLink:
     conversation_id: str
     created_at: datetime
+    last_event_id: str | None = None
+    last_event_at: datetime | None = None
 
 
 @dataclass
@@ -49,7 +53,7 @@ class TwilioStateStore(Protocol):
 
     def get_call_session(self, call_sid: str) -> Optional[CallSessionLink]: ...
 
-    def set_call_session(self, call_sid: str, session_id: str, state: str | None = None, event_id: str | None = None) -> None: ...
+    def set_call_session(self, call_sid: str, session_id: str, state: str | None = None, event_id: str | None = None, stream_event: str | None = None, ttl_seconds: int | None = None) -> None: ...
 
     def clear_call_session(self, call_sid: str) -> Optional[CallSessionLink]: ...
 
@@ -148,15 +152,25 @@ class InMemoryTwilioStateStore:
         return self._call_map.get(call_sid)
 
     def set_call_session(
-        self, call_sid: str, session_id: str, state: str | None = None, event_id: str | None = None
+        self,
+        call_sid: str,
+        session_id: str,
+        state: str | None = None,
+        event_id: str | None = None,
+        stream_event: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> None:
         self._prune_call_sessions()
+        now = datetime.now(UTC)
+        existing = self._call_map.get(call_sid)
         self._call_map[call_sid] = CallSessionLink(
             session_id=session_id,
-            created_at=datetime.now(UTC),
+            created_at=existing.created_at if existing else now,
             state=state,
             last_event_id=event_id,
-            last_event_at=datetime.now(UTC) if event_id else None,
+            last_event_at=now if event_id else (existing.last_event_at if existing else None),
+            last_stream_event=stream_event or (existing.last_stream_event if existing else None),
+            last_stream_at=now if stream_event else (existing.last_stream_at if existing else None),
         )
 
     def clear_call_session(self, call_sid: str) -> Optional[CallSessionLink]:
@@ -177,12 +191,15 @@ class InMemoryTwilioStateStore:
         business_id: str,
         from_phone: str,
         conversation_id: str,
+        event_id: str | None = None,
     ) -> None:
         self._prune_sms_conversations()
         key = (business_id, from_phone)
         self._sms_map[key] = SmsConversationLink(
             conversation_id=conversation_id,
             created_at=datetime.now(UTC),
+            last_event_id=event_id,
+            last_event_at=datetime.now(UTC) if event_id else None,
         )
 
     def clear_sms_conversation(
@@ -270,12 +287,24 @@ class RedisTwilioStateStore:
                     if isinstance(data.get("last_event_at"), str)
                     else None
                 ),
+                last_stream_event=data.get("last_stream_event"),
+                last_stream_at=(
+                    datetime.fromisoformat(data.get("last_stream_at"))
+                    if isinstance(data.get("last_stream_at"), str)
+                    else None
+                ),
             )
         except Exception:
             return None
 
     def set_call_session(
-        self, call_sid: str, session_id: str, state: str | None = None, event_id: str | None = None
+        self,
+        call_sid: str,
+        session_id: str,
+        state: str | None = None,
+        event_id: str | None = None,
+        stream_event: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> None:
         payload = {
             "session_id": session_id,
@@ -283,11 +312,14 @@ class RedisTwilioStateStore:
             "state": state,
             "last_event_id": event_id,
             "last_event_at": datetime.now(UTC).isoformat() if event_id else None,
+            "last_stream_event": stream_event,
+            "last_stream_at": datetime.now(UTC).isoformat() if stream_event else None,
         }
         try:
+            ttl = ttl_seconds or self._CALL_SESSION_TTL_SECONDS
             self._client.setex(
                 self._call_key(call_sid),
-                self._CALL_SESSION_TTL_SECONDS,
+                ttl,
                 json.dumps(payload),
             )
         except Exception:
@@ -320,6 +352,12 @@ class RedisTwilioStateStore:
             return SmsConversationLink(
                 conversation_id=data.get("conversation_id", ""),
                 created_at=created_at,
+                last_event_id=data.get("last_event_id"),
+                last_event_at=(
+                    datetime.fromisoformat(data.get("last_event_at"))
+                    if isinstance(data.get("last_event_at"), str)
+                    else None
+                ),
             )
         except Exception:
             return None
@@ -329,10 +367,13 @@ class RedisTwilioStateStore:
         business_id: str,
         from_phone: str,
         conversation_id: str,
+        event_id: str | None = None,
     ) -> None:
         payload = {
             "conversation_id": conversation_id,
             "created_at": datetime.now(UTC).isoformat(),
+            "last_event_id": event_id,
+            "last_event_at": datetime.now(UTC).isoformat() if event_id else None,
         }
         try:
             self._client.setex(

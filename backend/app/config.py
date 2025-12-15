@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 import logging
+from pydantic import Field
 
 from pydantic import BaseModel
 
@@ -79,6 +80,10 @@ class SmsSettings(BaseModel):
     twilio_auth_token: str | None = None
     verify_twilio_signatures: bool = False
     replay_protection_seconds: int = 300
+    stream_dedupe_ttl_seconds: int = 600
+    sms_event_dedupe_ttl_seconds: int = 300
+    per_number_rate_per_minute: int | None = None
+    per_number_rate_burst: int | None = None
     enable_voicemail: bool = True
     # Optional TwiML <Say> language codes for voice prompts.
     # When unset, Twilio's default language for the chosen voice is used.
@@ -163,6 +168,15 @@ class AppSettings(BaseModel):
     rate_limit_per_minute: int = 120
     rate_limit_burst: int = 20
     rate_limit_whitelist_ips: list[str] = []
+    rate_limit_anomaly_threshold_business: int = 0
+    rate_limit_anomaly_threshold_ip: int = 0
+    rate_limit_anomaly_threshold_5xx: int = 0
+    twilio_webhook_failure_alert_threshold: int = 0
+    billing_webhook_failure_alert_threshold: int = 0
+    latency_alert_threshold_ms: int = 0
+    latency_alert_paths: list[str] = Field(
+        default_factory=lambda: ["/v1/voice", "/v1/chat", "/v1/widget"]
+    )
     retention_purge_interval_hours: int = 24
     capture_transcripts: bool = True
     security_headers_enabled: bool = True
@@ -271,6 +285,12 @@ class AppSettings(BaseModel):
             replay_protection_seconds=int(
                 os.getenv("TWILIO_REPLAY_PROTECTION_SECONDS", "300")
             ),
+            per_number_rate_per_minute=int(
+                os.getenv("SMS_PER_NUMBER_PER_MINUTE", "0") or "0"
+            ),
+            per_number_rate_burst=int(
+                os.getenv("SMS_PER_NUMBER_BURST", "0") or "0"
+            ),
             enable_voicemail=os.getenv("TWILIO_ENABLE_VOICEMAIL", "true").lower()
             == "true",
             twilio_say_language_default=os.getenv("TWILIO_SAY_LANGUAGE_DEFAULT"),
@@ -360,9 +380,31 @@ class AppSettings(BaseModel):
             for ip in (os.getenv("RATE_LIMIT_WHITELIST_IPS", "") or "").split(",")
             if ip.strip()
         ]
+        rate_limit_anomaly_threshold_business = int(
+            os.getenv("RATE_LIMIT_ANOMALY_THRESHOLD_BUSINESS", "0") or "0"
+        )
+        rate_limit_anomaly_threshold_ip = int(
+            os.getenv("RATE_LIMIT_ANOMALY_THRESHOLD_IP", "0") or "0"
+        )
+        rate_limit_anomaly_threshold_5xx = int(
+            os.getenv("RATE_LIMIT_ANOMALY_THRESHOLD_5XX", "0") or "0"
+        )
         retention_purge_interval_hours = int(
             os.getenv("RETENTION_PURGE_INTERVAL_HOURS", "24")
         )
+        twilio_webhook_failure_alert_threshold = int(
+            os.getenv("TWILIO_WEBHOOK_FAILURE_ALERT_THRESHOLD", "0")
+        )
+        billing_webhook_failure_alert_threshold = int(
+            os.getenv("BILLING_WEBHOOK_FAILURE_ALERT_THRESHOLD", "0")
+        )
+        latency_alert_threshold_ms = int(os.getenv("LATENCY_ALERT_THRESHOLD_MS", "0"))
+        latency_alert_paths_raw = os.getenv(
+            "LATENCY_ALERT_PATHS", "/v1/voice,/v1/chat,/v1/widget"
+        )
+        latency_alert_paths = [
+            p.strip() for p in latency_alert_paths_raw.split(",") if p.strip()
+        ]
         capture_transcripts = (
             os.getenv("CAPTURE_TRANSCRIPTS", "true").lower() != "false"
         )
@@ -407,6 +449,13 @@ class AppSettings(BaseModel):
             rate_limit_per_minute=rate_limit_per_minute,
             rate_limit_burst=rate_limit_burst,
             rate_limit_whitelist_ips=rate_limit_whitelist_ips,
+            rate_limit_anomaly_threshold_business=rate_limit_anomaly_threshold_business,
+            rate_limit_anomaly_threshold_ip=rate_limit_anomaly_threshold_ip,
+            rate_limit_anomaly_threshold_5xx=rate_limit_anomaly_threshold_5xx,
+            twilio_webhook_failure_alert_threshold=twilio_webhook_failure_alert_threshold,
+            billing_webhook_failure_alert_threshold=billing_webhook_failure_alert_threshold,
+            latency_alert_threshold_ms=latency_alert_threshold_ms,
+            latency_alert_paths=latency_alert_paths,
             retention_purge_interval_hours=retention_purge_interval_hours,
             capture_transcripts=capture_transcripts,
             security_headers_enabled=security_headers_enabled,

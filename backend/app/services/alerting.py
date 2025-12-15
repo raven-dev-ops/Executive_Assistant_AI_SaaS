@@ -21,6 +21,8 @@ SLO_TARGETS: Dict[str, float] = {
 RUNBOOK_LINKS: Dict[str, str] = {
     "twilio_webhook_failure": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#twilio-webhooks",
     "calendar_webhook_failure": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#calendar-sync",
+    "billing_webhook_failure": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#stripe-webhooks",
+    "latency_slo_breach": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#latency",
     "notification_failure": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#owner-notifications",
     "uptime_slo": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#uptime",
     "booking_slo": "https://github.com/raven-dev-ops/ai_telephony_service_crm/wiki/Runbooks#booking-success",

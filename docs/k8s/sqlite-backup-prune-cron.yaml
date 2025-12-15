@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sqlite-backup-prune
+spec:
+  schedule: "0 3 * * *"  # daily at 03:00 UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: prune
+              image: python:3.11-slim
+              workingDir: /workspace
+              command:
+                - sh
+                - -c
+                - |
+                  python backend/scripts/prune_backups.py --dir /backups --keep ${KEEP:-10}
+              env:
+                - name: KEEP
+                  value: "10"
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: workspace
+                  mountPath: /workspace
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups-pvc
+            - name: workspace
+              persistentVolumeClaim:
+                claimName: app-pvc

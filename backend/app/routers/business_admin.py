@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, UTC, timedelta
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Body
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Body, Query
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
@@ -15,6 +15,7 @@ from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import AuditEventDB, BusinessDB, RetentionPurgeLogDB, TechnicianDB
 from ..deps import require_admin_auth
 from ..metrics import metrics
+from ..services.security_events import security_event_log
 from ..repositories import appointments_repo, conversations_repo, customers_repo
 from ..services.gcp_storage import get_gcs_health
 from ..services.stt_tts import speech_service
@@ -62,6 +63,7 @@ class BusinessUpdateRequest(BaseModel):
         le=1.0,
         description="Minimum confidence (0-1) required to accept an intent; stored per tenant.",
     )
+    lockdown_mode: bool | None = None
 
 
 class BusinessResponse(BaseModel):
@@ -102,6 +104,7 @@ class BusinessResponse(BaseModel):
     service_tier: str | None = None
     tts_voice: str | None = None
     intent_threshold: float | None = None
+    lockdown_mode: bool | None = None
 
 
 class BusinessUsageResponse(BusinessResponse):
@@ -171,6 +174,8 @@ class TwilioConfigStatus(BaseModel):
     account_sid_set: bool
     auth_token_set: bool
     verify_signatures: bool
+    stream_dedupe_ttl_seconds: int | None = None
+    sms_event_dedupe_ttl_seconds: int | None = None
 
 
 class TwilioBusinessHealth(BaseModel):
@@ -188,6 +193,8 @@ class TwilioHealthResponse(BaseModel):
     twilio_sms_requests: int
     twilio_sms_errors: int
     per_business: list[TwilioBusinessHealth]
+    rate_limit_blocks_by_phone: dict[str, int] | None = None
+    signature_failures: dict[str, int] | None = None
 
 
 class StripeConfigStatus(BaseModel):
@@ -195,6 +202,9 @@ class StripeConfigStatus(BaseModel):
     api_key_set: bool
     publishable_key_set: bool
     webhook_secret_set: bool
+    replay_protection_seconds: int | None = None
+    signature_hash_sample: str | None = None
+    last_signature_at: str | None = None
     price_basic_set: bool
     price_growth_set: bool
     price_scale_set: bool
@@ -209,6 +219,7 @@ class StripeHealthResponse(BaseModel):
     subscriptions_by_status: dict[str, int]
     customers_with_stripe_id: int
     businesses_with_subscription: int
+    signature_failures: dict[str, int] | None = None
 
 
 class GcpStorageHealthResponse(BaseModel):
@@ -302,6 +313,29 @@ class AuditEvent(BaseModel):
     status_code: int
 
 
+class SecurityAnomalyResponse(BaseModel):
+    signature_failures: dict[str, int] = Field(default_factory=dict)
+    invalid_auth_spikes: dict[str, int] = Field(default_factory=dict)
+    rate_limit_blocks_by_ip: dict[str, int] = Field(default_factory=dict)
+    rate_limit_blocks_by_business: dict[str, int] = Field(default_factory=dict)
+    security_events: dict[str, int] = Field(default_factory=dict)
+    route_error_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SecurityEventItem(BaseModel):
+    event: str
+    detail: str | None = None
+    business_id: str | None = None
+    call_sid: str | None = None
+    message_sid: str | None = None
+    created_at: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class SecurityEventListResponse(BaseModel):
+    events: list[SecurityEventItem] = Field(default_factory=list)
+
+
 def _get_db_session():
     """Return a database session or raise a 503 HTTPException.
 
@@ -374,6 +408,7 @@ def _business_to_response(row: BusinessDB) -> BusinessResponse:
         service_tier=getattr(row, "service_tier", None),
         tts_voice=getattr(row, "tts_voice", None),
         intent_threshold=intent_threshold,
+        lockdown_mode=getattr(row, "lockdown_mode", None),
     )
 
 
@@ -450,6 +485,7 @@ def create_business(payload: BusinessCreateRequest) -> BusinessResponse:
             retention_enabled=True,
             retention_sms_template=None,
             created_at=now,
+            lockdown_mode=False,
         )
         session.add(row)
         session.commit()
@@ -527,6 +563,8 @@ def update_business(
         if payload.intent_threshold is not None:
             # Store as integer percentage to preserve precision while using INT column.
             row.intent_threshold = int(round(payload.intent_threshold * 100))
+        if payload.lockdown_mode is not None:
+            row.lockdown_mode = payload.lockdown_mode
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -915,6 +953,7 @@ def _build_business_usage(business_id: str, row: BusinessDB) -> BusinessUsageRes
         twilio_sms_requests=twilio_sms_requests,
         twilio_sms_errors=twilio_sms_errors,
         twilio_error_rate=twilio_error_rate,
+        lockdown_mode=getattr(row, "lockdown_mode", None),
         last_activity_at=last_activity_at or created_at,
     )
 
@@ -1072,6 +1111,9 @@ def twilio_health() -> TwilioHealthResponse:
         account_sid_set=bool(sms_cfg.twilio_account_sid),
         auth_token_set=bool(sms_cfg.twilio_auth_token),
         verify_signatures=bool(getattr(sms_cfg, "verify_twilio_signatures", False)),
+        stream_dedupe_ttl_seconds=getattr(sms_cfg, "stream_dedupe_ttl_seconds", None),
+        sms_event_dedupe_ttl_seconds=getattr(sms_cfg, "sms_event_dedupe_ttl_seconds", None),
+        signature_hash_sample=getattr(metrics, "last_twilio_signature_hash", None),
     )
 
     per_business: list[TwilioBusinessHealth] = []
@@ -1093,6 +1135,8 @@ def twilio_health() -> TwilioHealthResponse:
         twilio_sms_requests=metrics.twilio_sms_requests,
         twilio_sms_errors=metrics.twilio_sms_errors,
         per_business=per_business,
+        rate_limit_blocks_by_phone=getattr(metrics, "rate_limit_blocks_by_phone", None),
+        signature_failures=getattr(metrics, "signature_failures", None),
     )
 
 
@@ -1105,6 +1149,9 @@ def stripe_health() -> StripeHealthResponse:
         api_key_set=bool(settings.api_key),
         publishable_key_set=bool(settings.publishable_key),
         webhook_secret_set=bool(settings.webhook_secret),
+        replay_protection_seconds=getattr(settings, "replay_protection_seconds", None),
+        signature_hash_sample=getattr(metrics, "last_stripe_signature_hash", None),
+        last_signature_at=getattr(metrics, "last_stripe_signature_at", None),
         price_basic_set=bool(settings.price_basic),
         price_growth_set=bool(settings.price_growth),
         price_scale_set=bool(settings.price_scale),
@@ -1141,6 +1188,7 @@ def stripe_health() -> StripeHealthResponse:
         subscriptions_by_status=subscriptions_by_status,
         customers_with_stripe_id=customers_with_stripe_id,
         businesses_with_subscription=businesses_with_subscription,
+        signature_failures=getattr(metrics, "signature_failures", None),
     )
 
 
@@ -1474,3 +1522,37 @@ def list_audit_events(
         return events
     finally:
         session.close()
+
+
+@router.get("/security/anomalies", response_model=SecurityAnomalyResponse)
+def get_security_anomalies() -> SecurityAnomalyResponse:
+    """Return security anomaly counters for admin visibility."""
+    route_errors: dict[str, int] = {}
+    for path, stats in getattr(metrics, "route_metrics", {}).items():
+        if getattr(stats, "error_count", 0) > 0:
+            route_errors[path] = stats.error_count
+    return SecurityAnomalyResponse(
+        signature_failures=getattr(metrics, "signature_failures", {}),
+        invalid_auth_spikes=getattr(metrics, "invalid_token_spikes", {}),
+        rate_limit_blocks_by_ip=getattr(metrics, "rate_limit_blocks_by_ip", {}),
+        rate_limit_blocks_by_business=getattr(metrics, "rate_limit_blocks_by_business", {}),
+        security_events=getattr(metrics, "security_events", {}),
+        route_error_counts=route_errors,
+    )
+
+
+@router.get("/security/events", response_model=SecurityEventListResponse)
+def list_security_events(
+    business_id: str | None = Query(default=None),
+    since: str | None = Query(default=None, description="ISO timestamp to filter from"),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> SecurityEventListResponse:
+    """Return recent security events with optional tenant/time filtering."""
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid since timestamp")
+    events = security_event_log.list(business_id=business_id, since=since_dt, limit=limit)
+    return SecurityEventListResponse(events=events)

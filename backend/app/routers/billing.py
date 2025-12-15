@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 from typing import List, Optional
 
 import logging
@@ -21,7 +22,9 @@ from ..services.stripe_webhook import (
     check_replay,
     verify_stripe_signature,
 )
+from ..services import alerting
 from ..services.subscription import SubscriptionState
+from ..services.security_events import record_security_event
 
 try:
     import stripe  # type: ignore
@@ -341,8 +344,21 @@ async def billing_webhook(
     business_id = "default_business"
     try:
         event_payload: dict = {}
+        sig_hash = (
+            hashlib.sha256(stripe_signature.encode("utf-8")).hexdigest()
+            if stripe_signature
+            else None
+        )
+        metrics.last_stripe_signature_hash = sig_hash
+        if sig_hash:
+            metrics.last_stripe_signature_at = datetime.now(UTC).isoformat()
         if require_sig and not settings.use_stub:
             if not stripe_signature:
+                record_security_event(
+                    "stripe_signature_missing",
+                    detail="Missing Stripe-Signature header",
+                    metadata={"path": str(request.url.path)},
+                )
                 raise HTTPException(
                     status_code=400, detail="Missing Stripe-Signature header"
                 )
@@ -358,6 +374,14 @@ async def billing_webhook(
                         secret=settings.webhook_secret,
                     )
                 except Exception as exc:
+                    metrics.signature_failures["stripe_invalid_sig"] = (
+                        metrics.signature_failures.get("stripe_invalid_sig", 0) + 1
+                    )
+                    record_security_event(
+                        "stripe_signature_invalid",
+                        detail="Stripe SDK signature validation failed",
+                        metadata={"path": str(request.url.path), "business_id": business_id},
+                    )
                     logger.warning(
                         "billing_webhook_signature_invalid",
                         extra={"error": str(exc)},
@@ -372,6 +396,19 @@ async def billing_webhook(
                         raw_body, stripe_signature, settings.webhook_secret
                     )
                 except (StripeSignatureError, StripeReplayError) as exc:
+                    metrics.signature_failures["stripe_invalid_sig"] = (
+                        metrics.signature_failures.get("stripe_invalid_sig", 0) + 1
+                    )
+                    event_name = (
+                        "stripe_replay_detected"
+                        if isinstance(exc, StripeReplayError)
+                        else "stripe_signature_invalid"
+                    )
+                    record_security_event(
+                        event_name,
+                        detail="Stripe webhook verification failed",
+                        metadata={"path": str(request.url.path), "business_id": business_id},
+                    )
                     logger.warning(
                         "billing_webhook_signature_invalid",
                         extra={"error": str(exc)},
@@ -406,7 +443,34 @@ async def billing_webhook(
         )
 
         if require_sig and not settings.use_stub and event_id and settings.replay_protection_seconds > 0:
-            check_replay(event_id, settings.replay_protection_seconds)
+            try:
+                check_replay(event_id, settings.replay_protection_seconds)
+            except StripeReplayError as exc:
+                record_security_event(
+                    "stripe_replay_detected",
+                    detail="Stripe webhook replay rejected",
+                    metadata={
+                        "event_id": event_id,
+                        "path": str(request.url.path),
+                        "business_id": business_id,
+                    },
+                )
+                logger.warning(
+                    "stripe_webhook_replay_detected",
+                    extra={"event_id": event_id, "event_type": event_type},
+                )
+                raise HTTPException(
+                    status_code=409, detail="Replayed webhook event"
+                ) from exc
+            logger.info(
+                "stripe_webhook_event_received",
+                extra={
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "business_id": business_id,
+                    "sig_hash": sig_hash,
+                },
+            )
 
         if event_type == "checkout.session.completed":
             _update_subscription(
@@ -479,6 +543,24 @@ async def billing_webhook(
             return {"received": True}
     except StripeReplayError as exc:
         metrics.billing_webhook_failures += 1
+        threshold_billing = getattr(
+            get_settings(), "billing_webhook_failure_alert_threshold", 0
+        )
+        if threshold_billing and metrics.billing_webhook_failures >= threshold_billing:
+            alerting.maybe_trigger_alert(
+                "billing_webhook_failure",
+                detail=f"{metrics.billing_webhook_failures} Stripe webhook errors",
+                severity="P0",
+                cooldown_seconds=300,
+                runbook_key="billing_webhook_failure",
+            )
+        alerting.maybe_trigger_alert(
+            "billing_webhook_failure",
+            detail=f"Stripe replay blocked: event_id={event_id or 'n/a'}",
+            severity="P0",
+            cooldown_seconds=300,
+            runbook_key="notification_failure",
+        )
         logger.warning(
             "billing_webhook_replay_blocked",
             extra={
@@ -491,6 +573,24 @@ async def billing_webhook(
         raise HTTPException(status_code=400, detail="Duplicate webhook event")
     except HTTPException:
         metrics.billing_webhook_failures += 1
+        threshold_billing = getattr(
+            get_settings(), "billing_webhook_failure_alert_threshold", 0
+        )
+        if threshold_billing and metrics.billing_webhook_failures >= threshold_billing:
+            alerting.maybe_trigger_alert(
+                "billing_webhook_failure",
+                detail=f"{metrics.billing_webhook_failures} Stripe webhook errors",
+                severity="P0",
+                cooldown_seconds=300,
+                runbook_key="billing_webhook_failure",
+            )
+        alerting.maybe_trigger_alert(
+            "billing_webhook_failure",
+            detail=f"Stripe webhook HTTP error: event_id={event_id or 'n/a'}",
+            severity="P0",
+            cooldown_seconds=300,
+            runbook_key="notification_failure",
+        )
         logger.warning(
             "billing_webhook_http_error",
             extra={
@@ -502,6 +602,24 @@ async def billing_webhook(
         raise
     except Exception as exc:  # pragma: no cover - unexpected failures should be visible
         metrics.billing_webhook_failures += 1
+        threshold_billing = getattr(
+            get_settings(), "billing_webhook_failure_alert_threshold", 0
+        )
+        if threshold_billing and metrics.billing_webhook_failures >= threshold_billing:
+            alerting.maybe_trigger_alert(
+                "billing_webhook_failure",
+                detail=f"{metrics.billing_webhook_failures} Stripe webhook errors",
+                severity="P0",
+                cooldown_seconds=300,
+                runbook_key="billing_webhook_failure",
+            )
+        alerting.maybe_trigger_alert(
+            "billing_webhook_failure",
+            detail=f"Stripe webhook failure: event_id={event_id or 'n/a'} error={str(exc)}",
+            severity="P0",
+            cooldown_seconds=300,
+            runbook_key="notification_failure",
+        )
         logger.exception(
             "billing_webhook_failure",
             extra={

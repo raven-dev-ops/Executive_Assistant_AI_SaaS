@@ -27,9 +27,19 @@ services:
       - USE_DB_APPOINTMENTS=${USE_DB_APPOINTMENTS:-true}
       - USE_DB_CONVERSATIONS=${USE_DB_CONVERSATIONS:-true}
       - SESSION_STORE_BACKEND=${SESSION_STORE_BACKEND:-memory}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     volumes:
       # Optional: mount secrets from host
       - ./secrets:/secrets:ro
     ports:
       - "8000:8000"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"

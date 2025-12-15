@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sqlite-backup
+spec:
+  schedule: "0 */6 * * *"  # every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: python:3.11-slim
+              workingDir: /workspace
+              command:
+                - sh
+                - -c
+                - |
+                  pip install --no-cache-dir -r backend/requirements.txt || true
+                  python backend/scripts/backup_db.py --db backend/app.db --out /backups
+              volumeMounts:
+                - name: workspace
+                  mountPath: /workspace
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: workspace
+              persistentVolumeClaim:
+                claimName: app-pvc
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups-pvc

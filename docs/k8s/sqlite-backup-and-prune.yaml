@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: sqlite-backup
+    spec:
+      schedule: "0 */6 * * *"  # every 6 hours
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              restartPolicy: OnFailure
+              containers:
+                - name: backup
+                  image: python:3.11-slim
+                  workingDir: /workspace
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      pip install --no-cache-dir -r backend/requirements.txt || true
+                      python backend/scripts/backup_db.py --db backend/app.db --out /backups
+                  volumeMounts:
+                    - name: workspace
+                      mountPath: /workspace
+                    - name: backups
+                      mountPath: /backups
+              volumes:
+                - name: workspace
+                  persistentVolumeClaim:
+                    claimName: app-pvc
+                - name: backups
+                  persistentVolumeClaim:
+                    claimName: backups-pvc
+
+  - apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: sqlite-backup-prune
+    spec:
+      schedule: "0 3 * * *"  # daily at 03:00 UTC
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              restartPolicy: OnFailure
+              containers:
+                - name: prune
+                  image: python:3.11-slim
+                  workingDir: /workspace
+                  command:
+                    - sh
+                    - -c
+                    - |
+                      python backend/scripts/prune_backups.py --dir /backups --keep ${KEEP:-10}
+                  env:
+                    - name: KEEP
+                      value: "10"
+                  volumeMounts:
+                    - name: backups
+                      mountPath: /backups
+                    - name: workspace
+                      mountPath: /workspace
+              volumes:
+                - name: backups
+                  persistentVolumeClaim:
+                    claimName: backups-pvc
+                - name: workspace
+                  persistentVolumeClaim:
+                    claimName: app-pvc

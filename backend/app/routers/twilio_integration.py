@@ -29,6 +29,7 @@ from ..services import (
     conversation,
     sessions,
     subscription as subscription_service,
+    alerting,
 )
 from ..services.stt_tts import speech_service
 from ..services.calendar import calendar_service
@@ -36,6 +37,9 @@ from ..services.sms import sms_service
 from ..services.email_service import email_service
 from ..business_config import get_calendar_id_for_business, get_language_for_business
 from ..services.twilio_state import PendingAction, twilio_state_store
+from ..services.rate_limit import RateLimiter, RateLimitError
+from ..services.security_events import record_security_event
+from ..context import call_sid_ctx, message_sid_ctx, business_id_ctx
 from . import owner as owner_routes
 
 if TYPE_CHECKING:
@@ -45,6 +49,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _twilio_seen_events: dict[str, float] = {}
+_per_number_rate_limiter: RateLimiter | None = None
+_per_number_limits_loaded_at: float | None = None
+_per_number_rate_limiter: RateLimiter | None = None
+_per_number_limits_loaded_at: float | None = None
 
 
 class TwilioStreamEvent(BaseModel):
@@ -71,11 +79,39 @@ def _check_twilio_replay(event_id: str, window_seconds: int) -> None:
     for eid in expired:
         _twilio_seen_events.pop(eid, None)
     if event_id in _twilio_seen_events:
+        record_security_event(
+            "twilio_replay_detected",
+            detail="Duplicate Twilio webhook event rejected",
+            metadata={"event_id": event_id},
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Duplicate Twilio webhook event",
         )
     _twilio_seen_events[event_id] = now
+
+
+def _get_per_number_rate_limiter() -> RateLimiter | None:
+    """Return a per-number rate limiter based on SMS settings."""
+    global _per_number_rate_limiter, _per_number_limits_loaded_at
+    settings = get_settings().sms
+    per_minute = getattr(settings, "per_number_rate_per_minute", 0) or 0
+    burst = getattr(settings, "per_number_rate_burst", 0) or 0
+    # Refresh limiter if settings changed (best-effort: reload every 60 seconds).
+    now = time.time()
+    if (
+        _per_number_rate_limiter is None
+        or _per_number_limits_loaded_at is None
+        or now - _per_number_limits_loaded_at > 60
+    ):
+        disabled = per_minute <= 0 or burst <= 0
+        _per_number_rate_limiter = RateLimiter(
+            per_minute=per_minute or 1,
+            burst=burst or 1,
+            disabled=disabled,
+        )
+        _per_number_limits_loaded_at = now
+    return _per_number_rate_limiter
 
 
 async def _maybe_verify_twilio_signature(
@@ -94,16 +130,48 @@ async def _maybe_verify_twilio_signature(
     provider = (getattr(sms_cfg, "provider", "") or "").lower()
     auth_token = getattr(sms_cfg, "twilio_auth_token", None)
     replay_window = getattr(sms_cfg, "replay_protection_seconds", 300) or 300
+    stream_dedupe_ttl = getattr(sms_cfg, "stream_dedupe_ttl_seconds", 600) or 600
+    sms_event_ttl = getattr(sms_cfg, "sms_event_dedupe_ttl_seconds", 300) or 300
     require_sig = bool(
         getattr(sms_cfg, "verify_twilio_signatures", False)
         or (env == "prod" and provider == "twilio")
     )
-    if not require_sig or not auth_token or provider == "stub":
+    business_id_meta = form_params.get("business_id")
+    if not require_sig or provider == "stub":
         return
+    if not auth_token:
+        logger.error("twilio_signature_required_but_token_missing", extra={"path": str(request.url)})
+        metrics.signature_failures["twilio_missing_token"] = (
+            metrics.signature_failures.get("twilio_missing_token", 0) + 1
+        )
+        record_security_event(
+            "twilio_missing_auth_token",
+            detail="Signature verification required but auth token missing",
+            metadata={"path": str(request.url), "business_id": business_id_meta},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twilio auth token not configured",
+        )
 
     twilio_sig = request.headers.get("X-Twilio-Signature")
     if not twilio_sig:
         logger.warning("twilio_signature_missing", extra={"path": str(request.url)})
+        metrics.signature_failures["twilio_missing_sig"] = (
+            metrics.signature_failures.get("twilio_missing_sig", 0) + 1
+        )
+        record_security_event(
+            "twilio_signature_missing",
+            detail="Missing Twilio signature header",
+            metadata={"path": str(request.url), "business_id": business_id_meta},
+        )
+        alerting.maybe_trigger_alert(
+            "twilio_webhook_failure",
+            detail=f"Missing signature on {request.url.path}",
+            severity="P0",
+            cooldown_seconds=300,
+            runbook_key="twilio_webhook_failure",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing Twilio signature",
@@ -137,10 +205,38 @@ async def _maybe_verify_twilio_signature(
 
     if not hmac.compare_digest(expected_sig, twilio_sig):
         logger.warning("twilio_signature_invalid", extra={"path": str(request.url)})
+        metrics.signature_failures["twilio_invalid_sig"] = (
+            metrics.signature_failures.get("twilio_invalid_sig", 0) + 1
+        )
+        record_security_event(
+            "twilio_signature_invalid",
+            detail="Invalid Twilio signature",
+            metadata={"path": str(request.url), "business_id": business_id_meta},
+        )
+        alerting.maybe_trigger_alert(
+            "twilio_webhook_failure",
+            detail=f"Invalid signature on {request.url.path}",
+            severity="P0",
+            cooldown_seconds=300,
+            runbook_key="twilio_webhook_failure",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Twilio signature",
         )
+    metrics.last_twilio_signature_hash = (
+        hashlib.sha256(twilio_sig.encode("utf-8")).hexdigest() if twilio_sig else None
+    )
+    metrics.last_twilio_signature_at = datetime.now(UTC).isoformat()
+    logger.info(
+        "twilio_signature_verified",
+        extra={
+            "path": str(request.url),
+            "sig_hash": metrics.last_twilio_signature_hash,
+            "stream_dedupe_ttl": stream_dedupe_ttl,
+            "sms_event_dedupe_ttl": sms_event_ttl,
+        },
+    )
 
     # Optional timestamp guard to bound skew; when absent we skip the check.
     ts_header = (
@@ -156,6 +252,11 @@ async def _maybe_verify_twilio_signature(
                 detail="Invalid Twilio timestamp",
             )
         if abs(time.time() - ts_val) > replay_window:
+            record_security_event(
+                "twilio_timestamp_outside_window",
+                detail="Twilio timestamp rejected",
+                metadata={"path": str(request.url)},
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Twilio request timestamp outside allowed window",
@@ -166,6 +267,15 @@ async def _maybe_verify_twilio_signature(
     )
     if event_id:
         _check_twilio_replay(event_id, replay_window)
+        # Surface replay detection in logs for observability/forensics.
+        logger.info(
+            "twilio_webhook_seen_event",
+            extra={
+                "event_id": event_id,
+                "path": str(request.url),
+                "business_id": form_params.get("business_id"),
+            },
+        )
 
 
 def _get_business_name(business_id: str | None) -> str:
@@ -483,6 +593,8 @@ async def twilio_voice(
     # tenant; otherwise we fall back to the default single-tenant ID.
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     business_row: BusinessDB | None = None
+    business_id_ctx.set(business_id)
+    call_sid_ctx.set(CallSid)
 
     logger.info(
         "twilio_voice_webhook",
@@ -491,6 +603,13 @@ async def twilio_voice(
             "call_sid": CallSid,
             "from": From,
             "call_status": CallStatus,
+            "sig_hash": (
+                hashlib.sha256(
+                    (request.headers.get("X-Twilio-Signature") or "").encode("utf-8")
+                ).hexdigest()
+                if request.headers.get("X-Twilio-Signature")
+                else None
+            ),
         },
     )
 
@@ -561,6 +680,16 @@ async def twilio_voice(
         form_params["SpeechResult"] = SpeechResult
     await _maybe_verify_twilio_signature(request, form_params)
     event_id = request.headers.get("X-Twilio-EventId") or request.headers.get("Twilio-Event-Id")
+    if event_id:
+        logger.info(
+            "twilio_voice_event",
+            extra={
+                "business_id": business_id,
+                "call_sid": CallSid,
+                "event_id": event_id,
+                "call_status": CallStatus,
+            },
+        )
 
     try:
         # If the call has ended, we can clean up and optionally enqueue a callback
@@ -701,6 +830,11 @@ async def twilio_voice(
                 return Response(content="<Response/>", media_type="text/xml")
             session = sessions.session_store.get(link.session_id)
             session_id = link.session_id
+            if event_id:
+                # Keep last_event_id up to date so repeated statuses without EventId rely on local cache.
+                twilio_state_store.set_call_session(
+                    CallSid, session_id, state=getattr(link, "state", "active"), event_id=event_id
+                )
         else:
             session = sessions.session_store.create(
                 caller_phone=From,
@@ -1190,6 +1324,8 @@ async def twilio_voice_assistant(
       return another Gather with the reply spoken via <Say>.
     """
     business_id = business_id_param or DEFAULT_BUSINESS_ID
+    business_id_ctx.set(business_id)
+    call_sid_ctx.set(CallSid)
     settings = get_settings()
     stream_enabled = bool(
         getattr(settings.telephony, "twilio_streaming_enabled", False)
@@ -1465,6 +1601,9 @@ async def twilio_voice_stream(
         )
 
     business_id = payload.business_id or DEFAULT_BUSINESS_ID
+    business_id_ctx.set(business_id)
+    if payload.call_sid:
+        call_sid_ctx.set(payload.call_sid)
     owner_phone = None
     owner_email = None
     business_row: BusinessDB | None = None
@@ -1491,6 +1630,20 @@ async def twilio_voice_stream(
     per_tenant.voice_requests += 1
 
     link = twilio_state_store.get_call_session(payload.call_sid)
+    # Deduplicate media stream events by stream_sid if available.
+    if payload.stream_sid and link and link.last_stream_event == payload.stream_sid:
+        return TwilioStreamResponse(
+            status="duplicate", session_id=link.session_id, reply_text=None, completed=False
+        )
+    # When no session exists yet, optionally fall back to stream_sid-based dedupe across workers.
+    if payload.stream_sid and not link:
+        # Avoid Redis dependency here; rely on per-process state only.
+        seen_stream = twilio_state_store.get_call_session(f"stream:{payload.stream_sid}")
+        if seen_stream:
+            return TwilioStreamResponse(
+                status="duplicate", session_id=None, reply_text=None, completed=False
+            )
+
     session_obj = sessions.session_store.get(link.session_id) if link else None
     if not session_obj:
         await ensure_onboarding_ready(business_id)
@@ -1508,7 +1661,19 @@ async def twilio_voice_stream(
             business_id=business_id,
             lead_source=payload.lead_source,
         )
-        twilio_state_store.set_call_session(payload.call_sid, session_obj.id)
+        twilio_state_store.set_call_session(
+            payload.call_sid,
+            session_obj.id,
+            stream_event=payload.event or payload.stream_sid,
+        )
+        if payload.stream_sid:
+            # Mark the stream ID so another worker/process can drop duplicates.
+            twilio_state_store.set_call_session(
+                f"stream:{payload.stream_sid}",
+                session_obj.id,
+                stream_event=payload.event or payload.stream_sid,
+                ttl_seconds=600,
+            )
         customer = (
             customers_repo.get_by_phone(payload.from_number, business_id=business_id)
             if payload.from_number
@@ -1691,6 +1856,18 @@ async def twilio_voice_stream(
             conversations_repo.append_message(
                 conv.id, role="assistant", text=reply_text
             )
+        twilio_state_store.set_call_session(
+            payload.call_sid,
+            session_obj.id,
+            stream_event=payload.event or payload.stream_sid,
+        )
+        if payload.stream_sid:
+            twilio_state_store.set_call_session(
+                f"stream:{payload.stream_sid}",
+                session_obj.id,
+                stream_event=payload.event or payload.stream_sid,
+                ttl_seconds=600,
+            )
     return TwilioStreamResponse(
         status="ok",
         session_id=session_obj.id,
@@ -1713,12 +1890,29 @@ async def twilio_sms(
     that back-and-forth SMS exchanges share context.
     """
     business_id = business_id_param or DEFAULT_BUSINESS_ID
+    business_id_ctx.set(business_id)
+    try:
+        form_data = await request.form()
+        msg_sid = form_data.get("MessageSid") or form_data.get("SmsMessageSid")
+    except Exception:
+        msg_sid = None
+    if msg_sid:
+        message_sid_ctx.set(str(msg_sid))
 
     logger.info(
         "twilio_sms_webhook",
         extra={
             "business_id": business_id,
             "from": From,
+            "twilio_event_id": request.headers.get("X-Twilio-EventId")
+            or request.headers.get("Twilio-Event-Id"),
+            "sig_hash": (
+                hashlib.sha256(
+                    (request.headers.get("X-Twilio-Signature") or "").encode("utf-8")
+                ).hexdigest()
+                if request.headers.get("X-Twilio-Signature")
+                else None
+            ),
         },
     )
 
@@ -1747,9 +1941,63 @@ async def twilio_sms(
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
+    # Optional per-phone number rate limits to dampen abuse.
+    per_number_limiter = _get_per_number_rate_limiter()
+    if per_number_limiter:
+        try:
+            per_number_limiter.check(key=f"{business_id}:{From}")
+        except RateLimitError as exc:
+            metrics.twilio_sms_errors += 1
+            per_tenant.sms_errors += 1
+            metrics.rate_limit_blocks_total += 1
+            metrics.rate_limit_blocks_by_phone[From] = (
+                metrics.rate_limit_blocks_by_phone.get(From, 0) + 1
+            )
+            masked = (From or "")[-4:] if From else "unknown"
+            record_security_event(
+                "rate_limit_phone_block",
+                detail="Per-number Twilio SMS rate limit enforced",
+                metadata={
+                    "business_id": business_id,
+                    "phone_suffix": masked or "unknown",
+                    "path": str(request.url.path),
+                },
+            )
+            logger.warning(
+                "twilio_sms_rate_limited_per_number",
+                extra={
+                    "business_id": business_id,
+                    "from": From,
+                    "retry_after": exc.retry_after_seconds,
+                },
+            )
+            alerting.maybe_trigger_alert(
+                "rate_limit_spike_phone",
+                detail=f"Phone {From} blocked for business {business_id}",
+                severity="P1",
+                cooldown_seconds=300,
+            )
+            return Response(
+                content="<Response></Response>",
+                media_type="text/xml",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(exc.retry_after_seconds)},
+            )
+
     # Optional signature verification.
     form_params: Dict[str, str] = {"From": From, "Body": Body}
     await _maybe_verify_twilio_signature(request, form_params)
+
+    event_id = request.headers.get("X-Twilio-EventId") or request.headers.get(
+        "Twilio-Event-Id"
+    )
+    existing_link = twilio_state_store.get_sms_conversation(business_id, From)
+    if event_id and existing_link and existing_link.last_event_id == event_id:
+        return Response(
+            content="<Response></Response>",
+            media_type="text/xml",
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
     try:
         normalized_body = Body.strip().lower()
@@ -1997,6 +2245,11 @@ async def twilio_sms(
         if link:
             conv = conversations_repo.get(link.conversation_id)
             conv_id = link.conversation_id if conv else None
+            # Update last_event_id when we have a fresh Twilio event id.
+            if event_id and conv_id:
+                twilio_state_store.set_sms_conversation(
+                    business_id, from_phone, conv_id, event_id=event_id
+                )
         else:
             customer = customers_repo.get_by_phone(From, business_id=business_id)
             conv = conversations_repo.create(
@@ -2009,6 +2262,7 @@ async def twilio_sms(
                 business_id,
                 from_phone,
                 conv_id,
+                event_id=event_id,
             )
 
         # Log user message.

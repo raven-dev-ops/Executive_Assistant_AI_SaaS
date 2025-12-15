@@ -15,12 +15,14 @@ from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal, init_db
 from .logging_config import configure_logging
 from .metrics import RouteMetrics, metrics
-from .context import request_id_ctx
+from .context import request_id_ctx, business_id_ctx
 from .services.audit import record_audit_event
 from .services.retention_purge import start_retention_scheduler
 from .services.rate_limit import RateLimiter, RateLimitError
 from .services.job_queue import job_queue
 from .services import alerting
+from .services.security_events import record_security_event
+from .services.error_tracking import init_sentry, bind_request_context
 from .routers import (
     business_admin,
     chat_widget,
@@ -68,6 +70,8 @@ def _is_business_locked(business_id: str) -> bool:
 
 def create_app() -> FastAPI:
     configure_logging()
+    # Optional error tracking (Sentry) is enabled when SENTRY_DSN is set.
+    init_sentry(app=None)
     try:
         init_db()
     except Exception:
@@ -160,6 +164,8 @@ def create_app() -> FastAPI:
             "config_sanitized": True,
             "multi_tenant_mode": multi_tenant,
             "business_count": business_count,
+            "stream_dedupe_ttl_seconds": getattr(settings.sms, "stream_dedupe_ttl_seconds", None),
+            "sms_event_dedupe_ttl_seconds": getattr(settings.sms, "sms_event_dedupe_ttl_seconds", None),
         },
     )
     # Warn when running with weak tenant auth while database/multi-tenant support is available.
@@ -181,6 +187,20 @@ def create_app() -> FastAPI:
                 extra=extra,
             )
     env_label = os.getenv("ENVIRONMENT", "").lower()
+    non_dev_env = env_label not in {"", "dev", "development", "local", "test", "testing"}
+    if non_dev_env and multi_tenant and not settings.require_business_api_key:
+        logger.error(
+            "multi_tenant_require_business_api_key_enforced",
+            extra={
+                "multi_tenant_mode": multi_tenant,
+                "business_count": business_count,
+                "require_business_api_key": settings.require_business_api_key,
+                "environment": env_label or "unknown",
+            },
+        )
+        raise RuntimeError(
+            "Multi-tenant environments must set REQUIRE_BUSINESS_API_KEY=true to start"
+        )
     if env_label in {"prod", "production"}:
         errors: list[str] = []
         if not getattr(settings, "owner_dashboard_token", None):
@@ -240,6 +260,21 @@ def create_app() -> FastAPI:
             name="widget",
         )
 
+    async def _resolve_business_id_for_request(request: Request) -> str | None:
+        """Best-effort resolve tenant from headers without failing the request."""
+        try:
+            from . import deps as _deps  # local import
+
+            return await _deps.get_business_id(
+                x_business_id=request.headers.get("X-Business-ID"),
+                x_api_key=request.headers.get("X-API-Key"),
+                x_widget_token=request.headers.get("X-Widget-Token"),
+                authorization=request.headers.get("Authorization"),
+            )
+        except Exception:
+            # Do not break requests if tenant resolution fails here; routing/auth will handle it later.
+            return None
+
     @app.middleware("http")
     async def metrics_middleware(request: Request, call_next):
         path = request.url.path
@@ -277,14 +312,10 @@ def create_app() -> FastAPI:
             )
             if path not in exempt_paths and path.startswith(guarded_prefixes):
                 client_ip = request.client.host if request.client else "unknown"
-                business_id = None
-                try:
-                    # Best-effort resolve tenant so per-tenant buckets can be enforced.
-                    from . import deps as _deps  # local import
-
-                    business_id = await _deps.get_business_id(request)  # type: ignore[arg-type]
-                except Exception:
-                    business_id = None
+                # Best-effort resolve tenant so per-tenant buckets can be enforced.
+                business_id = await _resolve_business_id_for_request(request)
+                biz_token = business_id_ctx.set(business_id)
+                bind_request_context(request, business_id=business_id)
 
                 # Lockdown mode halts automation/widget/voice flows per tenant.
                 if business_id and _is_business_locked(business_id):
@@ -317,6 +348,41 @@ def create_app() -> FastAPI:
                     metrics.rate_limit_blocks_by_ip[client_ip] = (
                         metrics.rate_limit_blocks_by_ip.get(client_ip, 0) + 1
                     )
+                    # Best-effort anomaly detection for spikes.
+                    biz_count = metrics.rate_limit_blocks_by_business.get(
+                        business_id or "unknown", 0
+                    )
+                    ip_count = metrics.rate_limit_blocks_by_ip.get(client_ip, 0)
+                    biz_threshold = getattr(
+                        settings, "rate_limit_anomaly_threshold_business", 0
+                    )
+                    ip_threshold = getattr(
+                        settings, "rate_limit_anomaly_threshold_ip", 0
+                    )
+                    if biz_threshold and biz_count >= biz_threshold:
+                        alerting.maybe_trigger_alert(
+                            "rate_limit_spike_business",
+                            detail=f"Business {business_id or 'unknown'} blocked {biz_count} requests",
+                            severity="P1",
+                            cooldown_seconds=120,
+                        )
+                    if ip_threshold and ip_count >= ip_threshold:
+                        alerting.maybe_trigger_alert(
+                            "rate_limit_spike_ip",
+                            detail=f"IP {client_ip} blocked {ip_count} requests",
+                            severity="P1",
+                            cooldown_seconds=120,
+                        )
+                    record_security_event(
+                        "rate_limit_block",
+                        detail="Request throttled by global guard",
+                        metadata={
+                            "path": path,
+                            "ip": client_ip,
+                            "business_id": business_id or "unknown",
+                            "call_sid": request.headers.get("X-CallSid") or None,
+                        },
+                    )
                     response = Response(
                         status_code=429,
                         content="Rate limit exceeded. Please retry later.",
@@ -333,6 +399,35 @@ def create_app() -> FastAPI:
                 route_metrics.error_count += 1
                 # Record audit information for rejected requests as well.
                 await record_audit_event(request, exc.status_code)
+                if exc.status_code in (401, 403):
+                    actor = request.headers.get("X-Owner-Token") or request.headers.get(
+                        "X-API-Key"
+                    )
+                    actor_label = actor[:4] + "..." if actor else "unknown"
+                    key = f"{path}:{actor_label}"
+                    metrics.invalid_token_spikes[key] = (
+                        metrics.invalid_token_spikes.get(key, 0) + 1
+                    )
+                    record_security_event(
+                        "invalid_auth",
+                        detail=f"{exc.status_code} on {path}",
+                        metadata={
+                            "actor": actor_label,
+                            "path": path,
+                            "business_id": business_id,
+                            "call_sid": request.headers.get("X-CallSid") or None,
+                        },
+                    )
+                    threshold = getattr(
+                        settings, "rate_limit_anomaly_threshold_business", 0
+                    )
+                    if threshold and metrics.invalid_token_spikes[key] >= threshold:
+                        alerting.maybe_trigger_alert(
+                            "invalid_auth_spike",
+                            detail=f"{metrics.invalid_token_spikes[key]} auth failures on {path}",
+                            severity="P1",
+                            cooldown_seconds=180,
+                        )
                 response = await http_exception_handler(request, exc)
                 error_recorded = True
             except Exception:
@@ -342,9 +437,7 @@ def create_app() -> FastAPI:
                 logger.exception(
                     "unhandled_request_exception", exc_info=True, extra={"path": path}
                 )
-                response = Response(
-                    status_code=500, content="Internal Server Error"
-                )
+                response = Response(status_code=500, content="Internal Server Error")
                 error_recorded = True
             latency_ms = (time.time() - start) * 1000.0
             route_metrics.total_latency_ms += latency_ms
@@ -353,11 +446,44 @@ def create_app() -> FastAPI:
             if response.status_code >= 500 and not error_recorded:
                 metrics.total_errors += 1
                 route_metrics.error_count += 1
+                threshold_5xx = getattr(settings, "rate_limit_anomaly_threshold_5xx", 0)
+                if threshold_5xx and route_metrics.error_count >= threshold_5xx:
+                    alerting.maybe_trigger_alert(
+                        "error_rate_spike",
+                        detail=f"{path} has {route_metrics.error_count} errors",
+                        severity="P1",
+                        cooldown_seconds=180,
+                    )
+            latency_alert_ms = getattr(settings, "latency_alert_threshold_ms", 0)
+            latency_alert_paths = getattr(settings, "latency_alert_paths", [])
+            if (
+                latency_alert_ms
+                and any(path.startswith(p) for p in latency_alert_paths)
+                and latency_ms >= latency_alert_ms
+            ):
+                alerting.maybe_trigger_alert(
+                    "latency_slo_breach",
+                    detail=f"{path} latency {latency_ms:.0f}ms exceeded {latency_alert_ms}ms",
+                    severity="P0",
+                    cooldown_seconds=180,
+                    runbook_key="latency_slo_breach",
+                )
             # Successful or handled responses are also audited.
             if not error_recorded:
                 await record_audit_event(request, response.status_code)
             if path.startswith(("/twilio", "/v1/twilio")) and response.status_code >= 400:
                 metrics.twilio_webhook_failures += 1
+                threshold_twilio = getattr(
+                    settings, "twilio_webhook_failure_alert_threshold", 0
+                )
+                if threshold_twilio and metrics.twilio_webhook_failures >= threshold_twilio:
+                    alerting.maybe_trigger_alert(
+                        "twilio_webhook_failure",
+                        detail=f"{metrics.twilio_webhook_failures} Twilio webhook errors",
+                        severity="P0",
+                        cooldown_seconds=180,
+                        runbook_key="twilio_webhook_failure",
+                    )
                 if response.status_code >= 500:
                     alerting.maybe_trigger_alert(
                         "twilio_webhook_failure",
@@ -377,6 +503,11 @@ def create_app() -> FastAPI:
             response = _finalize_response(response)
             return response
         finally:
+            try:
+                if "biz_token" in locals():
+                    business_id_ctx.reset(biz_token)
+            except Exception:
+                pass
             request_id_ctx.reset(token)
 
     @app.on_event("shutdown")

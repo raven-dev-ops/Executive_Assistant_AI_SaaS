@@ -154,6 +154,25 @@
 
       }
 
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid #2563eb;
+        outline-offset: 2px;
+      }
+      .skip-link {
+        position: absolute;
+        left: -999px;
+        top: 8px;
+        background: #2563eb;
+        color: #fff;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        z-index: 2000;
+      }
+      .skip-link:focus-visible {
+        left: 12px;
+      }
+
       h1 {
 
         font-size: 1.4rem;
@@ -232,6 +251,24 @@
 
       }
 
+      function updateTenantWarning() {
+        const warn = document.getElementById("tenant-warning");
+        if (!warn) return;
+        const memberships = Array.isArray(businessMemberships) ? businessMemberships : [];
+        if (businessId) {
+          warn.style.display = "none";
+          return;
+        }
+        if (memberships.length > 1) {
+          warn.textContent = "Select a tenant to continue";
+          warn.style.display = "inline-flex";
+        } else if (memberships.length === 0) {
+          warn.textContent = "No tenant memberships found";
+          warn.style.display = "inline-flex";
+        } else {
+          warn.style.display = "none";
+        }
+      }
 
 
       .data-strip {
@@ -2386,6 +2423,7 @@
   </head>
 
   <body>
+    <a href="#owner-kpis-content" class="skip-link">Skip to main content</a>
 
     <!-- Header -->
 
@@ -2836,6 +2874,11 @@
             <h2>Members</h2>
           </div>
           <div class="pill connected" id="active-business-pill" aria-live="polite"></div>
+          <div id="tenant-warning" class="pill warning" style="display:none; margin-left:0.5rem;" aria-live="polite">Select a tenant to continue</div>
+          <div id="tenant-switcher" style="display:none; margin-left:auto;">
+            <label class="muted" for="tenant-picker" style="font-size:0.8rem;">Tenant</label>
+            <select id="tenant-picker" style="min-width:180px;"></select>
+          </div>
         </div>
 
         <div class="quick-actions" style="margin-bottom: 0.75rem;">
@@ -3012,7 +3055,7 @@
 
           </div>
 
-          <div class="kpi-grid" id="owner-kpis-content">
+          <div class="kpi-grid" id="owner-kpis-content" tabindex="-1">
 
             <div class="loading" data-i18n="kpi_loading">Loading KPIs</div>
 
@@ -3632,8 +3675,8 @@
     <div id="feedback-overlay">
       <div id="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
         <h3 id="feedback-title">Send feedback</h3>
-        <span class="muted">Share a quick bug or idea. We include tenant context automatically.</span>
-        <form id="feedback-form">
+        <span class="muted">Share a quick bug or idea. We include tenant context automatically—please avoid sensitive personal data.</span>
+      <form id="feedback-form">
           <label>
             <small>Category</small>
             <select id="feedback-category">
@@ -4976,14 +5019,15 @@
         if (!pill) return;
         try {
           const res = await authorizedFetch("/v1/auth/me");
-          if (!res.ok) throw new Error();
-          const data = await res.json();
-          const businessId = data?.active_business_id || "default_business";
-          pill.textContent = `Active business: ${businessId}`;
-        } catch {
-          pill.textContent = "Active business: unknown";
-        }
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const businessId = data?.active_business_id || "default_business";
+        pill.textContent = `Active business: ${businessId}`;
+        updateTenantWarning();
+      } catch {
+        pill.textContent = businessId ? `Active business: ${businessId}` : "Active business: unknown";
       }
+    }
 
       async function setActiveBusiness() {
         const input = document.getElementById("active-business-input");
@@ -5195,6 +5239,8 @@
         const switcher = document.getElementById("business-switcher");
 
         const select = document.getElementById("business-select");
+        const picker = document.getElementById("tenant-picker");
+        const pickerWrap = document.getElementById("tenant-switcher");
 
         if (!switcher || !select) return;
 
@@ -5203,6 +5249,9 @@
           switcher.style.display = "none";
 
           select.innerHTML = "";
+
+          if (picker) picker.innerHTML = "";
+          if (pickerWrap) pickerWrap.style.display = "none";
 
           return;
 
@@ -5226,6 +5275,19 @@
 
           select.value = businessId;
 
+        }
+
+        if (picker && pickerWrap) {
+          picker.innerHTML =
+            '<option value="">Select tenant...</option>' +
+            businessMemberships
+              .map(
+                (m) =>
+                  `<option value="${escapeHtml(m.business_id)}">${escapeHtml(m.business_name || m.business_id)} (${escapeHtml(m.role)})</option>`
+              )
+              .join("");
+          picker.value = businessId || "";
+          pickerWrap.style.display = businessMemberships.length > 1 ? "inline-flex" : "none";
         }
 
       }
@@ -5403,7 +5465,21 @@
           }
 
           businessMemberships = Array.isArray(data?.memberships) ? data.memberships : [];
+          // In multi-tenant mode with owner token, pick the single tenant automatically,
+          // otherwise surface a clear prompt to select one before making other calls.
+          if (!businessId && businessMemberships.length === 1) {
+            businessId = businessMemberships[0].business_id;
+            localStorage.setItem("owner_active_business_id", businessId);
+            localStorage.setItem("owner_business_id", businessId);
+          } else if (!businessId && businessMemberships.length > 1) {
+            const pill = document.getElementById("active-business-pill");
+            if (pill) {
+              pill.textContent = "Select a tenant to continue";
+              pill.className = "pill warning";
+            }
+          }
 
+          updateTenantWarning();
           renderBusinessSwitcher();
 
         } catch (err) {
@@ -5459,6 +5535,7 @@
           businessId = data?.user?.active_business_id || newBusinessId;
 
           updateUserUi();
+          updateTenantWarning();
 
           loadTeam();
 
@@ -5484,11 +5561,13 @@
 
         if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
-        if (apiKey) headers["X-API-Key"] = apiKey;
+        if (apiKey && businessId) headers["X-API-Key"] = apiKey;
 
         if (ownerToken) headers["X-Owner-Token"] = ownerToken;
 
-        if (businessId) headers["X-Business-ID"] = businessId;
+        if (businessId) {
+          headers["X-Business-ID"] = businessId;
+        }
 
         return headers;
 
@@ -5497,6 +5576,17 @@
 
 
       async function authorizedFetch(path, init = {}) {
+        const pathStr = String(path || "");
+        if (
+          ownerToken &&
+          !businessId &&
+          !pathStr.startsWith("/v1/auth/me/businesses") &&
+          !pathStr.startsWith("/v1/auth/me") &&
+          !pathStr.startsWith("/v1/auth/login") &&
+          !pathStr.startsWith("/v1/auth/refresh")
+        ) {
+          throw new Error("Business ID required. Select a tenant to continue.");
+        }
 
         const baseInit = {
 
@@ -9100,17 +9190,22 @@ async function loadTeam() {
 
         document.getElementById("manage-billing")?.addEventListener("click", openBillingPortal);
 
-        document.getElementById("team-card")?.addEventListener("mouseenter", loadTeam);
+      document.getElementById("team-card")?.addEventListener("mouseenter", loadTeam);
 
-        document.getElementById("business-select")?.addEventListener("change", (e) => {
+      document.getElementById("business-select")?.addEventListener("change", (e) => {
 
-          const value = e.target.value;
+        const value = e.target.value;
 
-          switchBusiness(value);
+        switchBusiness(value);
 
-        });
+      });
 
-        document.getElementById("refresh-callbacks")?.addEventListener("click", loadCallbacks);
+      document.getElementById("tenant-picker")?.addEventListener("change", (e) => {
+        const value = e.target.value;
+        switchBusiness(value);
+      });
+
+      document.getElementById("refresh-callbacks")?.addEventListener("click", loadCallbacks);
         document.getElementById("download-callbacks")?.addEventListener("click", downloadCallbacksCsv);
         document.getElementById("set-active-business")?.addEventListener("click", setActiveBusiness);
         document.getElementById("audit-refresh")?.addEventListener("click", loadAuditLog);
@@ -9279,6 +9374,7 @@ async function loadTeam() {
     feedbackBtn.id = "feedback-fab";
     feedbackBtn.type = "button";
     feedbackBtn.textContent = "Send Feedback";
+    feedbackBtn.setAttribute("aria-label", "Send feedback");
     document.body.appendChild(feedbackBtn);
 
     const feedbackOverlay = document.getElementById("feedback-overlay");
@@ -9295,6 +9391,11 @@ async function loadTeam() {
     feedbackClose?.addEventListener("click", closeFeedback);
     feedbackOverlay?.addEventListener("click", (e) => {
       if (e.target === feedbackOverlay) closeFeedback();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeFeedback();
+      }
     });
 
     feedbackForm?.addEventListener("submit", async (evt) => {
