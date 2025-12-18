@@ -38,11 +38,12 @@ async def get_business_id(
     - If Authorization bearer token is provided, prefer its business claim.
     - If X-API-Key is provided and SQLAlchemy is available, look up the Business in the DB.
       - If not found, return 401 Unauthorized.
-    - Else, if X-Business-ID is provided, trust it (for legacy/single-tenant scenarios).
+    - Else, if X-Business-ID is provided, trust it (legacy/single-tenant scenarios only).
     - Else, fall back to the default single-tenant business ID.
 
-    In production, you can set REQUIRE_BUSINESS_API_KEY=true so that requests
-    without either an API key or explicit business ID are rejected.
+    When REQUIRE_BUSINESS_API_KEY=true, X-Business-ID alone is not accepted. Requests
+    must include either a bearer token with a business claim or a validated tenant
+    credential (X-API-Key / X-Widget-Token).
     """
     settings = get_settings()
     require_business_api_key = getattr(settings, "require_business_api_key", False)
@@ -83,6 +84,27 @@ async def get_business_id(
                 detail="Business mismatch",
             )
         return token_business_id
+
+    if (
+        require_business_api_key
+        and (x_api_key or x_widget_token)
+        and not (SQLALCHEMY_AVAILABLE and SessionLocal is not None)
+    ):
+        if _security_events_enabled(request):
+            await audit_service.record_security_event(
+                request=request,
+                event_type=audit_service.SECURITY_EVENT_AUTH_FAILURE,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                business_id=x_business_id,
+                meta={
+                    "reason": "tenant_credentials_unverifiable",
+                    "credential_type": "api_key" if x_api_key else "widget_token",
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tenant credentials cannot be validated",
+        )
 
     if (
         SQLALCHEMY_AVAILABLE
@@ -177,18 +199,13 @@ async def get_business_id(
 
     # If configured, do not allow silent fallback to the default tenant when no
     # tenant-identifying headers are present.
-    if (
-        require_business_api_key
-        and not x_business_id
-        and not x_api_key
-        and not x_widget_token
-    ):
+    if require_business_api_key and not x_api_key and not x_widget_token:
         if _security_events_enabled(request):
             await audit_service.record_security_event(
                 request=request,
                 event_type=audit_service.SECURITY_EVENT_AUTH_FAILURE,
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                business_id=None,
+                business_id=x_business_id,
                 meta={"reason": "tenant_credentials_missing"},
             )
         raise HTTPException(
