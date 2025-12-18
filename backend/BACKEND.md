@@ -30,6 +30,27 @@ For profile-based setups (stub vs DB-backed), see the env files in the repo root
 - Redis-backed (shared state): `uvicorn app.main:app --reload --env-file ..\env.dev.redis`
 
 
+Google Calendar sync (two-way hardening)
+---------------------------------------
+The backend supports best-effort two-way calendar hardening so owner edits in Google Calendar
+are reflected in CRM appointments:
+
+- Create/renew a push notification channel: `POST /v1/calendar/google/watch`
+  - Stores channel metadata + the latest `syncToken` on the tenant Business row.
+- Receive Google push notifications: `POST /v1/calendar/google/push`
+  - Resolves tenant via `X-Goog-Channel-ID` + `X-Goog-Channel-Token` and pulls changes via `syncToken`.
+- Legacy/relay webhook shape: `POST /v1/calendar/google/webhook`
+  - Accepts an explicit `event_id` + `start/end` fields and updates matching appointments.
+
+Time zones:
+
+- All appointment times are stored as UTC.
+- Inbound calendar timestamps are normalized to UTC.
+- If an inbound timestamp is *naive* (no timezone offset), it is interpreted in the tenant
+  `businesses.time_zone` (IANA name like `America/Chicago` or a fixed offset like `-06:00`),
+  falling back to `UTC`.
+
+
 Multi-instance (shared state)
 -----------------------------
 

@@ -41,6 +41,7 @@ if TYPE_CHECKING or SQLALCHEMY_AVAILABLE:
         appointment_retention_days = Column(Integer, nullable=True)
         conversation_retention_days = Column(Integer, nullable=True)
         language_code = Column(String, nullable=True)
+        time_zone = Column(String(64), nullable=True)
         max_jobs_per_day = Column(Integer, nullable=True)
         reserve_mornings_for_emergencies = Column(
             Boolean, default=False, nullable=False
@@ -73,6 +74,12 @@ if TYPE_CHECKING or SQLALCHEMY_AVAILABLE:
         gcalendar_access_token = Column(Text, nullable=True)
         gcalendar_refresh_token = Column(Text, nullable=True)
         gcalendar_token_expires_at = Column(DateTime, nullable=True)
+        gcalendar_channel_id = Column(String(255), nullable=True)
+        gcalendar_channel_token = Column(String(255), nullable=True)
+        gcalendar_resource_id = Column(String(255), nullable=True)
+        gcalendar_channel_expires_at = Column(DateTime, nullable=True)
+        gcalendar_sync_token = Column(Text, nullable=True)
+        gcalendar_last_sync_at = Column(DateTime, nullable=True)
         gmail_access_token = Column(Text, nullable=True)
         gmail_refresh_token = Column(Text, nullable=True)
         gmail_token_expires_at = Column(DateTime, nullable=True)

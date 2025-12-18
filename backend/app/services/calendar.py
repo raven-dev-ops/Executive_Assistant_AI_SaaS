@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 import logging
+import os
 from pathlib import Path
-from typing import List, Optional
+import re
+import secrets
+from typing import List, Optional, cast
+import uuid
 import httpx
 import json
 
@@ -37,11 +41,55 @@ from ..services.oauth_tokens import oauth_store, OAuthToken
 
 logger = logging.getLogger(__name__)
 
+_FIXED_OFFSET_TZ_RE = re.compile(r"^(?:UTC)?([+-])(\d{2}):?(\d{2})$")
+_UNSET = object()
+
 
 @dataclass
 class TimeSlot:
     start: datetime
     end: datetime
+
+
+def _tzinfo_from_label(label: str | None):
+    if not label:
+        return UTC
+    raw = str(label).strip()
+    if not raw:
+        return UTC
+    if raw.upper() in {"UTC", "Z"}:
+        return UTC
+    match = _FIXED_OFFSET_TZ_RE.match(raw)
+    if match:
+        sign, hours, minutes = match.groups()
+        offset_minutes = int(hours) * 60 + int(minutes)
+        if sign == "-":
+            offset_minutes *= -1
+        return timezone(timedelta(minutes=offset_minutes))
+    try:
+        from zoneinfo import ZoneInfo  # type: ignore
+
+        return ZoneInfo(raw)
+    except Exception:
+        return UTC
+
+
+def _get_business_timezone(business_id: str | None):
+    """Return the tzinfo used for tenant-local timestamps.
+
+    When business_id is provided and the database is available, this consults the
+    Business row's `time_zone`. If unavailable/missing/invalid, falls back to UTC.
+    """
+    tz_label = os.getenv("DEFAULT_TIME_ZONE", "UTC")
+    if business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session_db = SessionLocal()
+        try:
+            row = session_db.get(BusinessDB, business_id)
+        finally:
+            session_db.close()
+        if row is not None and getattr(row, "time_zone", None):
+            tz_label = str(getattr(row, "time_zone"))
+    return _tzinfo_from_label(tz_label)
 
 
 def _parse_closed_days(raw: str | None) -> set[int]:
@@ -353,11 +401,11 @@ def _build_busy_ranges(
     return ranges
 
 
-def _parse_datetime_utc(raw: str | None) -> datetime | None:
+def _parse_datetime_utc(raw: str | None, *, assume_tz=UTC) -> datetime | None:
     """Parse an ISO8601/RFC3339 datetime and normalize to UTC.
 
     - Accepts a trailing "Z" and converts to +00:00.
-    - If the timestamp is naive, assumes UTC to preserve internal invariants.
+    - If the timestamp is naive, assumes the supplied tenant timezone (defaults to UTC).
     """
     if not raw:
         return None
@@ -366,7 +414,7 @@ def _parse_datetime_utc(raw: str | None) -> datetime | None:
     except Exception:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
+        return dt.replace(tzinfo=assume_tz).astimezone(UTC)
     return dt.astimezone(UTC)
 
 
@@ -805,6 +853,318 @@ class CalendarService:
         except HttpError:
             return False
 
+    def _lookup_business_for_gcalendar_channel(
+        self,
+        channel_id: str,
+        channel_token: str,
+    ) -> str | None:
+        if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+            return None
+        session_db = SessionLocal()
+        try:
+            try:
+                row = (
+                    session_db.query(BusinessDB)
+                    .filter(
+                        BusinessDB.gcalendar_channel_id == channel_id,  # type: ignore[attr-defined]
+                        BusinessDB.gcalendar_channel_token == channel_token,  # type: ignore[attr-defined]
+                    )
+                    .one_or_none()
+                )
+            except Exception:
+                return None
+            if row is None:
+                return None
+            return str(getattr(row, "id", "")) or None
+        finally:
+            session_db.close()
+
+    def _load_gcalendar_sync_token(self, business_id: str) -> str | None:
+        if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+            return None
+        session_db = SessionLocal()
+        try:
+            row = session_db.get(BusinessDB, business_id)
+            if row is None:
+                return None
+            return cast(str | None, getattr(row, "gcalendar_sync_token", None))
+        finally:
+            session_db.close()
+
+    def _store_gcalendar_sync_state(
+        self,
+        business_id: str,
+        *,
+        sync_token: str | None | object = _UNSET,
+        last_sync_at: datetime | None | object = _UNSET,
+        channel_id: str | None | object = _UNSET,
+        channel_token: str | None | object = _UNSET,
+        resource_id: str | None | object = _UNSET,
+        channel_expires_at: datetime | None | object = _UNSET,
+    ) -> None:
+        if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+            return
+        session_db = SessionLocal()
+        try:
+            row = session_db.get(BusinessDB, business_id)
+            if row is None:
+                return
+            if sync_token is not _UNSET:
+                row.gcalendar_sync_token = cast(str | None, sync_token)  # type: ignore[assignment]
+            if last_sync_at is not _UNSET:
+                row.gcalendar_last_sync_at = cast(datetime | None, last_sync_at)  # type: ignore[assignment]
+            if channel_id is not _UNSET:
+                row.gcalendar_channel_id = cast(str | None, channel_id)  # type: ignore[assignment]
+            if channel_token is not _UNSET:
+                row.gcalendar_channel_token = cast(str | None, channel_token)  # type: ignore[assignment]
+            if resource_id is not _UNSET:
+                row.gcalendar_resource_id = cast(str | None, resource_id)  # type: ignore[assignment]
+            if channel_expires_at is not _UNSET:
+                row.gcalendar_channel_expires_at = cast(datetime | None, channel_expires_at)  # type: ignore[assignment]
+            session_db.add(row)
+            session_db.commit()
+        finally:
+            session_db.close()
+
+    def _tracked_calendar_event_ids(self, business_id: str) -> set[str]:
+        from ..repositories import appointments_repo  # local import to avoid cycles
+
+        tracked: set[str] = set()
+        try:
+            appointments = appointments_repo.list_for_business(business_id)
+        except Exception:
+            return tracked
+        for appt in appointments:
+            event_id = getattr(appt, "calendar_event_id", None)
+            if event_id:
+                tracked.add(str(event_id))
+        return tracked
+
+    async def sync_google_calendar_events(
+        self,
+        *,
+        business_id: str,
+        calendar_id: str | None = None,
+        force_full: bool = False,
+    ) -> dict:
+        """Pull Google Calendar changes via incremental syncToken (best-effort)."""
+        if self._settings.use_stub:
+            return {"processed": 0, "synced": False, "reason": "stub"}
+
+        client = self._build_user_client(business_id) or self._client
+        if not client:
+            return {"processed": 0, "synced": False, "reason": "no_client"}
+
+        cal_id = self._resolve_calendar_id(business_id, calendar_id)
+        tracked_event_ids = self._tracked_calendar_event_ids(business_id)
+        sync_token = (
+            None if force_full else self._load_gcalendar_sync_token(business_id)
+        )
+
+        processed = 0
+        next_sync_token: str | None = None
+        page_token: str | None = None
+
+        while True:
+            kwargs: dict[str, object] = {
+                "calendarId": cal_id,
+                "singleEvents": True,
+                "showDeleted": True,
+                "maxResults": 250,
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+            if sync_token:
+                kwargs["syncToken"] = sync_token
+
+            try:
+                resp = client.events().list(**kwargs).execute()
+            except HttpError as exc:
+                status_code = getattr(getattr(exc, "resp", None), "status", None)
+                if sync_token and status_code == 410:
+                    self._store_gcalendar_sync_state(business_id, sync_token=None)
+                    return await self.sync_google_calendar_events(
+                        business_id=business_id,
+                        calendar_id=calendar_id,
+                        force_full=True,
+                    )
+                logger.warning(
+                    "gcalendar_incremental_sync_failed",
+                    exc_info=True,
+                    extra={
+                        "business_id": business_id,
+                        "calendar_id": cal_id,
+                        "has_sync_token": bool(sync_token),
+                        "status": status_code,
+                    },
+                )
+                return {"processed": 0, "synced": False, "reason": "http_error"}
+            except Exception:
+                logger.warning(
+                    "gcalendar_incremental_sync_failed",
+                    exc_info=True,
+                    extra={
+                        "business_id": business_id,
+                        "calendar_id": cal_id,
+                        "has_sync_token": bool(sync_token),
+                    },
+                )
+                return {"processed": 0, "synced": False, "reason": "error"}
+
+            items = resp.get("items") if isinstance(resp, dict) else None
+            for event in items or []:
+                if not isinstance(event, dict):
+                    continue
+                event_id = event.get("id")
+                if not event_id or (
+                    tracked_event_ids and event_id not in tracked_event_ids
+                ):
+                    continue
+                start_obj = event.get("start") or {}
+                end_obj = event.get("end") or {}
+                start_raw = (
+                    start_obj.get("dateTime") or start_obj.get("date")
+                    if isinstance(start_obj, dict)
+                    else None
+                )
+                end_raw = (
+                    end_obj.get("dateTime") or end_obj.get("date")
+                    if isinstance(end_obj, dict)
+                    else None
+                )
+                updated = await self.handle_inbound_update(
+                    business_id=business_id,
+                    event_id=str(event_id),
+                    status=event.get("status"),
+                    start=str(start_raw) if start_raw else None,
+                    end=str(end_raw) if end_raw else None,
+                    summary=event.get("summary"),
+                    description=event.get("description"),
+                )
+                if updated:
+                    processed += 1
+
+            if isinstance(resp, dict) and resp.get("nextSyncToken"):
+                next_sync_token = str(resp.get("nextSyncToken"))
+            page_token = (
+                str(resp.get("nextPageToken"))
+                if isinstance(resp, dict) and resp.get("nextPageToken")
+                else None
+            )
+            if not page_token:
+                break
+
+        if next_sync_token:
+            self._store_gcalendar_sync_state(
+                business_id,
+                sync_token=next_sync_token,
+                last_sync_at=datetime.now(UTC),
+            )
+
+        return {"processed": processed, "synced": True, "sync_token": next_sync_token}
+
+    async def create_google_calendar_watch(
+        self,
+        *,
+        business_id: str,
+        webhook_url: str,
+        calendar_id: str | None = None,
+        ttl_seconds: int = 60 * 60 * 24 * 3,
+    ) -> dict:
+        """Create/renew a Google Calendar push notification channel (best-effort)."""
+        if self._settings.use_stub:
+            return {"created": False, "reason": "stub"}
+        if not (SQLALCHEMY_AVAILABLE and SessionLocal is not None):
+            return {"created": False, "reason": "no_database"}
+
+        client = self._build_user_client(business_id) or self._client
+        if not client:
+            return {"created": False, "reason": "no_client"}
+
+        cal_id = self._resolve_calendar_id(business_id, calendar_id)
+        channel_id = str(uuid.uuid4())
+        channel_token = secrets.token_hex(16)
+        body = {
+            "id": channel_id,
+            "type": "web_hook",
+            "address": webhook_url,
+            "token": channel_token,
+            "params": {"ttl": str(int(ttl_seconds))},
+        }
+        try:
+            resp = client.events().watch(calendarId=cal_id, body=body).execute()
+        except Exception:
+            logger.warning(
+                "gcalendar_watch_create_failed",
+                exc_info=True,
+                extra={"business_id": business_id, "calendar_id": cal_id},
+            )
+            return {"created": False, "reason": "watch_failed"}
+
+        expires_at = None
+        raw_exp = resp.get("expiration") if isinstance(resp, dict) else None
+        if raw_exp:
+            try:
+                expires_at = datetime.fromtimestamp(int(raw_exp) / 1000.0, tz=UTC)
+            except Exception:
+                expires_at = None
+
+        self._store_gcalendar_sync_state(
+            business_id,
+            channel_id=channel_id,
+            channel_token=channel_token,
+            resource_id=(resp.get("resourceId") if isinstance(resp, dict) else None),
+            channel_expires_at=expires_at,
+            sync_token=None,
+        )
+
+        sync_result = await self.sync_google_calendar_events(
+            business_id=business_id,
+            calendar_id=calendar_id,
+            force_full=True,
+        )
+
+        return {
+            "created": True,
+            "calendar_id": cal_id,
+            "channel_id": channel_id,
+            "channel_token": channel_token,
+            "resource_id": resp.get("resourceId") if isinstance(resp, dict) else None,
+            "channel_expires_at": expires_at.isoformat() if expires_at else None,
+            "initial_sync_processed": sync_result.get("processed", 0),
+            "sync_token_stored": bool(sync_result.get("sync_token")),
+        }
+
+    async def handle_google_push_notification(
+        self,
+        *,
+        channel_id: str | None,
+        channel_token: str | None,
+        resource_state: str | None,
+    ) -> dict:
+        """Handle a Google Calendar push notification by running an incremental sync."""
+        if not channel_id or not channel_token:
+            return {
+                "processed": 0,
+                "synced": False,
+                "reason": "missing_channel_headers",
+            }
+
+        business_id = self._lookup_business_for_gcalendar_channel(
+            channel_id=channel_id,
+            channel_token=channel_token,
+        )
+        if not business_id:
+            return {"processed": 0, "synced": False, "reason": "unknown_channel"}
+
+        force_full = (resource_state or "").lower() in {"sync", "not_exists"}
+        result = await self.sync_google_calendar_events(
+            business_id=business_id,
+            force_full=force_full,
+        )
+        result["business_id"] = business_id
+        return result
+
     async def handle_inbound_update(
         self,
         *,
@@ -829,8 +1189,9 @@ class CalendarService:
         if not appt:
             return False
 
-        start_dt = _parse_datetime_utc(start)
-        end_dt = _parse_datetime_utc(end)
+        assume_tz = _get_business_timezone(business_id)
+        start_dt = _parse_datetime_utc(start, assume_tz=assume_tz)
+        end_dt = _parse_datetime_utc(end, assume_tz=assume_tz)
         if start_dt and end_dt and start_dt >= end_dt:
             start_dt = None
             end_dt = None

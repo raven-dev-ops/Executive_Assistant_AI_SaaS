@@ -188,6 +188,34 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS widget_token_expires_at TIMESTAMP NULL"
                     )
+                if "time_zone" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS time_zone VARCHAR(64) NULL"
+                    )
+                if "gcalendar_channel_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_channel_id VARCHAR(255) NULL"
+                    )
+                if "gcalendar_channel_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_channel_token VARCHAR(255) NULL"
+                    )
+                if "gcalendar_resource_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_resource_id VARCHAR(255) NULL"
+                    )
+                if "gcalendar_channel_expires_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_channel_expires_at TIMESTAMP NULL"
+                    )
+                if "gcalendar_sync_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_sync_token TEXT NULL"
+                    )
+                if "gcalendar_last_sync_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS gcalendar_last_sync_at TIMESTAMP NULL"
+                    )
                 # Patch users table for new auth fields when using Postgres.
                 result_users = conn.exec_driver_sql(
                     """
@@ -288,6 +316,10 @@ def init_db() -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN tts_voice VARCHAR(64) NULL"
                     )
+                if "time_zone" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN time_zone VARCHAR(64) NULL"
+                    )
                 if "terms_accepted_at" not in cols:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN terms_accepted_at TIMESTAMP NULL"
@@ -319,6 +351,30 @@ def init_db() -> None:
                 if "gcalendar_token_expires_at" not in cols:
                     conn.exec_driver_sql(
                         "ALTER TABLE businesses ADD COLUMN gcalendar_token_expires_at TIMESTAMP NULL"
+                    )
+                if "gcalendar_channel_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_channel_id VARCHAR(255) NULL"
+                    )
+                if "gcalendar_channel_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_channel_token VARCHAR(255) NULL"
+                    )
+                if "gcalendar_resource_id" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_resource_id VARCHAR(255) NULL"
+                    )
+                if "gcalendar_channel_expires_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_channel_expires_at TIMESTAMP NULL"
+                    )
+                if "gcalendar_sync_token" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_sync_token TEXT NULL"
+                    )
+                if "gcalendar_last_sync_at" not in cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE businesses ADD COLUMN gcalendar_last_sync_at TIMESTAMP NULL"
                     )
                 if "gmail_access_token" not in cols:
                     conn.exec_driver_sql(
