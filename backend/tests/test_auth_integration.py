@@ -1,3 +1,5 @@
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.db import SessionLocal, SQLALCHEMY_AVAILABLE
@@ -133,7 +135,8 @@ def test_auth_callback_rejects_invalid_state_when_not_testing(monkeypatch) -> No
     assert resp.json()["detail"] == "Invalid state"
 
 
-def test_auth_callback_rejects_provider_mismatch(monkeypatch) -> None:
+@pytest.mark.anyio
+async def test_auth_callback_rejects_provider_mismatch(monkeypatch) -> None:
     from app.routers import auth_integration
     from app.services.oauth_state import encode_state
 
@@ -157,9 +160,13 @@ def test_auth_callback_rejects_provider_mismatch(monkeypatch) -> None:
 
     business_id = _get_default_business_id()
     state = encode_state(business_id, "gmail", "secret")
-    resp = client.get(
-        "/auth/gcalendar/callback",
-        params={"state": state, "code": "dummy"},
-    )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "State provider mismatch"
+    with pytest.raises(HTTPException) as excinfo:
+        await auth_integration.auth_callback(
+            provider="gcalendar",
+            state=state,
+            code="dummy",
+            error=None,
+        )
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail == "State provider mismatch"
