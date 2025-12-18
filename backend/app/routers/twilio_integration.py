@@ -760,6 +760,8 @@ async def twilio_voice(
                 conversations_repo.append_message(conv.id, role="user", text=text)
 
         if silent_turn and getattr(session, "no_input_count", 0) == 1:
+            session.updated_at = datetime.now(UTC)
+            sessions.session_store.save(session)
             if language_code == "es":
                 prompt = "No alcancAc a escucharte bien. Por favor di tu respuesta o marca 1 para sA- o 2 para no."
             else:
@@ -805,6 +807,8 @@ async def twilio_voice(
                     existing.last_result = None
             session.stage = "COMPLETED"
             session.status = "PENDING_FOLLOWUP"
+            session.updated_at = datetime.now(UTC)
+            sessions.session_store.save(session)
             if language_code == "es":
                 reply_text = "Tengo problemas para escucharte. Te enviarAc al buzA3n de voz para que dejes tu nombre y direcciA3n."
             else:
@@ -1332,6 +1336,8 @@ async def twilio_voice_assistant(
         conversations_repo.append_message(conv.id, role="user", text=text)
 
     if silent_turn and getattr(session, "no_input_count", 0) == 1:
+        session.updated_at = datetime.now(UTC)
+        sessions.session_store.save(session)
         if language_code == "es":
             reply_text = "No escuchA© tu respuesta. Por favor di tu respuesta o presiona 1 para sA- o 2 para no."
         else:
@@ -1374,6 +1380,8 @@ async def twilio_voice_assistant(
 
         session.stage = "COMPLETED"
         session.status = "PENDING_FOLLOWUP"
+        session.updated_at = datetime.now(UTC)
+        sessions.session_store.save(session)
         if language_code == "es":
             reply_text = "Tengo problemas para escucharte. Te transferirAc para que dejes un breve buzA3n de voz con tu nombre y direcciA3n."
         else:
@@ -1636,6 +1644,8 @@ async def twilio_voice_stream(
     else:
         session_obj.no_input_count = 0  # type: ignore[attr-defined]
     if silent_turn and getattr(session_obj, "no_input_count", 0) == 1:
+        session_obj.updated_at = datetime.now(UTC)
+        sessions.session_store.save(session_obj)
         if language_code == "es":
             prompt = "No alcanzo a escucharte bien. Por favor di tu respuesta o marca 1 para sí o 2 para no."
         else:
@@ -1675,6 +1685,8 @@ async def twilio_voice_stream(
                 existing.last_result = None
         session_obj.stage = "COMPLETED"
         session_obj.status = "PENDING_FOLLOWUP"
+        session_obj.updated_at = datetime.now(UTC)
+        sessions.session_store.save(session_obj)
         fallback_reply = (
             "Tengo problemas para escucharte. Te enviaremos un seguimiento para programar tu servicio."
             if language_code == "es"

@@ -57,6 +57,8 @@ class SessionStore(Protocol):
 
     def get(self, session_id: str) -> CallSession | None: ...
 
+    def save(self, session: CallSession) -> None: ...
+
     def end(self, session_id: str) -> None: ...
 
 
@@ -86,6 +88,9 @@ class InMemorySessionStore:
 
     def get(self, session_id: str) -> CallSession | None:
         return self._sessions.get(session_id)
+
+    def save(self, session: CallSession) -> None:
+        self._sessions[session.id] = session
 
     def end(self, session_id: str) -> None:
         session = self._sessions.pop(session_id, None)
@@ -146,6 +151,34 @@ class RedisSessionStore:
             return None
         created_at = _parse_iso_datetime(data.get("created_at"))
         updated_at = _parse_iso_datetime(data.get("updated_at"))
+        emergency_confidence_raw = data.get("emergency_confidence", 0.0)
+        try:
+            emergency_confidence = float(emergency_confidence_raw or 0.0)
+        except Exception:
+            emergency_confidence = 0.0
+        emergency_reasons = data.get("emergency_reasons")
+        if isinstance(emergency_reasons, list):
+            emergency_reasons_list = [
+                str(item) for item in emergency_reasons if item is not None
+            ]
+        elif emergency_reasons:
+            emergency_reasons_list = [str(emergency_reasons)]
+        else:
+            emergency_reasons_list = []
+        intent_confidence_raw = data.get("intent_confidence")
+        try:
+            intent_confidence = (
+                float(intent_confidence_raw)
+                if intent_confidence_raw is not None
+                else None
+            )
+        except Exception:
+            intent_confidence = None
+        no_input_count_raw = data.get("no_input_count", 0)
+        try:
+            no_input_count = int(no_input_count_raw or 0)
+        except Exception:
+            no_input_count = 0
         return CallSession(
             id=data.get("id", session_id),
             caller_phone=data.get("caller_phone"),
@@ -154,15 +187,25 @@ class RedisSessionStore:
             problem_summary=data.get("problem_summary"),
             requested_time=data.get("requested_time"),
             is_emergency=bool(data.get("is_emergency", False)),
+            emergency_confidence=emergency_confidence,
+            emergency_reasons=emergency_reasons_list,
+            emergency_confirmation_pending=bool(
+                data.get("emergency_confirmation_pending", False)
+            ),
+            intent=data.get("intent"),
+            intent_confidence=intent_confidence,
             stage=data.get("stage", "GREETING"),
             status=data.get("status", "ACTIVE"),
             business_id=data.get("business_id", "default_business"),
             channel=data.get("channel", "phone"),
             lead_source=data.get("lead_source"),
-            no_input_count=int(data.get("no_input_count", 0)),
+            no_input_count=no_input_count,
             created_at=created_at or datetime.now(UTC),
             updated_at=updated_at or datetime.now(UTC),
         )
+
+    def save(self, session: CallSession) -> None:
+        self._persist(session)
 
     def end(self, session_id: str) -> None:
         # Mark the session as completed if it exists and persist the update.
@@ -182,6 +225,11 @@ class RedisSessionStore:
             "problem_summary": session.problem_summary,
             "requested_time": session.requested_time,
             "is_emergency": session.is_emergency,
+            "emergency_confidence": session.emergency_confidence,
+            "emergency_reasons": session.emergency_reasons,
+            "emergency_confirmation_pending": session.emergency_confirmation_pending,
+            "intent": session.intent,
+            "intent_confidence": session.intent_confidence,
             "stage": session.stage,
             "status": session.status,
             "business_id": session.business_id,

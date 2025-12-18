@@ -7,7 +7,10 @@ data:
   GOOGLE_CALENDAR_ID: "primary"
   CALENDAR_USE_STUB: "true"
   REQUIRE_BUSINESS_API_KEY: "true"
-  SESSION_STORE_BACKEND: "memory"
+  # Multi-replica deployments require shared state (sessions + Twilio call routing).
+  SESSION_STORE_BACKEND: "redis"
+  TWILIO_STATE_BACKEND: "redis"
+  REDIS_URL: "redis://ai-telephony-redis:6379/0"
   DEFAULT_LANGUAGE_CODE: "en"
   SMS_PROVIDER: "twilio"
   VERIFY_TWILIO_SIGNATURES: "true"

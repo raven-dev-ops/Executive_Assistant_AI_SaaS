@@ -15,6 +15,7 @@ from .nlu import (
     classify_intent_with_metadata,
 )
 from .email_service import email_service
+from . import sessions
 from . import subscription as subscription_service
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
@@ -404,6 +405,17 @@ class ConversationManager:
         try:
             result = await self._handle_input_impl(session, text)
             success = True
+            try:
+                sessions.session_store.save(session)
+            except Exception:
+                logger.warning(
+                    "conversation_session_save_failed",
+                    exc_info=True,
+                    extra={
+                        "business_id": getattr(session, "business_id", None),
+                        "session_id": session.id,
+                    },
+                )
             return result
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000.0
