@@ -188,7 +188,23 @@ def create_app() -> FastAPI:
                 "multi_tenant_weak_auth_configuration",
                 extra=extra,
             )
-    env_label = os.getenv("ENVIRONMENT", "").lower()
+    env_label = os.getenv("ENVIRONMENT", "dev").lower()
+    if (
+        env_label not in {"dev", "development", "local", "test", "testing"}
+        and env_label not in {"prod", "production"}
+        and multi_tenant
+        and not settings.require_business_api_key
+    ):
+        extra = {
+            "require_business_api_key": False,
+            "multi_tenant_mode": True,
+            "business_count": business_count,
+            "environment": env_label,
+        }
+        logger.error("multi_tenant_require_business_api_key_enforced", extra=extra)
+        raise RuntimeError(
+            "REQUIRE_BUSINESS_API_KEY must be true when multiple tenants exist in non-dev environments"
+        )
     if env_label in {"prod", "production"}:
         errors: list[str] = []
         if not getattr(settings, "owner_dashboard_token", None):

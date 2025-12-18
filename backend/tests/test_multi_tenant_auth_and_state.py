@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app import config, main
 from app import deps
 from app.db import SQLALCHEMY_AVAILABLE, SessionLocal
 from app.db_models import BusinessDB
@@ -34,6 +35,66 @@ async def test_get_business_id_requires_tenant_credentials_when_flag_enabled(
 
     assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
     assert "Missing tenant credentials" in exc_info.value.detail
+
+
+@pytest.mark.anyio
+async def test_get_business_id_rejects_x_business_id_when_flag_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(deps, "get_settings", lambda: _RequireKeySettings())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await deps.get_business_id(
+            x_business_id="tenant-a",
+            x_api_key=None,
+            x_widget_token=None,
+        )
+
+    assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+    assert exc_info.value.detail == "Missing tenant credentials"
+
+
+@pytest.mark.skipif(
+    not SQLALCHEMY_AVAILABLE or SessionLocal is None,
+    reason="Multi-tenant startup guardrails require database support",
+)
+def test_create_app_fails_fast_for_multi_tenant_weak_auth_in_non_dev_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    business_id = "guardrail_multi_tenant"
+    session = SessionLocal()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            row = BusinessDB(  # type: ignore[call-arg]
+                id=business_id,
+                name="Guardrail Multi Tenant",
+                api_key="guardrail-api-key",
+                status="ACTIVE",
+            )
+            session.add(row)
+            session.commit()
+    finally:
+        session.close()
+
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("REQUIRE_BUSINESS_API_KEY", "false")
+    config.get_settings.cache_clear()
+    deps.get_settings.cache_clear()
+
+    try:
+        with pytest.raises(RuntimeError) as exc_info:
+            main.create_app()
+        assert "REQUIRE_BUSINESS_API_KEY" in str(exc_info.value)
+    finally:
+        session = SessionLocal()
+        try:
+            row = session.get(BusinessDB, business_id)
+            if row is not None:
+                session.delete(row)
+                session.commit()
+        finally:
+            session.close()
 
 
 def test_telephony_inbound_rejects_when_require_business_key_and_no_tenant_headers(
