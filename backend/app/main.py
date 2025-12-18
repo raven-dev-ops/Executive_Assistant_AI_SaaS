@@ -16,6 +16,7 @@ from .db import SQLALCHEMY_AVAILABLE, SessionLocal, init_db
 from .logging_config import configure_logging
 from .metrics import RouteMetrics, metrics
 from .context import request_id_ctx
+from . import observability
 from .services.audit import record_audit_event
 from .services.retention_purge import start_retention_scheduler
 from .services.rate_limit import RateLimiter, RateLimitError
@@ -69,6 +70,7 @@ def _is_business_locked(business_id: str) -> bool:
 
 def create_app() -> FastAPI:
     configure_logging()
+    observability.init_sentry()
     try:
         init_db()
     except Exception:
@@ -257,6 +259,11 @@ def create_app() -> FastAPI:
         rid = incoming_rid or str(uuid.uuid4())
         token = request_id_ctx.set(rid)
         request.state.request_id = rid
+        observability.set_request_context(
+            request_id=rid,
+            path=path,
+            method=request.method,
+        )
 
         try:
             metrics.total_requests += 1
@@ -290,9 +297,38 @@ def create_app() -> FastAPI:
                     # Best-effort resolve tenant so per-tenant buckets can be enforced.
                     from . import deps as _deps  # local import
 
-                    business_id = await _deps.get_business_id(request)  # type: ignore[arg-type]
+                    header_business_id = request.headers.get("X-Business-ID")
+                    header_api_key = request.headers.get("X-API-Key")
+                    header_widget_token = request.headers.get("X-Widget-Token")
+                    header_auth = request.headers.get("Authorization")
+                    if path.startswith(
+                        (
+                            "/twilio/",
+                            "/v1/twilio/",
+                            "/telephony/",
+                            "/v1/telephony/",
+                            "/v1/voice/",
+                        )
+                    ):
+                        business_id = (
+                            request.query_params.get("business_id")
+                            or header_business_id
+                        )
+                    if not business_id:
+                        business_id = await _deps.get_business_id(
+                            x_business_id=header_business_id,
+                            x_api_key=header_api_key,
+                            x_widget_token=header_widget_token,
+                            authorization=header_auth,
+                        )
                 except Exception:
                     business_id = None
+                observability.set_request_context(
+                    request_id=rid,
+                    path=path,
+                    method=request.method,
+                    business_id=business_id,
+                )
 
                 # Lockdown mode halts automation/widget/voice flows per tenant.
                 if business_id and _is_business_locked(business_id):
@@ -348,6 +384,7 @@ def create_app() -> FastAPI:
                 metrics.total_errors += 1
                 route_metrics.error_count += 1
                 await record_audit_event(request, 500)
+                observability.capture_exception(exc)
                 logger.exception(
                     "unhandled_request_exception", exc_info=True, extra={"path": path}
                 )
@@ -394,6 +431,11 @@ def create_app() -> FastAPI:
             return response
         finally:
             request_id_ctx.reset(token)
+
+    if observability.sentry_enabled():
+        from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
+
+        app.add_middleware(SentryAsgiMiddleware)
 
     @app.on_event("shutdown")
     async def _shutdown_services() -> None:  # pragma: no cover - wiring only

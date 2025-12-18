@@ -39,3 +39,29 @@ docker build -t ai-telephony-backend ./backend
 docker run --rm -p 8000:8000 ai-telephony-backend
 ```
 
+
+Observability (Sentry + Uptime Checks)
+-------------------------------------
+
+**Error tracking/APM (Sentry)**
+
+Set these environment variables (Sentry is enabled when `SENTRY_DSN` is set):
+
+- `SENTRY_DSN` (required to enable)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional, `0` disables APM)
+- `SENTRY_ENVIRONMENT` (optional; falls back to `ENVIRONMENT`)
+- `SENTRY_RELEASE` (optional; can also use `GIT_SHA`)
+- `SENTRY_ENABLED=false` (optional hard-disable)
+
+Captured exceptions include `request_id` and (when available) `business_id` tags.
+
+**Uptime checks (GitHub Actions)**
+
+Configure repo secrets for `.github/workflows/uptime-checks.yml`:
+
+- `UPTIME_BASE_URL` (e.g., `https://your-api.example.com`)
+- `UPTIME_BUSINESS_ID` (an active/onboarded tenant for Twilio + widget checks)
+- `UPTIME_TWILIO_AUTH_TOKEN` (to sign the synthetic Twilio webhook request)
+- `UPTIME_WIDGET_TOKEN` (optional alternative to `X-Business-ID` for the widget check)
+- `SLACK_WEBHOOK` (optional notification on workflow failure)
+

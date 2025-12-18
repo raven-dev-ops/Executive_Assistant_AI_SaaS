@@ -1,0 +1,145 @@
+name: Uptime Checks (Twilio + Widget)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *" # every 15 minutes
+
+permissions:
+  contents: read
+
+jobs:
+  uptime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether to run uptime checks
+        id: gate
+        env:
+          UPTIME_BASE_URL: ${{ secrets.UPTIME_BASE_URL }}
+        run: |
+          if [ -n "${UPTIME_BASE_URL}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "UPTIME_BASE_URL not set; skipping uptime checks."
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run uptime checks
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          UPTIME_BASE_URL: ${{ secrets.UPTIME_BASE_URL }}
+          UPTIME_BUSINESS_ID: ${{ secrets.UPTIME_BUSINESS_ID }}
+          UPTIME_WIDGET_TOKEN: ${{ secrets.UPTIME_WIDGET_TOKEN }}
+          UPTIME_TWILIO_AUTH_TOKEN: ${{ secrets.UPTIME_TWILIO_AUTH_TOKEN }}
+        run: |
+          python - <<'PY'
+          import base64
+          import hashlib
+          import hmac
+          import os
+          import sys
+          import uuid
+          from urllib.parse import urlsplit, urlunsplit
+
+          import requests
+
+          base_url = (os.getenv("UPTIME_BASE_URL") or "").strip().rstrip("/")
+          business_id = (os.getenv("UPTIME_BUSINESS_ID") or "").strip()
+          widget_token = (os.getenv("UPTIME_WIDGET_TOKEN") or "").strip()
+          twilio_auth_token = (os.getenv("UPTIME_TWILIO_AUTH_TOKEN") or "").strip()
+
+          if not base_url:
+            print("UPTIME_BASE_URL not set; skipping.")
+            sys.exit(0)
+
+          failures = []
+
+          def twilio_signature(url: str, query_params: dict[str, str], form_params: dict[str, str], auth_token: str) -> str:
+            parts = urlsplit(url)
+            url_no_query = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+            combined: dict[str, str] = {}
+            combined.update({k: str(v) for k, v in query_params.items()})
+            combined.update({k: str(v) for k, v in form_params.items()})
+            data = url_no_query + "".join(f"{k}{combined[k]}" for k in sorted(combined.keys()))
+            digest = hmac.new(auth_token.encode("utf-8"), data.encode("utf-8"), hashlib.sha1).digest()
+            return base64.b64encode(digest).decode("utf-8")
+
+          def check_healthz() -> None:
+            url = f"{base_url}/healthz"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+              raise RuntimeError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
+
+          def check_widget_business() -> None:
+            if not (business_id or widget_token):
+              print("UPTIME_BUSINESS_ID/UPTIME_WIDGET_TOKEN not set; skipping widget check.")
+              return
+            url = f"{base_url}/v1/widget/business"
+            headers = {}
+            if widget_token:
+              headers["X-Widget-Token"] = widget_token
+            else:
+              headers["X-Business-ID"] = business_id
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+              raise RuntimeError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
+            data = resp.json()
+            if "id" not in data:
+              raise RuntimeError(f"GET {url} -> missing id in response")
+
+          def check_twilio_voice() -> None:
+            if not (business_id and twilio_auth_token):
+              print("UPTIME_BUSINESS_ID/UPTIME_TWILIO_AUTH_TOKEN not set; skipping Twilio voice check.")
+              return
+            url = f"{base_url}/v1/twilio/voice"
+            query = {"business_id": business_id, "uptime_check": "1"}
+            form = {"CallSid": f"uptime-{uuid.uuid4()}"}
+            sig = twilio_signature(url, query, form, twilio_auth_token)
+            headers = {"X-Twilio-Signature": sig}
+            resp = requests.post(url, params=query, data=form, headers=headers, timeout=10)
+            if resp.status_code != 200:
+              raise RuntimeError(f"POST {url} -> {resp.status_code}: {resp.text[:200]}")
+            if "<Response" not in resp.text:
+              raise RuntimeError("Twilio voice response missing <Response")
+
+          checks = [
+            ("healthz", check_healthz),
+            ("widget_business", check_widget_business),
+            ("twilio_voice", check_twilio_voice),
+          ]
+
+          for name, fn in checks:
+            try:
+              fn()
+              print(f"ok: {name}")
+            except Exception as exc:
+              failures.append(f"{name}: {exc}")
+
+          if failures:
+            print("Uptime checks failed:")
+            for item in failures:
+              print("-", item)
+            sys.exit(1)
+          print("Uptime checks passed.")
+          PY
+
+      - name: Notify Slack on failure
+        if: failure() && env.SLACK_WEBHOOK != ''
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":rotating_light: Uptime checks failed. See GitHub Actions run logs for details.\"}" \
+            "$SLACK_WEBHOOK"
