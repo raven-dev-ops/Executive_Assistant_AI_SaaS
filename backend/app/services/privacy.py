@@ -5,7 +5,7 @@ from typing import Iterable
 
 
 # Basic PII patterns: phone, email, 9+ digit numbers (SSN-like), and cards (13-19 digits).
-_PHONE_RE = re.compile(r"\+?\d[\d\-\s\(\)]{6,}\d")
+_PHONE_RE = re.compile(r"(?<![0-9A-Za-z])\+?\d(?:[\d\-\s\(\)]*\d){9,}(?![0-9A-Za-z])")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _SSN_RE = re.compile(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b")
 _CARD_RE = re.compile(r"\b\d{13,19}\b")

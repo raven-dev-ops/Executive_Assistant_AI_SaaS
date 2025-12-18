@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -97,3 +97,124 @@ def test_admin_export_feedback():
     data = resp.json()
     assert "feedback" in data
     assert any(item["summary"] == "Export test" for item in data["feedback"])
+
+
+def test_submit_feedback_sanitizes_url_and_redacts_steps():
+    _clear_feedback()
+    summary = f"URL sanitize {uuid4()}"
+    resp = client.post(
+        "/v1/feedback",
+        headers={"X-Owner-Token": "test-owner"},
+        json={
+            "summary": summary,
+            "category": "bug",
+            "steps": "Email me at test@example.com",
+            "conversation_id": "conv-123",
+            "session_id": "sess-123",
+            "url": "https://example.com/path?token=abc#frag",
+        },
+    )
+    assert resp.status_code == 200
+
+    session = SessionLocal()
+    try:
+        row = (
+            session.query(FeedbackDB)
+            .filter(FeedbackDB.summary == summary)
+            .one_or_none()
+        )
+        assert row is not None
+        assert row.source == "owner_dashboard"
+        assert row.url == "https://example.com/path"
+        assert row.steps is not None
+        assert "@" not in row.steps
+        assert row.conversation_id == "conv-123"
+        assert row.session_id == "sess-123"
+    finally:
+        session.close()
+
+
+def test_admin_export_feedback_filters_and_rejects_bad_since():
+    _clear_feedback()
+    now = datetime.now(UTC)
+    session = SessionLocal()
+    try:
+        session.add(
+            FeedbackDB(  # type: ignore[call-arg]
+                created_at=now,
+                business_id="default_business",
+                source="test",
+                category="bug",
+                summary="Bug new",
+                steps=None,
+                expected=None,
+                actual=None,
+                call_sid=None,
+                conversation_id=None,
+                session_id=None,
+                request_id=None,
+                url=None,
+                contact=None,
+                user_agent=None,
+            )
+        )
+        session.add(
+            FeedbackDB(  # type: ignore[call-arg]
+                created_at=now - timedelta(days=2),
+                business_id="default_business",
+                source="test",
+                category="bug",
+                summary="Bug old",
+                steps=None,
+                expected=None,
+                actual=None,
+                call_sid=None,
+                conversation_id=None,
+                session_id=None,
+                request_id=None,
+                url=None,
+                contact=None,
+                user_agent=None,
+            )
+        )
+        session.add(
+            FeedbackDB(  # type: ignore[call-arg]
+                created_at=now,
+                business_id="default_business",
+                source="test",
+                category="idea",
+                summary="Idea new",
+                steps=None,
+                expected=None,
+                actual=None,
+                call_sid=None,
+                conversation_id=None,
+                session_id=None,
+                request_id=None,
+                url=None,
+                contact=None,
+                user_agent=None,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    settings = get_settings()
+    headers = (
+        {"X-Admin-API-Key": settings.admin_api_key}
+        if getattr(settings, "admin_api_key", None)
+        else {}
+    )
+
+    resp = client.get(
+        "/v1/admin/feedback?category=bug&since_minutes=60", headers=headers
+    )
+    assert resp.status_code == 200
+    summaries = {item["summary"] for item in resp.json().get("feedback", [])}
+    assert "Bug new" in summaries
+    assert "Bug old" not in summaries
+    assert "Idea new" not in summaries
+
+    bad = client.get("/v1/admin/feedback?since=not-a-date", headers=headers)
+    assert bad.status_code == 400
