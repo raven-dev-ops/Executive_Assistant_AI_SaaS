@@ -478,18 +478,22 @@ def create_app() -> FastAPI:
             # Successful or handled responses are also audited.
             if not error_recorded:
                 await record_audit_event(request, response.status_code)
-            if (
-                path.startswith(("/twilio", "/v1/twilio"))
-                and response.status_code >= 400
-            ):
-                metrics.twilio_webhook_failures += 1
-                if response.status_code >= 500:
-                    alerting.maybe_trigger_alert(
-                        "twilio_webhook_failure",
-                        detail=f"{path} status {response.status_code}",
-                        severity="P0",
-                        cooldown_seconds=180,
-                    )
+            is_twilio_webhook = (
+                path.startswith(("/twilio", "/v1/twilio")) or path == "/fallback"
+            )
+            if is_twilio_webhook:
+                metrics.twilio_webhook_requests += 1
+                if response.status_code < 400:
+                    metrics.twilio_webhook_accepted += 1
+                else:
+                    metrics.twilio_webhook_failures += 1
+                    if response.status_code >= 500:
+                        alerting.maybe_trigger_alert(
+                            "twilio_webhook_failure",
+                            detail=f"{path} status {response.status_code}",
+                            severity="P0",
+                            cooldown_seconds=180,
+                        )
             if path.startswith("/v1/calendar") and response.status_code >= 400:
                 metrics.calendar_webhook_failures += 1
                 if response.status_code >= 500:
@@ -631,6 +635,26 @@ def create_app() -> FastAPI:
         emit(
             "ai_telephony_twilio_webhook_failures",
             float(metrics.twilio_webhook_failures),
+        )
+        emit(
+            "ai_telephony_twilio_webhook_requests",
+            float(metrics.twilio_webhook_requests),
+        )
+        emit(
+            "ai_telephony_twilio_webhook_accepted",
+            float(metrics.twilio_webhook_accepted),
+        )
+        emit(
+            "ai_telephony_billing_webhook_requests",
+            float(metrics.billing_webhook_requests),
+        )
+        emit(
+            "ai_telephony_billing_webhook_accepted",
+            float(metrics.billing_webhook_accepted),
+        )
+        emit(
+            "ai_telephony_billing_webhook_failures",
+            float(metrics.billing_webhook_failures),
         )
         emit(
             "ai_telephony_voice_session_requests", float(metrics.voice_session_requests)

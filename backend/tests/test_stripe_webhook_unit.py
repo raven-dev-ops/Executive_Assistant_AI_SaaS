@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import stripe_webhook
+from app.services.idempotency import InMemoryIdempotencyStore
 
 
 def _set_tolerance(monkeypatch, seconds: int) -> None:
@@ -78,16 +79,20 @@ def test_verify_stripe_signature_rejects_stale_timestamp(monkeypatch) -> None:
 
 
 def test_check_replay_blocks_duplicate_and_purges(monkeypatch) -> None:
-    stripe_webhook._seen_events.clear()
-    try:
-        monkeypatch.setattr(stripe_webhook.time, "time", lambda: 1_000.0)
-        stripe_webhook._seen_events["evt_old"] = 0.0
+    store = InMemoryIdempotencyStore()
+    monkeypatch.setattr(stripe_webhook, "idempotency_store", store)
 
+    from app.services import idempotency as idempotency_service
+
+    monkeypatch.setattr(idempotency_service.time, "time", lambda: 0.0)
+    assert store.set_if_new("stripe_event:evt_old", ttl_seconds=10) is True
+
+    monkeypatch.setattr(idempotency_service.time, "time", lambda: 1_000.0)
+    stripe_webhook.check_replay("evt_new", window_seconds=10)
+
+    # Old key should have expired and not block.
+    stripe_webhook.check_replay("evt_old", window_seconds=10)
+
+    with pytest.raises(stripe_webhook.StripeReplayError) as excinfo:
         stripe_webhook.check_replay("evt_new", window_seconds=10)
-        assert "evt_old" not in stripe_webhook._seen_events
-
-        with pytest.raises(stripe_webhook.StripeReplayError) as excinfo:
-            stripe_webhook.check_replay("evt_new", window_seconds=10)
-        assert str(excinfo.value) == "replayed_event"
-    finally:
-        stripe_webhook._seen_events.clear()
+    assert str(excinfo.value) == "replayed_event"
