@@ -236,11 +236,6 @@ async def ensure_business_active(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Business is suspended",
             )
-        if row is not None and getattr(row, "lockdown_mode", False):
-            raise HTTPException(
-                status_code=status.HTTP_423_LOCKED,
-                detail="Business is in lockdown mode",
-            )
     return business_id
 
 

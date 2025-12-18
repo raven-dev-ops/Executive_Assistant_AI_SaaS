@@ -36,11 +36,11 @@ class RateLimiter:
             lambda: TokenBucket(tokens=self.burst, last_refill=time.time())
         )
 
-    def check(self, key: str) -> None:
+    def check(self, key: str, *, ip: str | None = None) -> None:
         """Raise RateLimitError when the caller exceeds their bucket."""
         now = time.time()
-        ip = key.split(":", 1)[0]
-        if ip in self.whitelist_ips:
+        ip_value = ip or key.split(":", 1)[0]
+        if ip_value in self.whitelist_ips:
             return
         if self.disabled:
             return

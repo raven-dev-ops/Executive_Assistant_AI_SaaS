@@ -333,8 +333,19 @@ def create_app() -> FastAPI:
                     )
                 return resp
 
-            guarded_prefixes = (
+            rate_limit_prefixes = (
                 "/v1/auth",
+                "/v1/chat",
+                "/v1/feedback",
+                "/v1/public",
+                "/v1/widget",
+                "/twilio/",
+                "/v1/twilio/",
+                "/telephony/",
+                "/v1/telephony/",
+                "/v1/voice/",
+            )
+            lockdown_prefixes = (
                 "/v1/chat",
                 "/v1/widget",
                 "/twilio/",
@@ -343,8 +354,16 @@ def create_app() -> FastAPI:
                 "/v1/telephony/",
                 "/v1/voice/",
             )
-            if path not in exempt_paths and path.startswith(guarded_prefixes):
-                client_ip = request.client.host if request.client else "unknown"
+            if path not in exempt_paths and path.startswith(rate_limit_prefixes):
+                forwarded_for = request.headers.get("X-Forwarded-For")
+                if forwarded_for:
+                    client_ip = forwarded_for.split(",", 1)[0].strip() or "unknown"
+                else:
+                    real_ip = request.headers.get("X-Real-IP")
+                    if real_ip:
+                        client_ip = real_ip.strip() or "unknown"
+                    else:
+                        client_ip = request.client.host if request.client else "unknown"
                 business_id = None
                 try:
                     # Best-effort resolve tenant so per-tenant buckets can be enforced.
@@ -391,7 +410,11 @@ def create_app() -> FastAPI:
                 )
 
                 # Lockdown mode halts automation/widget/voice flows per tenant.
-                if business_id and _is_business_locked(business_id):
+                if (
+                    business_id
+                    and path.startswith(lockdown_prefixes)
+                    and _is_business_locked(business_id)
+                ):
                     metrics.total_errors += 1
                     route_metrics.error_count += 1
                     response = Response(
@@ -407,8 +430,8 @@ def create_app() -> FastAPI:
                 bucket_key = f"{business_id or 'anon'}:{api_key or 'anon'}"
                 ip_key = f"ip:{client_ip}"
                 try:
-                    rate_limiter.check(key=bucket_key)
-                    rate_limiter.check(key=ip_key)
+                    rate_limiter.check(key=bucket_key, ip=client_ip)
+                    rate_limiter.check(key=ip_key, ip=client_ip)
                 except RateLimitError as exc:
                     metrics.total_errors += 1
                     route_metrics.error_count += 1
@@ -427,6 +450,32 @@ def create_app() -> FastAPI:
                     metrics.rate_limit_blocks_by_ip[ip_metric_key] = (
                         metrics.rate_limit_blocks_by_ip.get(ip_metric_key, 0) + 1
                     )
+                    route_key = "other"
+                    if path.startswith("/v1/widget"):
+                        route_key = "/v1/widget"
+                    elif path.startswith("/v1/chat"):
+                        route_key = "/v1/chat"
+                    elif path.startswith("/v1/auth"):
+                        route_key = "/v1/auth"
+                    elif path.startswith("/v1/public"):
+                        route_key = "/v1/public"
+                    elif path.startswith("/v1/feedback"):
+                        route_key = "/v1/feedback"
+                    elif path.startswith(("/twilio/", "/v1/twilio/")):
+                        route_key = "/twilio"
+                    elif path.startswith(("/telephony/", "/v1/telephony/")):
+                        route_key = "/telephony"
+                    elif path.startswith("/v1/voice/"):
+                        route_key = "/v1/voice"
+
+                    metrics.rate_limit_blocks_by_route[route_key] = (
+                        metrics.rate_limit_blocks_by_route.get(route_key, 0) + 1
+                    )
+                    biz_key = business_id or "unknown"
+                    per_route = metrics.rate_limit_blocks_by_route_business.setdefault(
+                        route_key, {}
+                    )
+                    per_route[biz_key] = per_route.get(biz_key, 0) + 1
                     response = Response(
                         status_code=429,
                         content="Rate limit exceeded. Please retry later.",
@@ -623,6 +672,10 @@ def create_app() -> FastAPI:
 
         emit("ai_telephony_total_requests", float(metrics.total_requests))
         emit("ai_telephony_total_errors", float(metrics.total_errors))
+        emit(
+            "ai_telephony_rate_limit_blocks_total",
+            float(metrics.rate_limit_blocks_total),
+        )
         emit(
             "ai_telephony_appointments_scheduled", float(metrics.appointments_scheduled)
         )

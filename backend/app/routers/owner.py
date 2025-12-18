@@ -374,6 +374,7 @@ class OwnerBusinessResponse(BaseModel):
     owner_name: str | None = None
     owner_email: str | None = None
     owner_profile_image_url: str | None = None
+    lockdown_mode: bool | None = None
     max_jobs_per_day: int | None = None
     reserve_mornings_for_emergencies: bool | None = None
     travel_buffer_minutes: int | None = None
@@ -436,6 +437,7 @@ def get_owner_business(
     owner_name: str | None = None
     owner_email: str | None = None
     owner_profile_image_url: str | None = None
+    lockdown_mode: bool | None = None
     max_jobs_per_day: int | None = None
     reserve_mornings_for_emergencies: bool | None = None
     travel_buffer_minutes: int | None = None
@@ -451,6 +453,7 @@ def get_owner_business(
             owner_name = getattr(row, "owner_name", None)
             owner_email = getattr(row, "owner_email", None)
             owner_profile_image_url = getattr(row, "owner_profile_image_url", None)
+            lockdown_mode = getattr(row, "lockdown_mode", None)
             max_jobs_per_day = getattr(row, "max_jobs_per_day", None)
             reserve_mornings_for_emergencies = getattr(
                 row, "reserve_mornings_for_emergencies", None
@@ -463,11 +466,47 @@ def get_owner_business(
         owner_name=owner_name,
         owner_email=owner_email,
         owner_profile_image_url=owner_profile_image_url,
+        lockdown_mode=lockdown_mode,
         max_jobs_per_day=max_jobs_per_day,
         reserve_mornings_for_emergencies=reserve_mornings_for_emergencies,
         travel_buffer_minutes=travel_buffer_minutes,
         language_code=language_code,
     )
+
+
+class OwnerLockdownUpdateRequest(BaseModel):
+    enabled: bool = Field(
+        ...,
+        description="When true, pause chat/voice automation for this tenant.",
+    )
+
+
+class OwnerLockdownUpdateResponse(BaseModel):
+    business_id: str
+    lockdown_mode: bool
+
+
+@router.post("/lockdown", response_model=OwnerLockdownUpdateResponse)
+def update_lockdown_mode(
+    payload: OwnerLockdownUpdateRequest,
+    business_id: str = Depends(ensure_business_active),
+    _: None = Depends(require_dashboard_role(["admin", "owner"])),
+) -> OwnerLockdownUpdateResponse:
+    session = _require_db()
+    try:
+        row = session.get(BusinessDB, business_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+        row.lockdown_mode = bool(payload.enabled)  # type: ignore[assignment]
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return OwnerLockdownUpdateResponse(
+            business_id=business_id,
+            lockdown_mode=bool(getattr(row, "lockdown_mode", False)),
+        )
+    finally:
+        session.close()
 
 
 class OwnerEnvironmentResponse(BaseModel):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..config import get_settings
@@ -102,6 +102,18 @@ async def chat_message(
     conv = conversations_repo.get(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    conv_business_id = getattr(conv, "business_id", None)
+    if conv_business_id and SQLALCHEMY_AVAILABLE and SessionLocal is not None:
+        session_db = SessionLocal()
+        try:
+            row = session_db.get(BusinessDB, conv_business_id)
+        finally:
+            session_db.close()
+        if row is not None and getattr(row, "lockdown_mode", False):
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail="Business is in lockdown mode",
+            )
 
     session_id = getattr(conv, "session_id", None)
     if not session_id:

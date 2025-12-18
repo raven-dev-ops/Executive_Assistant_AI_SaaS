@@ -43,6 +43,7 @@ class BusinessUpdateRequest(BaseModel):
     owner_profile_image_url: str | None = None
     calendar_id: str | None = None
     status: str | None = None
+    lockdown_mode: bool | None = None
     vertical: str | None = None
     owner_phone: str | None = None
     emergency_keywords: str | None = None
@@ -86,6 +87,7 @@ class BusinessResponse(BaseModel):
     widget_token_expires_at: datetime | None = None
     calendar_id: str | None = None
     status: str
+    lockdown_mode: bool | None = None
     owner_phone: str | None = None
     zip_code: str | None = None
     median_household_income: int | None = None
@@ -370,6 +372,7 @@ def _business_to_response(row: BusinessDB) -> BusinessResponse:
         widget_token_expires_at=getattr(row, "widget_token_expires_at", None),
         calendar_id=getattr(row, "calendar_id", None),
         status=getattr(row, "status", "ACTIVE"),
+        lockdown_mode=getattr(row, "lockdown_mode", None),
         owner_phone=getattr(row, "owner_phone", None),
         zip_code=getattr(row, "zip_code", None),
         median_household_income=getattr(row, "median_household_income", None),
@@ -506,6 +509,8 @@ def update_business(
             row.calendar_id = payload.calendar_id
         if payload.status is not None:
             row.status = payload.status
+        if payload.lockdown_mode is not None:
+            row.lockdown_mode = payload.lockdown_mode  # type: ignore[assignment]
         if payload.owner_phone is not None:
             row.owner_phone = payload.owner_phone
         if payload.emergency_keywords is not None:

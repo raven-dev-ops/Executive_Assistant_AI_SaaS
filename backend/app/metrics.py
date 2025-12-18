@@ -110,6 +110,10 @@ class Metrics:
     rate_limit_blocks_total: int = 0
     rate_limit_blocks_by_business: Dict[str, int] = field(default_factory=dict)
     rate_limit_blocks_by_ip: Dict[str, int] = field(default_factory=dict)
+    rate_limit_blocks_by_route: Dict[str, int] = field(default_factory=dict)
+    rate_limit_blocks_by_route_business: Dict[str, Dict[str, int]] = field(
+        default_factory=dict
+    )
     security_events_total: int = 0
     security_events_by_type: Dict[str, int] = field(default_factory=dict)
     security_events_by_business: Dict[str, Dict[str, int]] = field(default_factory=dict)
@@ -242,6 +246,11 @@ class Metrics:
             "rate_limit_blocks_total": self.rate_limit_blocks_total,
             "rate_limit_blocks_by_business": dict(self.rate_limit_blocks_by_business),
             "rate_limit_blocks_by_ip": dict(self.rate_limit_blocks_by_ip),
+            "rate_limit_blocks_by_route": dict(self.rate_limit_blocks_by_route),
+            "rate_limit_blocks_by_route_business": {
+                route: dict(counts)
+                for route, counts in self.rate_limit_blocks_by_route_business.items()
+            },
             "security_events_total": self.security_events_total,
             "security_events_by_type": dict(self.security_events_by_type),
             "security_events_by_business": {
