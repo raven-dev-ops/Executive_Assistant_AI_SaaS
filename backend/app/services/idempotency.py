@@ -86,9 +86,7 @@ def _create_idempotency_store() -> IdempotencyStore:
         backend = "redis"
     if backend == "redis":
         if redis is None:
-            logger.warning(
-                "idempotency_store_backend_redis_unavailable_falling_back"
-            )
+            logger.warning("idempotency_store_backend_redis_unavailable_falling_back")
         else:
             try:
                 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
