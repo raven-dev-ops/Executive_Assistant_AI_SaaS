@@ -15,7 +15,13 @@ from .config import get_settings
 from .db import SQLALCHEMY_AVAILABLE, SessionLocal, init_db
 from .logging_config import configure_logging
 from .metrics import RouteMetrics, metrics
-from .context import request_id_ctx
+from .context import (
+    business_id_ctx,
+    call_sid_ctx,
+    message_sid_ctx,
+    request_id_ctx,
+    trace_id_ctx,
+)
 from . import observability
 from .services.audit import (
     SECURITY_EVENT_RATE_LIMIT_BLOCKED,
@@ -278,12 +284,38 @@ def create_app() -> FastAPI:
 
         incoming_rid = request.headers.get("X-Request-ID")
         rid = incoming_rid or str(uuid.uuid4())
-        token = request_id_ctx.set(rid)
+        cloud_trace = request.headers.get("X-Cloud-Trace-Context") or ""
+        trace_id = None
+        if cloud_trace and "/" in cloud_trace:
+            trace_id = cloud_trace.split("/", 1)[0].strip() or None
+        if not trace_id:
+            traceparent = (
+                request.headers.get("traceparent")
+                or request.headers.get("Traceparent")
+                or ""
+            )
+            parts = traceparent.split("-")
+            if len(parts) >= 4:
+                candidate = parts[1].strip()
+                trace_id = candidate or None
+
+        business_id_hint = (
+            request.query_params.get("business_id")
+            or request.headers.get("X-Business-ID")
+            or None
+        )
+
+        rid_token = request_id_ctx.set(rid)
+        trace_token = trace_id_ctx.set(trace_id)
+        business_token = business_id_ctx.set(business_id_hint)
+        call_sid_token = call_sid_ctx.set(None)
+        message_sid_token = message_sid_ctx.set(None)
         request.state.request_id = rid
         observability.set_request_context(
             request_id=rid,
             path=path,
             method=request.method,
+            business_id=business_id_hint,
         )
 
         try:
@@ -349,6 +381,8 @@ def create_app() -> FastAPI:
                             request.state.suppress_security_events = False
                 except Exception:
                     business_id = None
+                if business_id:
+                    business_id_ctx.set(business_id)
                 observability.set_request_context(
                     request_id=rid,
                     path=path,
@@ -468,7 +502,11 @@ def create_app() -> FastAPI:
             response = _finalize_response(response)
             return response
         finally:
-            request_id_ctx.reset(token)
+            message_sid_ctx.reset(message_sid_token)
+            call_sid_ctx.reset(call_sid_token)
+            business_id_ctx.reset(business_token)
+            trace_id_ctx.reset(trace_token)
+            request_id_ctx.reset(rid_token)
 
     if observability.sentry_enabled():
         from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
