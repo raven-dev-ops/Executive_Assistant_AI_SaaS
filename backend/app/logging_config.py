@@ -6,27 +6,66 @@ import os
 import sys
 from typing import Any, Dict
 
-from .context import request_id_ctx
+from .context import (
+    business_id_ctx,
+    call_sid_ctx,
+    message_sid_ctx,
+    request_id_ctx,
+    trace_id_ctx,
+)
 
 
-class RequestIdFilter(logging.Filter):
-    """Attach request_id from contextvar when available."""
+class RequestContextFilter(logging.Filter):
+    """Attach request correlation fields from contextvars when available."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        rid = None
         try:
             rid = request_id_ctx.get()
         except Exception:
             rid = None
         record.request_id = rid or "-"
+
+        try:
+            trace_id = trace_id_ctx.get()
+        except Exception:
+            trace_id = None
+        if trace_id:
+            record.trace_id = trace_id
+
+        try:
+            business_id = business_id_ctx.get()
+        except Exception:
+            business_id = None
+        if business_id:
+            record.business_id = business_id
+
+        try:
+            call_sid = call_sid_ctx.get()
+        except Exception:
+            call_sid = None
+        if call_sid:
+            record.call_sid = call_sid
+
+        try:
+            message_sid = message_sid_ctx.get()
+        except Exception:
+            message_sid = None
+        if message_sid:
+            record.message_sid = message_sid
         return True
 
 
-def _ensure_request_id_filter(handler: logging.Handler) -> None:
-    """Attach a single RequestIdFilter to the given handler."""
+# Backwards-compatible alias used by older tests/imports.
+RequestIdFilter = RequestContextFilter
 
-    if any(isinstance(f, RequestIdFilter) for f in handler.filters):
+
+def _ensure_request_context_filter(handler: logging.Handler) -> None:
+    """Attach a single RequestContextFilter to the given handler."""
+
+    if any(isinstance(f, RequestContextFilter) for f in handler.filters):
         return
-    handler.addFilter(RequestIdFilter())
+    handler.addFilter(RequestContextFilter())
 
 
 class JsonFormatter(logging.Formatter):
@@ -39,9 +78,17 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        # Include request id if present (added by RequestIdFilter).
-        if hasattr(record, "request_id"):
-            payload["request_id"] = getattr(record, "request_id")
+        for key in (
+            "request_id",
+            "trace_id",
+            "business_id",
+            "call_sid",
+            "message_sid",
+        ):
+            if hasattr(record, key):
+                value = getattr(record, key)
+                if value is not None:
+                    payload[key] = value
         # Include extra simple fields (ints/str/bool) if provided in log records.
         for key, value in record.__dict__.items():
             if key in payload or key.startswith("_"):
@@ -61,7 +108,7 @@ def configure_logging() -> None:
     root = logging.getLogger()
     if root.handlers:
         for handler in root.handlers:
-            _ensure_request_id_filter(handler)
+            _ensure_request_context_filter(handler)
         return
 
     handler = logging.StreamHandler(sys.stdout)
@@ -74,6 +121,6 @@ def configure_logging() -> None:
             datefmt="%Y-%m-%dT%H:%M:%S",
         )
     handler.setFormatter(formatter)
-    _ensure_request_id_filter(handler)
+    _ensure_request_context_filter(handler)
     root.addHandler(handler)
     root.setLevel(logging.INFO)

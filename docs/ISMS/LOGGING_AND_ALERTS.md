@@ -7,6 +7,24 @@ Central log pipeline
 - Normalize fields: `severity`, `tenant`, `request_id`, `call_sid`, `webhook_event`, `auth_principal`, `customer_phone`, `status`.
 - Retention: 30 days for standard logs; 90 days for security/audit logs (webhooks/auth/access).
 
+Log schema (JSON)
+-----------------
+When `LOG_FORMAT=json` is enabled, logs are emitted as JSON to stdout (Cloud Run picks these up automatically in Cloud Logging).
+
+Required correlation fields (best-effort):
+- `request_id`: generated per request (or propagated from `X-Request-ID`).
+- `trace_id`: extracted from `X-Cloud-Trace-Context` / `traceparent` when available.
+- `business_id`: tenant id (from `X-Business-ID`, `?business_id=...`, or resolved from API/widget/JWT where applicable).
+- `call_sid`: Twilio voice call id (when available).
+- `message_sid`: Twilio message id (when available).
+
+Query examples (Cloud Logging)
+-----------------------------
+- By tenant: `jsonPayload.business_id="biz_123"`
+- By call: `jsonPayload.call_sid="CAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"`
+- By message: `jsonPayload.message_sid="SMxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"`
+- By request: `jsonPayload.request_id="..."`
+
 Alert rules (P0 focus)
 ----------------------
 - **Twilio webhooks**: Error rate > 1% over 5 minutes OR signature verification failures > 5/min -> page IC + owner email/SMS.
@@ -14,6 +32,7 @@ Alert rules (P0 focus)
 - **Auth**: JWT refresh failures > threshold, repeated login failures per IP/user > 10/min -> alert and temporarily block IP/user.
 - **Owner notifications**: SMS delivery failure without retry success, or fallback email used > 3 times in 15 minutes -> notify owner + IC.
 - **Stripe webhooks**: Signature verification failures or repeated 500s -> alert and pause billing actions until resolved.
+- **Latency SLO (voice/chat)**: sustained p95 latency breach (e.g., > 2s chat, > 4s conversation) -> alert IC; check recent deploys and upstream providers.
 
 Implementation (stack)
 ----------------------
@@ -38,3 +57,23 @@ Runbooks and escalation
 - Link alerts to playbooks in `INCIDENT_RESPONSE_PLAN.md` and `ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`.
 - Escalation order: IC -> backup engineer -> product lead -> executive sponsor.
 - Post-alert actions: for each P0 alert, create an incident doc even if auto-recovered.
+
+P0 runbooks (triage steps)
+--------------------------
+Twilio webhook failure spike:
+- Filter logs by `call_sid` / `request_id` and confirm whether failures are 401/409 (signature/replay) vs 5xx.
+- Verify `TWILIO_AUTH_TOKEN` and `VERIFY_TWILIO_SIGNATURES` and confirm Twilio webhook URL matches the deployed base URL.
+- Mitigation: temporarily relax signature enforcement only if required and paired with rate limiting + short TTL replay window.
+
+Stripe webhook failures:
+- Filter logs by `request_id` and check for signature mismatch vs internal 5xx.
+- Verify `STRIPE_WEBHOOK_SECRET` matches Stripe dashboard endpoint secret; confirm endpoint URL is current.
+- Mitigation: if persistent 5xx, pause billing automation and process critical events manually until fixed.
+
+Elevated 5xx rate:
+- Check Cloud Run request logs for the top failing path(s); use `request_id`/`trace_id` to pivot into stack traces.
+- Roll back to the previous Cloud Run revision if correlated with a deploy.
+
+Latency SLO breach:
+- Check p95 latency metrics (and Cloud Run request latency) and correlate with provider errors (OpenAI/GCP/Twilio/Google APIs).
+- Mitigation: enable stub providers in staging, reduce concurrency, or roll back the latest revision.

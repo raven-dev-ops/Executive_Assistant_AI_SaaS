@@ -4,6 +4,7 @@ metadata:
   name: ai-telephony-backend-config
 data:
   # Non-secret application settings. Override these per environment as needed.
+  LOG_FORMAT: "json"
   GOOGLE_CALENDAR_ID: "primary"
   CALENDAR_USE_STUB: "true"
   REQUIRE_BUSINESS_API_KEY: "true"

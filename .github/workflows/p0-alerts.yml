@@ -16,10 +16,17 @@ jobs:
         env:
           METRICS_URL: ${{ secrets.METRICS_URL }} # e.g., https://.../metrics/prometheus
           METRICS_AUTH_HEADER: ${{ secrets.METRICS_AUTH_HEADER }} # e.g., Authorization: Bearer xxx
-          TWILIO_WEBHOOK_THRESHOLD: ${{ secrets.TWILIO_WEBHOOK_THRESHOLD }}
-          CALENDAR_FAILURE_THRESHOLD: ${{ secrets.CALENDAR_FAILURE_THRESHOLD }}
-          AUTH_FAILURE_THRESHOLD: ${{ secrets.AUTH_FAILURE_THRESHOLD }}
-          OWNER_ALERT_FAILURE_THRESHOLD: ${{ secrets.OWNER_ALERT_FAILURE_THRESHOLD }}
+          TWILIO_WEBHOOK_THRESHOLD: ${{ secrets.TWILIO_WEBHOOK_THRESHOLD }} # legacy
+          CALENDAR_FAILURE_THRESHOLD: ${{ secrets.CALENDAR_FAILURE_THRESHOLD }} # legacy
+          AUTH_FAILURE_THRESHOLD: ${{ secrets.AUTH_FAILURE_THRESHOLD }} # legacy
+          OWNER_ALERT_FAILURE_THRESHOLD: ${{ secrets.OWNER_ALERT_FAILURE_THRESHOLD }} # legacy
+          TWILIO_WEBHOOK_FAILURES_THRESHOLD: ${{ secrets.TWILIO_WEBHOOK_FAILURES_THRESHOLD }}
+          CALENDAR_WEBHOOK_FAILURES_THRESHOLD: ${{ secrets.CALENDAR_WEBHOOK_FAILURES_THRESHOLD }}
+          STRIPE_WEBHOOK_FAILURES_THRESHOLD: ${{ secrets.STRIPE_WEBHOOK_FAILURES_THRESHOLD }}
+          TOTAL_ERRORS_THRESHOLD: ${{ secrets.TOTAL_ERRORS_THRESHOLD }}
+          ALERTS_OPEN_THRESHOLD: ${{ secrets.ALERTS_OPEN_THRESHOLD }}
+          CHAT_P95_MS_THRESHOLD: ${{ secrets.CHAT_P95_MS_THRESHOLD }}
+          CONVERSATION_P95_MS_THRESHOLD: ${{ secrets.CONVERSATION_P95_MS_THRESHOLD }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }} # optional
         run: |
           python - <<'PY'
@@ -35,11 +42,39 @@ jobs:
               k, v = hdr_raw.split(":", 1)
               headers[k.strip()] = v.strip()
 
+          def _f(name: str, default: float) -> float:
+              raw = os.getenv(name)
+              if raw is None or str(raw).strip() == "":
+                  return default
+              try:
+                  return float(raw)
+              except Exception:
+                  return default
+
           thresholds = {
-              "ai_telephony_twilio_webhook_failures": float(os.getenv("TWILIO_WEBHOOK_THRESHOLD", "0") or 0),
-              "ai_telephony_calendar_webhook_failures": float(os.getenv("CALENDAR_FAILURE_THRESHOLD", "0") or 0),
-              "ai_telephony_alerts_open": float(os.getenv("OWNER_ALERT_FAILURE_THRESHOLD", "0") or 0),
-              "ai_telephony_total_errors": float(os.getenv("AUTH_FAILURE_THRESHOLD", "0") or 0),
+              "ai_telephony_twilio_webhook_failures": _f(
+                  "TWILIO_WEBHOOK_FAILURES_THRESHOLD",
+                  _f("TWILIO_WEBHOOK_THRESHOLD", 0.0),
+              ),
+              "ai_telephony_calendar_webhook_failures": _f(
+                  "CALENDAR_WEBHOOK_FAILURES_THRESHOLD",
+                  _f("CALENDAR_FAILURE_THRESHOLD", 0.0),
+              ),
+              "ai_telephony_billing_webhook_failures": _f(
+                  "STRIPE_WEBHOOK_FAILURES_THRESHOLD", 0.0
+              ),
+              "ai_telephony_total_errors": _f(
+                  "TOTAL_ERRORS_THRESHOLD",
+                  _f("AUTH_FAILURE_THRESHOLD", 0.0),
+              ),
+              "ai_telephony_alerts_open": _f(
+                  "ALERTS_OPEN_THRESHOLD",
+                  _f("OWNER_ALERT_FAILURE_THRESHOLD", 0.0),
+              ),
+              "ai_telephony_chat_latency_p95_ms": _f("CHAT_P95_MS_THRESHOLD", 2000.0),
+              "ai_telephony_conversation_latency_p95_ms": _f(
+                  "CONVERSATION_P95_MS_THRESHOLD", 4000.0
+              ),
           }
 
           def parse_metric(text: str, name: str) -> float | None:

@@ -16,6 +16,7 @@ from typing import Dict, TYPE_CHECKING
 from ..config import get_settings
 from ..db import SQLALCHEMY_AVAILABLE, SessionLocal
 from ..db_models import BusinessDB
+from ..context import call_sid_ctx, message_sid_ctx
 from ..deps import DEFAULT_BUSINESS_ID, ensure_onboarding_ready
 from ..metrics import (
     BusinessSmsMetrics,
@@ -512,6 +513,7 @@ async def twilio_voice(
     # Resolve tenant for this webhook. For multi-tenant scenarios, configure
     # the Twilio webhook URL with a `?business_id=...` query parameter per
     # tenant; otherwise we fall back to the default single-tenant ID.
+    call_sid_ctx.set(CallSid)
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     business_row: BusinessDB | None = None
 
@@ -952,6 +954,7 @@ async def twilio_owner_voice(
     - 2: Emergency appointments in the last 7 days.
     - 3: Pipeline summary for the last 30 days.
     """
+    call_sid_ctx.set(CallSid)
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     language_code = get_language_for_business(business_id)
 
@@ -1242,6 +1245,7 @@ async def twilio_voice_assistant(
     - On subsequent hits with SpeechResult, route text into the assistant and
       return another Gather with the reply spoken via <Say>.
     """
+    call_sid_ctx.set(CallSid)
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     settings = get_settings()
     stream_enabled = bool(
@@ -1764,6 +1768,7 @@ async def twilio_sms(
     request: Request,
     From: str = Form(...),
     Body: str = Form(...),
+    MessageSid: str | None = Form(default=None),
     business_id_param: str | None = Query(default=None, alias="business_id"),
     lead_source_param: str | None = Query(default=None, alias="lead_source"),
 ) -> Response:
@@ -1772,6 +1777,7 @@ async def twilio_sms(
     Each unique (business, phone) pair is associated with a conversation so
     that back-and-forth SMS exchanges share context.
     """
+    message_sid_ctx.set(MessageSid)
     business_id = business_id_param or DEFAULT_BUSINESS_ID
 
     logger.info(
@@ -1779,6 +1785,7 @@ async def twilio_sms(
         extra={
             "business_id": business_id,
             "from": From,
+            "message_sid": MessageSid,
         },
     )
 
@@ -2143,6 +2150,7 @@ async def twilio_status_callback(request: Request) -> dict:
         "Twilio-Event-Id"
     )
     message_sid = form_params.get("MessageSid")
+    message_sid_ctx.set(message_sid)
     message_status = form_params.get("MessageStatus")
     to = form_params.get("To")
     from_ = form_params.get("From")
@@ -2193,6 +2201,7 @@ async def twilio_voicemail(
     business_id_param: str | None = Query(default=None, alias="business_id"),
 ) -> Response:
     """Capture voicemail recordings when the assistant is unavailable."""
+    call_sid_ctx.set(CallSid)
     business_id = business_id_param or DEFAULT_BUSINESS_ID
     # Optional signature verification.
     form_params: Dict[str, str] = {"CallSid": CallSid}
