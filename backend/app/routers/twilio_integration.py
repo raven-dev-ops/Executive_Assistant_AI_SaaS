@@ -32,6 +32,7 @@ from ..services import (
     sessions,
     subscription as subscription_service,
 )
+from ..services.idempotency import idempotency_store
 from ..services.stt_tts import speech_service
 from ..services.sms import sms_service
 from ..business_config import get_language_for_business
@@ -44,7 +45,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_twilio_seen_events: dict[str, float] = {}
 
 
 class TwilioStreamEvent(BaseModel):
@@ -66,18 +66,14 @@ class TwilioStreamResponse(BaseModel):
 
 def _check_twilio_replay(event_id: str, window_seconds: int) -> None:
     """Basic replay protection for Twilio webhook event IDs."""
-    now = time.time()
-    expired = [
-        eid for eid, ts in _twilio_seen_events.items() if now - ts > window_seconds
-    ]
-    for eid in expired:
-        _twilio_seen_events.pop(eid, None)
-    if event_id in _twilio_seen_events:
+    if window_seconds <= 0:
+        return
+    key = f"twilio_event:{event_id}"
+    if not idempotency_store.set_if_new(key, ttl_seconds=window_seconds):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Duplicate Twilio webhook event",
         )
-    _twilio_seen_events[event_id] = now
 
 
 async def _maybe_verify_twilio_signature(
@@ -100,8 +96,13 @@ async def _maybe_verify_twilio_signature(
         getattr(sms_cfg, "verify_twilio_signatures", False)
         or (env == "prod" and provider == "twilio")
     )
-    if not require_sig or not auth_token or provider == "stub":
+    if provider == "stub" or not require_sig:
         return
+    if not auth_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twilio auth token not configured",
+        )
 
     twilio_sig = request.headers.get("X-Twilio-Signature")
     if not twilio_sig:
@@ -2183,6 +2184,7 @@ async def twilio_status_callback(request: Request) -> dict:
 @router.api_route("/fallback", methods=["GET", "POST"])
 async def twilio_fallback(request: Request) -> Response:
     """Fallback handler for voice/SMS if the primary webhook fails."""
+    await _maybe_verify_twilio_signature(request, {})
     twiml = """
 <Response>
   <Say voice="Polly.Joanna">We are unable to take your call at the moment. We will call you back shortly.</Say>

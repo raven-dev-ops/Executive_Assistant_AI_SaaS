@@ -209,7 +209,7 @@ def test_webhook_uses_stripe_construct_event(monkeypatch):
 
     class FakeWebhook:
         @staticmethod
-        def construct_event(payload, sig_header, secret):
+        def construct_event(payload, sig_header, secret, tolerance=None):
             captured["sig"] = (payload, sig_header, secret)
             return {
                 "id": "evt_123",
@@ -265,7 +265,7 @@ def test_webhook_bad_signature_rejected(monkeypatch):
     class FakeStripe:
         class Webhook:
             @staticmethod
-            def construct_event(payload, sig_header, secret):
+            def construct_event(payload, sig_header, secret, tolerance=None):
                 raise Exception("bad sig")
 
     class FakeStripeSettings:

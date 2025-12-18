@@ -113,6 +113,33 @@ def test_twilio_replay_event_blocked(monkeypatch):
     assert second.status_code == 409
 
 
+def test_twilio_voice_missing_signature_rejected(monkeypatch):
+    _setup_twilio_env(monkeypatch)
+    resp = client.post(
+        "/twilio/voice",
+        data={"CallSid": "CS123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 401
+
+
+def test_twilio_voice_invalid_signature_rejected(monkeypatch):
+    token = _setup_twilio_env(monkeypatch)
+    params = {"CallSid": "CS456", "From": "+15550004444"}
+    url = "http://testserver/twilio/voice"
+    sig = _twilio_signature(url, params, token)
+    resp = client.post(
+        "/twilio/voice",
+        data=params,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": sig + "tampered",
+            "X-Twilio-Request-Timestamp": str(int(time.time())),
+        },
+    )
+    assert resp.status_code == 401
+
+
 def test_stripe_missing_signature_rejected(monkeypatch):
     _setup_stripe_env(monkeypatch)
     payload = json.dumps(

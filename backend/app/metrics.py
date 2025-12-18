@@ -94,6 +94,8 @@ class Metrics:
     conversation_latency_samples: int = 0
     conversation_latency_values: list[float] = field(default_factory=list)
     conversation_latency_bucket_counts: Dict[float, int] = field(default_factory=dict)
+    billing_webhook_requests: int = 0
+    billing_webhook_accepted: int = 0
     billing_webhook_failures: int = 0
     background_job_errors: int = 0
     retention_purge_runs: int = 0
@@ -116,6 +118,8 @@ class Metrics:
     twilio_voice_errors: int = 0
     twilio_sms_requests: int = 0
     twilio_sms_errors: int = 0
+    twilio_webhook_requests: int = 0
+    twilio_webhook_accepted: int = 0
     twilio_webhook_failures: int = 0
     calendar_webhook_failures: int = 0
     twilio_by_business: Dict[str, BusinessTwilioMetrics] = field(default_factory=dict)
@@ -244,6 +248,8 @@ class Metrics:
                 business_id: dict(types)
                 for business_id, types in self.security_events_by_business.items()
             },
+            "billing_webhook_requests": self.billing_webhook_requests,
+            "billing_webhook_accepted": self.billing_webhook_accepted,
             "billing_webhook_failures": self.billing_webhook_failures,
             "background_job_errors": self.background_job_errors,
             "retention_purge_runs": self.retention_purge_runs,
@@ -269,6 +275,8 @@ class Metrics:
             "twilio_voice_errors": self.twilio_voice_errors,
             "twilio_sms_requests": self.twilio_sms_requests,
             "twilio_sms_errors": self.twilio_sms_errors,
+            "twilio_webhook_requests": self.twilio_webhook_requests,
+            "twilio_webhook_accepted": self.twilio_webhook_accepted,
             "twilio_webhook_failures": self.twilio_webhook_failures,
             "calendar_webhook_failures": self.calendar_webhook_failures,
             "twilio_by_business": {

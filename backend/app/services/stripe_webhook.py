@@ -3,11 +3,10 @@ from __future__ import annotations
 import hmac
 import time
 from hashlib import sha256
-from typing import Dict, Tuple
+from typing import Tuple
 
 from ..config import get_settings
-
-_seen_events: Dict[str, float] = {}
+from .idempotency import idempotency_store
 
 
 class StripeSignatureError(Exception):
@@ -52,11 +51,8 @@ def verify_stripe_signature(raw_body: bytes, header: str, secret: str) -> None:
 
 
 def check_replay(event_id: str, window_seconds: int) -> None:
-    now = time.time()
-    # Purge old entries opportunistically.
-    expired = [eid for eid, ts in _seen_events.items() if now - ts > window_seconds]
-    for eid in expired:
-        _seen_events.pop(eid, None)
-    if event_id in _seen_events:
+    if window_seconds <= 0:
+        return
+    key = f"stripe_event:{event_id}"
+    if not idempotency_store.set_if_new(key, ttl_seconds=window_seconds):
         raise StripeReplayError("replayed_event")
-    _seen_events[event_id] = now

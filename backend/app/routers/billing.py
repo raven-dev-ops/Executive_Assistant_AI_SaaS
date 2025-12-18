@@ -339,6 +339,7 @@ async def billing_webhook(
     require_sig = bool(
         settings.verify_signatures or (env == "prod" and not settings.use_stub)
     )
+    metrics.billing_webhook_requests += 1
     event_type = ""
     event_id = ""
     business_id = "default_business"
@@ -361,19 +362,35 @@ async def billing_webhook(
                 )
             if stripe is not None:
                 try:
+                    tolerance = None
+                    if getattr(settings, "replay_protection_seconds", 300) > 0:
+                        tolerance = int(settings.replay_protection_seconds)
                     event_payload = stripe.Webhook.construct_event(
                         payload=raw_body,
                         sig_header=stripe_signature,
                         secret=settings.webhook_secret,
+                        tolerance=tolerance,
                     )
                 except Exception as exc:
+                    is_timestamp_replay = "Timestamp outside the tolerance zone" in str(
+                        exc
+                    )
                     await audit_service.record_security_event(
                         request=request,
-                        event_type=audit_service.SECURITY_EVENT_WEBHOOK_SIGNATURE_INVALID,
+                        event_type=(
+                            audit_service.SECURITY_EVENT_WEBHOOK_REPLAY_BLOCKED
+                            if is_timestamp_replay
+                            else audit_service.SECURITY_EVENT_WEBHOOK_SIGNATURE_INVALID
+                        ),
                         status_code=400,
                         meta={
                             "provider": "stripe",
                             "error_class": exc.__class__.__name__,
+                            "reason": (
+                                "timestamp_out_of_window"
+                                if is_timestamp_replay
+                                else None
+                            ),
                         },
                     )
                     raise HTTPException(
@@ -460,6 +477,7 @@ async def billing_webhook(
                     ),
                 },
             )
+            metrics.billing_webhook_accepted += 1
             return {"status": "ok"}
         elif event_type in {
             "customer.subscription.updated",
@@ -479,6 +497,7 @@ async def billing_webhook(
                 await subscription_service.notify_status_change(
                     business_id, subscription_service.compute_state(business_id)
                 )
+            metrics.billing_webhook_accepted += 1
             return {"status": "ok"}
         elif event_type in {"invoice.payment_failed", "customer.subscription.deleted"}:
             _update_subscription(
@@ -504,9 +523,11 @@ async def billing_webhook(
             await subscription_service.notify_status_change(
                 business_id, subscription_service.compute_state(business_id)
             )
+            metrics.billing_webhook_accepted += 1
             return {"status": "ok"}
         else:
             # Ignore other events
+            metrics.billing_webhook_accepted += 1
             return {"received": True}
     except StripeReplayError as exc:
         metrics.billing_webhook_failures += 1
