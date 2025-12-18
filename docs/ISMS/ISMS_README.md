@@ -16,6 +16,7 @@ Quick map
   - Secure SDLC + CI/CD controls: `SECURE_SDLC.md`
   - Incident response and alerting: `INCIDENT_RESPONSE_PLAN.md`
   - Disaster recovery & business continuity: `DR_BCP.md`
+  - DR restore runbook (procedural): `DR_RUNBOOK.md`
   - Backup and restore testing (RPO/RTO): `BACKUP_AND_RESTORE.md` and `BACKUP_RESTORE_LOG.md`
   - Logging, monitoring, and alert rules: `LOGGING_AND_ALERTS.md`
   - Vendor inventory and DPAs: `VENDOR_REGISTER.md`

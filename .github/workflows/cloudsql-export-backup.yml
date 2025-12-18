@@ -1,0 +1,64 @@
+name: Cloud SQL Export Backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 6 * * *" # daily at 06:30 UTC
+
+jobs:
+  export:
+    # Skip automatically unless configured via repo secrets.
+    if: >-
+      ${{
+        secrets.GCP_PROJECT_ID != '' &&
+        (secrets.GCP_BACKUP_SERVICE_ACCOUNT_KEY != '' || secrets.GCP_SERVICE_ACCOUNT_KEY != '') &&
+        secrets.CLOUDSQL_INSTANCE_ID != '' &&
+        secrets.CLOUDSQL_BACKUP_BUCKET != ''
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_BACKUP_SERVICE_ACCOUNT_KEY || secrets.GCP_SERVICE_ACCOUNT_KEY }}"
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: "${{ secrets.GCP_PROJECT_ID }}"
+
+      - name: Export database to GCS (sql.gz)
+        env:
+          INSTANCE: "${{ secrets.CLOUDSQL_INSTANCE_ID }}"
+          DATABASE: "${{ secrets.CLOUDSQL_DATABASE || 'ai_telephony' }}"
+          BUCKET: "${{ secrets.CLOUDSQL_BACKUP_BUCKET }}"
+        run: |
+          set -euo pipefail
+          ts="$(date -u +"%Y%m%d-%H%M%SZ")"
+          uri="gs://${BUCKET}/cloudsql/${INSTANCE}/${DATABASE}/${INSTANCE}-${DATABASE}-${ts}.sql.gz"
+          echo "Export URI: ${uri}"
+
+          op="$(gcloud sql export sql "${INSTANCE}" "${uri}" --database="${DATABASE}" --offload --async --format="value(name)")"
+          echo "Operation: ${op}"
+          gcloud sql operations wait "${op}" --timeout=7200
+
+          cat > export-evidence.json <<EOF
+          {
+            "action": "cloudsql_export_sql",
+            "instance": "${INSTANCE}",
+            "database": "${DATABASE}",
+            "uri": "${uri}",
+            "operation": "${op}",
+            "timestamp_utc": "${ts}"
+          }
+          EOF
+
+      - name: Upload evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudsql-export-evidence
+          path: export-evidence.json
+          retention-days: 30
+

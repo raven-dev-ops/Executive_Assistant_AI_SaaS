@@ -14,3 +14,4 @@ Checklist for each entry
 - Run core tests: `pytest backend/tests/test_twilio_integration.py backend/tests/test_calendar_conflicts.py backend/tests/test_conversation.py`.
 - Validate owner notification hub (SMS retry + email fallback) and webhook signature enforcement.
 - Document RPO/RTO and attach logs/screenshots as evidence.
+- Attach the evidence JSON produced by `ops/cloudsql/restore-latest-backup.ps1` (or equivalent) and link it from the Evidence Link column.

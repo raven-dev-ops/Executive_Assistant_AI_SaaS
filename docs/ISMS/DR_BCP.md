@@ -15,7 +15,7 @@ Strategy
 
 Procedures
 ----------
-- Maintain a DR runbook covering: retrieving latest backup, restoring to staging, validating app health checks, and promoting to production.
+- Maintain a DR runbook covering: retrieving latest backup, restoring to staging, validating app health checks, and promoting to production (see `DR_RUNBOOK.md`).
 - Include health checks for: Twilio webhook endpoints, Calendar writes, owner notification hub, and auth issuance.
 - Quarterly DR drill: restore from backup to staging, run smoke/perf suites, and record timings (RPO/RTO) in `BACKUP_AND_RESTORE.md`.
 
