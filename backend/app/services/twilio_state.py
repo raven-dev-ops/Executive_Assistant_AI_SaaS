@@ -9,13 +9,13 @@ import os
 
 from ..config import get_settings
 
-redis_module: Any | None
+redis: Any | None
 try:  # Optional Redis dependency, mirroring services/sessions.py
     import redis as _redis
 except Exception:  # pragma: no cover - redis is optional
-    redis_module = None
+    redis = None
 else:
-    redis_module = _redis
+    redis = _redis
 
 
 logger = logging.getLogger(__name__)
@@ -441,7 +441,7 @@ def _create_twilio_state_store() -> TwilioStateStore:
     get_settings()
     backend = os.getenv("TWILIO_STATE_BACKEND", "memory").lower()
     if backend == "redis":
-        if redis_module is None:
+        if redis is None:
             logger.warning(
                 "twilio_state_backend_redis_unavailable_falling_back",
                 extra={"backend": backend},
@@ -449,7 +449,7 @@ def _create_twilio_state_store() -> TwilioStateStore:
         else:
             try:
                 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-                client = redis_module.from_url(redis_url)
+                client = redis.from_url(redis_url)
                 return RedisTwilioStateStore(client)
             except Exception:
                 logger.warning(
