@@ -27,6 +27,20 @@ For profile-based setups (stub vs DB-backed), see the env files in the repo root
 
 - In-memory: `uvicorn app.main:app --reload --env-file ..\env.dev.inmemory`
 - DB-backed (SQLite): `uvicorn app.main:app --reload --env-file ..\env.dev.db`
+- Redis-backed (shared state): `uvicorn app.main:app --reload --env-file ..\env.dev.redis`
+
+
+Multi-instance (shared state)
+-----------------------------
+
+If you run more than one backend instance (Kubernetes replicas / multiple pods), use Redis-backed shared state so
+sessions and Twilio call routing survive cross-instance requests:
+
+- `SESSION_STORE_BACKEND=redis`
+- `TWILIO_STATE_BACKEND=redis`
+- `REDIS_URL=redis://...`
+
+Note: Twilio and Stripe webhook replay protection caches are currently process-local (in-memory).
 
 
 Running in Docker

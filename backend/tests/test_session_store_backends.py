@@ -96,6 +96,49 @@ def test_session_store_uses_redis_when_available(monkeypatch, tmp_path) -> None:
     assert dummy_module.last_url == "redis://test-redis:6379/1"
 
 
+def test_redis_session_store_save_persists_mutations_across_instances() -> None:
+    class DummyRedisClient:
+        def __init__(self) -> None:
+            self._data: dict[str, str] = {}
+
+        def setex(self, key: str, ttl: int, value: str) -> None:
+            self._data[key] = value
+
+        def get(self, key: str) -> str | None:
+            return self._data.get(key)
+
+    client = DummyRedisClient()
+    store_a = sessions.RedisSessionStore(client, key_prefix="call", ttl_seconds=60)
+    store_b = sessions.RedisSessionStore(client, key_prefix="call", ttl_seconds=60)
+
+    session = store_a.create(
+        caller_phone="555-0111", business_id="b2", lead_source="test"
+    )
+    session.stage = "ASK_PROBLEM"
+    session.no_input_count = 2
+    session.intent = "schedule_service"
+    session.intent_confidence = 0.92
+    session.is_emergency = True
+    session.emergency_confidence = 0.88
+    session.emergency_reasons = ["intent:emergency", "keyword:gas leak"]
+    session.emergency_confirmation_pending = True
+    store_a.save(session)
+
+    fetched = store_b.get(session.id)
+    assert fetched is not None
+    assert fetched.caller_phone == "555-0111"
+    assert fetched.business_id == "b2"
+    assert fetched.lead_source == "test"
+    assert fetched.stage == "ASK_PROBLEM"
+    assert fetched.no_input_count == 2
+    assert fetched.intent == "schedule_service"
+    assert fetched.intent_confidence == 0.92
+    assert fetched.is_emergency is True
+    assert fetched.emergency_confidence == 0.88
+    assert fetched.emergency_reasons == ["intent:emergency", "keyword:gas leak"]
+    assert fetched.emergency_confirmation_pending is True
+
+
 def test_session_store_prefers_redis_when_url_present(monkeypatch) -> None:
     monkeypatch.setattr(
         sessions,
