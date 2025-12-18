@@ -470,6 +470,7 @@ async def twilio_voice(
     SpeechResult: str | None = Form(default=None),
     business_id_param: str | None = Query(default=None, alias="business_id"),
     lead_source_param: str | None = Query(default=None, alias="lead_source"),
+    uptime_check_param: bool = Query(default=False, alias="uptime_check"),
 ) -> Response:
     """Twilio Voice webhook that bridges to the conversation manager.
 
@@ -559,6 +560,9 @@ async def twilio_voice(
     if SpeechResult is not None:
         form_params["SpeechResult"] = SpeechResult
     await _maybe_verify_twilio_signature(request, form_params)
+
+    if uptime_check_param:
+        return Response(content="<Response/>", media_type="text/xml")
     event_id = request.headers.get("X-Twilio-EventId") or request.headers.get(
         "Twilio-Event-Id"
     )
@@ -1194,6 +1198,7 @@ async def twilio_voice_assistant(
     SpeechResult: str | None = Form(default=None),
     business_id_param: str | None = Query(default=None, alias="business_id"),
     lead_source_param: str | None = Query(default=None, alias="lead_source"),
+    uptime_check_param: bool = Query(default=False, alias="uptime_check"),
 ) -> Response:
     """Twilio voice webhook that bridges live calls into the conversation manager.
 
@@ -1252,6 +1257,9 @@ async def twilio_voice_assistant(
     if SpeechResult is not None:
         form_params["SpeechResult"] = SpeechResult
     await _maybe_verify_twilio_signature(request, form_params)
+
+    if uptime_check_param:
+        return Response(content="<Response/>", media_type="text/xml")
 
     # Handle call completion quickly and enqueue a callback follow-up.
     if CallStatus and CallStatus.lower() in {
