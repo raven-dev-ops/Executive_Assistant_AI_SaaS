@@ -185,16 +185,21 @@ class GoogleCloudSpeechProvider(SpeechProvider):
                 return str(token)
 
             def _refresh_sync() -> str:
+                request_cls: Any
                 try:
-                    from google.auth.transport.requests import Request as AuthRequest
+                    from google.auth.transport.requests import Request as _Request
+
+                    request_cls = _Request
                 except Exception:
                     try:
-                        from google.auth.transport.urllib3 import Request as AuthRequest
+                        from google.auth.transport.urllib3 import Request as _Request
+
+                        request_cls = _Request
                     except Exception as exc:
                         raise RuntimeError(
                             "google-auth transport is required for GCP speech provider"
                         ) from exc
-                creds.refresh(AuthRequest())
+                creds.refresh(request_cls())
                 new_token = getattr(creds, "token", None)
                 if not new_token:
                     raise RuntimeError("Unable to refresh GCP access token")
