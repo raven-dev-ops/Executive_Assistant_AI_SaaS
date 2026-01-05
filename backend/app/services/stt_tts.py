@@ -138,7 +138,7 @@ class GoogleCloudSpeechProvider(SpeechProvider):
 
     def __init__(self, settings: SpeechSettings) -> None:
         self._settings = settings
-        self._credentials = None
+        self._credentials: Any | None = None
         self._token_lock = anyio.Lock()
 
     def _ensure_credentials(self) -> None:
