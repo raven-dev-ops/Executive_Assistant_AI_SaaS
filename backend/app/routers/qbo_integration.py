@@ -337,9 +337,7 @@ def callback_qbo(
     except Exception:
         env = os.getenv("ENVIRONMENT", "dev").lower()
         allow_raw = env in {"dev", "development", "local", "test", "testing"}
-        qb_configured = bool(
-            qb.client_id and qb.client_secret and qb.redirect_uri
-        )
+        qb_configured = bool(qb.client_id and qb.client_secret and qb.redirect_uri)
         if _is_testing_mode() or (allow_raw and not qb_configured):
             business_id = state
             provider = "quickbooks"

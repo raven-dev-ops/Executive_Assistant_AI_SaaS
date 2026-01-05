@@ -37,9 +37,7 @@ def test_qbo_authorize_uses_signed_state(monkeypatch):
     resp = client.get("/v1/integrations/qbo/authorize")
     assert resp.status_code == 200
     data = resp.json()
-    business_id, provider = qbo_integration.decode_state(
-        data["state"], "state-secret"
-    )
+    business_id, provider = qbo_integration.decode_state(data["state"], "state-secret")
     assert business_id == "default_business"
     assert provider == "quickbooks"
 
