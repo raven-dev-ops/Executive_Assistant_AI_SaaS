@@ -1603,9 +1603,7 @@ async def twilio_voice_stream_websocket(websocket: WebSocket) -> None:
         nonlocal buffer
         if not buffer:
             return None
-        audio_b64 = _twilio_payload_to_wav_base64(
-            bytes(buffer), encoding, sample_rate
-        )
+        audio_b64 = _twilio_payload_to_wav_base64(bytes(buffer), encoding, sample_rate)
         buffer = bytearray()
         if not audio_b64:
             return None
@@ -1675,9 +1673,7 @@ async def twilio_voice_stream_websocket(websocket: WebSocket) -> None:
                 stream_sid = start.get("streamSid") or stream_sid
                 media_format = start.get("mediaFormat") or {}
                 encoding = media_format.get("encoding") or encoding
-                sample_rate = _safe_int(
-                    media_format.get("sampleRate"), sample_rate
-                )
+                sample_rate = _safe_int(media_format.get("sampleRate"), sample_rate)
                 custom_params = start.get("customParameters") or {}
                 if not from_number:
                     from_number = custom_params.get("from_number") or custom_params.get(

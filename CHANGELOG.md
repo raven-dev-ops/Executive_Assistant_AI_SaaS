@@ -21,7 +21,6 @@ Release notes here summarize work that implements or documents the design descri
 - Ops: update January 2026 access review log and make GitHub access export resilient to permission errors.
 - Docs: capture Twilio streaming validation status and staging prerequisites for STT providers.
 - Docs: expand ISMS audit/management review checklists and add ISO partner selection guidance.
-- Backend: add Twilio Media Streams WebSocket ingest with mu-law conversion and transcript forwarding.
 
 - Implemented initial backend voice assistant, CRM, multi-tenant support, and dashboard prototype as described in the project documentation.
 - Documented SMS opt-out behavior and Twilio wiring in `README.md`, `PRIVACY_POLICY.md`, and `RUNBOOK.md`.
@@ -41,6 +40,13 @@ Release notes here summarize work that implements or documents the design descri
 - Twilio voice streaming now enqueues missed/partial calls into the callback queue, sends owner alerts, and includes signature validation tests for voice and status webhooks; voice-assistant completions also enqueue callback follow-ups.
 - Stripe billing now favors live Checkout/Customer Portal when configured, verifies webhook signatures with replay protection, records plan/service tier from Stripe metadata, emails owners on payment failures, and enforces subscription status across voice/Twilio/voice-session APIs with dashboard warnings.
 
+
+
+[0.1.3] - 2026-01-06
+-------------------
+
+- Backend: add Twilio Media Streams WebSocket ingest with mu-law conversion and transcript forwarding.
+- Config: expose `TWILIO_STREAM_MIN_SECONDS` to tune minimum stream buffer duration before transcription.
 
 
 [0.1.2] - 2026-01-06

@@ -34,6 +34,16 @@ Unreleased
 
 
 
+0.1.3 - Twilio Media Streams Ingest
+-----------------------------------
+
+Date: 2026-01-06
+
+- Add Twilio Media Streams WebSocket ingest with mu-law conversion and transcript forwarding into the
+  existing voice stream pipeline.
+- Expose `TWILIO_STREAM_MIN_SECONDS` to tune minimum buffer duration before transcription.
+
+
 0.1.2 - Stripe Webhook Hardening (Non-Prod)
 -------------------------------------------
 
