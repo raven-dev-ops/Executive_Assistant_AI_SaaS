@@ -110,5 +110,5 @@ Fill this in after running the harness in staging:
 
 | Date (UTC) | Provider | Region | Mode | Runs | p50 Total (ms) | p95 Total (ms) | p99 Total (ms) | Empty transcript % | Mismatch % | Notes |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---|
-|  |  |  | roundtrip/samples |  |  |  |  |  |  |  |
+| 2026-01-06 | gcp | us-central1 | roundtrip | 5 | 4508.27 | 4736.81 | 4736.81 | 0.00 | 33.33 | Local ADC with quota project; 3 phrases, 5 runs |
 
