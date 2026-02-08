@@ -104,6 +104,7 @@ def test_admin_export_feedback():
 def test_submit_feedback_sanitizes_url_and_redacts_steps():
     _clear_feedback()
     summary = f"URL sanitize {uuid4()}"
+    expected_summary = redact_text(summary)
     resp = client.post(
         "/v1/feedback",
         headers={"X-Owner-Token": "test-owner"},
@@ -122,16 +123,44 @@ def test_submit_feedback_sanitizes_url_and_redacts_steps():
     try:
         row = (
             session.query(FeedbackDB)
-            .filter(FeedbackDB.summary == summary)
+            .filter(FeedbackDB.summary == expected_summary)
             .one_or_none()
         )
         assert row is not None
+        assert row.summary == expected_summary
         assert row.source == "owner_dashboard"
         assert row.url == "https://example.com/path"
         assert row.steps is not None
         assert "@" not in row.steps
         assert row.conversation_id == "conv-123"
         assert row.session_id == "sess-123"
+    finally:
+        session.close()
+
+
+def test_submit_feedback_infers_admin_source_when_admin_key_present():
+    _clear_feedback()
+    summary = f"Admin source {uuid4()}"
+    expected_summary = redact_text(summary)
+    resp = client.post(
+        "/v1/feedback",
+        headers={"X-Admin-API-Key": "test-admin"},
+        json={
+            "summary": summary,
+            "category": "bug",
+        },
+    )
+    assert resp.status_code == 200
+
+    session = SessionLocal()
+    try:
+        row = (
+            session.query(FeedbackDB)
+            .filter(FeedbackDB.summary == expected_summary)
+            .one_or_none()
+        )
+        assert row is not None
+        assert row.source == "admin"
     finally:
         session.close()
 
