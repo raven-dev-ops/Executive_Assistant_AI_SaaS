@@ -23,4 +23,3 @@ def test_redact_iter_skips_none_and_redacts_pii():
     assert out == [redact_text("Email me at test@example.com"), "no pii"]
     assert "@" not in out[0]
     assert out[0].endswith("om")
-
