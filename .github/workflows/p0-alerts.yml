@@ -7,11 +7,52 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   p0-alerts:
     runs-on: ubuntu-latest
     steps:
+      - name: Compute metrics audience (Cloud Run base URL)
+        id: metrics
+        env:
+          METRICS_URL: ${{ secrets.METRICS_URL }}
+          UPTIME_BASE_URL: ${{ secrets.UPTIME_BASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          metrics_url = (os.getenv("METRICS_URL") or "").strip()
+          uptime_base = (os.getenv("UPTIME_BASE_URL") or "").strip().rstrip("/")
+          if not metrics_url and uptime_base:
+              metrics_url = f"{uptime_base}/metrics/prometheus"
+
+          audience = ""
+          if metrics_url:
+              parts = urlsplit(metrics_url)
+              audience = f"{parts.scheme}://{parts.netloc}"
+
+          out = os.environ.get("GITHUB_OUTPUT")
+          if out:
+              with open(out, "a", encoding="utf-8") as fh:
+                  fh.write(f"metrics_url={metrics_url}\n")
+                  fh.write(f"audience={audience}\n")
+
+          print(f"metrics_url={metrics_url}")
+          print(f"audience={audience}")
+          PY
+
+      - name: Authenticate to Google Cloud (OIDC, optional)
+        id: gcp-auth
+        if: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && secrets.GCP_SERVICE_ACCOUNT != '' && steps.metrics.outputs.audience != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: id_token
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          audience: ${{ steps.metrics.outputs.audience }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -26,6 +67,7 @@ jobs:
         env:
           METRICS_URL: ${{ secrets.METRICS_URL }} # e.g., https://.../metrics/prometheus
           METRICS_AUTH_HEADER: ${{ secrets.METRICS_AUTH_HEADER }} # e.g., Authorization: Bearer xxx
+          METRICS_ID_TOKEN: ${{ steps.gcp-auth.outputs.id_token }} # optional (Cloud Run auth via OIDC)
           UPTIME_BASE_URL: ${{ secrets.UPTIME_BASE_URL }} # optional fallback (used by uptime checks workflow)
           TWILIO_WEBHOOK_THRESHOLD: ${{ secrets.TWILIO_WEBHOOK_THRESHOLD }} # legacy
           CALENDAR_FAILURE_THRESHOLD: ${{ secrets.CALENDAR_FAILURE_THRESHOLD }} # legacy
@@ -51,10 +93,13 @@ jobs:
           if not metrics_url and uptime_base:
               metrics_url = f"{uptime_base}/metrics/prometheus"
           hdr_raw = os.getenv("METRICS_AUTH_HEADER")
+          id_token = (os.getenv("METRICS_ID_TOKEN") or "").strip()
           headers = {}
           if hdr_raw and ":" in hdr_raw:
               k, v = hdr_raw.split(":", 1)
               headers[k.strip()] = v.strip()
+          elif id_token:
+              headers["Authorization"] = f"Bearer {id_token}"
 
           def _f(name: str, default: float) -> float:
               raw = os.getenv(name)
