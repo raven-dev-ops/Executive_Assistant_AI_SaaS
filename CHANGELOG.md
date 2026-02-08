@@ -18,6 +18,7 @@ Release notes here summarize work that implements or documents the design descri
 [Unreleased]
 ------------
 - Process: track AGENTS.md in-repo and require PR creation/push for all improvements.
+- CI: pin backend dev tooling versions and stop tracking generated `*.egg-info` artifacts to prevent CI drift.
 - Ops: update January 2026 access review log and make GitHub access export resilient to permission errors.
 - Docs: capture Twilio streaming validation status and staging prerequisites for STT providers.
 - Docs: expand ISMS audit/management review checklists and add ISO partner selection guidance.
