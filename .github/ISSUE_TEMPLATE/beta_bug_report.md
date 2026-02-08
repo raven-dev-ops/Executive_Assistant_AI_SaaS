@@ -2,7 +2,10 @@
 name: "\U0001F41B Beta Bug Report"
 about: File a structured beta bug with reproduction details
 title: "[Beta Bug] "
-labels: [priority: P1, type/bug]
+labels:
+  - "priority: P1"
+  - "type:bug"
+  - "status:needs-info"
 ---
 
 ### Summary

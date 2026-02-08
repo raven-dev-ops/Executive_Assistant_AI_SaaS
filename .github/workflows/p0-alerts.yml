@@ -12,10 +12,21 @@ jobs:
   p0-alerts:
     runs-on: ubuntu-latest
     steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
       - name: Run P0 alert checks
         env:
           METRICS_URL: ${{ secrets.METRICS_URL }} # e.g., https://.../metrics/prometheus
           METRICS_AUTH_HEADER: ${{ secrets.METRICS_AUTH_HEADER }} # e.g., Authorization: Bearer xxx
+          UPTIME_BASE_URL: ${{ secrets.UPTIME_BASE_URL }} # optional fallback (used by uptime checks workflow)
           TWILIO_WEBHOOK_THRESHOLD: ${{ secrets.TWILIO_WEBHOOK_THRESHOLD }} # legacy
           CALENDAR_FAILURE_THRESHOLD: ${{ secrets.CALENDAR_FAILURE_THRESHOLD }} # legacy
           AUTH_FAILURE_THRESHOLD: ${{ secrets.AUTH_FAILURE_THRESHOLD }} # legacy
@@ -35,7 +46,10 @@ jobs:
           import json
           import requests
 
-          metrics_url = os.getenv("METRICS_URL")
+          metrics_url = (os.getenv("METRICS_URL") or "").strip()
+          uptime_base = (os.getenv("UPTIME_BASE_URL") or "").strip().rstrip("/")
+          if not metrics_url and uptime_base:
+              metrics_url = f"{uptime_base}/metrics/prometheus"
           hdr_raw = os.getenv("METRICS_AUTH_HEADER")
           headers = {}
           if hdr_raw and ":" in hdr_raw:
@@ -96,7 +110,24 @@ jobs:
           else:
               try:
                   resp = requests.get(metrics_url, headers=headers, timeout=10)
-                  resp.raise_for_status()
+                  if resp.status_code != 200:
+                      # If metrics are behind auth and no auth header is configured, avoid
+                      # noisy scheduled failures. Operators should configure either:
+                      # - a reachable public metrics endpoint, OR
+                      # - METRICS_AUTH_HEADER (or future WIF-based auth).
+                      if not headers and resp.status_code in (401, 403, 404):
+                          print(
+                              "Metrics check skipped: "
+                              f"GET {metrics_url} -> {resp.status_code} and METRICS_AUTH_HEADER is not configured."
+                          )
+                          print(
+                              "To enable P0 checks, set METRICS_URL to a reachable /metrics/prometheus endpoint "
+                              "or configure METRICS_AUTH_HEADER."
+                          )
+                          sys.exit(0)
+                      raise RuntimeError(
+                          f"GET {metrics_url} -> {resp.status_code}: {resp.text[:200]}"
+                      )
                   text = resp.text
                   for metric, threshold in thresholds.items():
                       val = parse_metric(text, metric)
