@@ -2,10 +2,6 @@ name: Dependency Review
 
 on:
   pull_request:
-    paths:
-      - "**/pyproject.toml"
-      - "**/requirements*.txt"
-      - ".github/workflows/dependency-review.yml"
 
 permissions:
   contents: read

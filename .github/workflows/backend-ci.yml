@@ -6,9 +6,6 @@ on:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
 
 jobs:
   tests:
@@ -20,13 +17,31 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend_ci:
+              - "backend/**"
+              - ".github/workflows/backend-ci.yml"
+
+      - name: Skip backend CI (no backend changes)
+        if: steps.filter.outputs.backend_ci != 'true'
+        run: |
+          echo "No backend changes detected; skipping backend CI steps."
 
       - name: Set up Python ${{ matrix.python-version }}
+        if: steps.filter.outputs.backend_ci == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "${{ matrix.python-version }}"
 
       - name: Cache pip
+        if: steps.filter.outputs.backend_ci == 'true'
         id: cache-pip
         uses: actions/cache@v4
         with:
@@ -37,12 +52,14 @@ jobs:
             pip-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Install backend dependencies
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
       - name: Show env for Twilio/Stripe (mask secrets)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           python - <<'PY'
@@ -52,21 +69,25 @@ jobs:
           PY
 
       - name: Run ruff (lint)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           ruff check .
 
       - name: Run black (format check)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           black --check .
 
       - name: Run bandit (security scan)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           bandit -q -r app -x tests
 
       - name: Run mypy on expanded modules
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           mypy \
@@ -83,6 +104,7 @@ jobs:
             app/services/twilio_state.py
 
       - name: Run Alembic migrations (sqlite)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         env:
           DATABASE_URL: sqlite:///./app.db
@@ -90,17 +112,19 @@ jobs:
           alembic upgrade head
 
       - name: Run demo data seeder (dry-run)
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           python seed_demo_data.py --dry-run
 
       - name: Run backend tests
+        if: steps.filter.outputs.backend_ci == 'true'
         working-directory: backend
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=85
 
       - name: Publish coverage summary
-        if: always()
+        if: always() && steps.filter.outputs.backend_ci == 'true'
         env:
           PY_VERSION: ${{ matrix.python-version }}
         working-directory: backend
@@ -132,7 +156,7 @@ jobs:
           PY
 
       - name: Upload coverage artifact
-        if: always()
+        if: always() && steps.filter.outputs.backend_ci == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-python-${{ matrix.python-version }}
