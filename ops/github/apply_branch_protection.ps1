@@ -39,7 +39,7 @@ $body = @{
 
 $json = $body | ConvertTo-Json -Depth 10
 
-Write-Host "Applying branch protection for $Repo:$Branch"
+Write-Host "Applying branch protection for ${Repo}:${Branch}"
 Write-Host "Required contexts:"
 $requiredContexts | ForEach-Object { Write-Host " - $_" }
 
