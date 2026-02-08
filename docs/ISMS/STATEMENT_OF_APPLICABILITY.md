@@ -16,7 +16,7 @@ Key controls
 - **A.13 Communications security** - Implemented. Webhook/Twilio signature verification (#88), HTTPS only, CSP documented in `WIKI.md`.
 - **A.14 System acquisition, development and maintenance** - Implemented. Secure SDLC in `SECURE_SDLC.md`; SAST/DAST/coverage gates in CI.
 - **A.15 Supplier relationships** - Implemented/Planned. Vendor register with DPAs in `VENDOR_REGISTER.md`; review cadence noted.
-- **A.16 Incident management** - Implemented. `INCIDENT_RESPONSE_PLAN.md` and playbooks in the wiki (`ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`).
+- **A.16 Incident management** - Implemented. `INCIDENT_RESPONSE_PLAN.md`.
 - **A.17 Information security aspects of business continuity** - Implemented/Planned. DR/BCP and backup testing in `DR_BCP.md` and `BACKUP_AND_RESTORE.md`.
 - **A.18 Compliance** - Implemented/Planned. Data handling mapped in `PRIVACY_POLICY.md` and `TERMS_OF_SERVICE.md`; internal audits scheduled in `AUDIT_AND_MANAGEMENT_REVIEW.md`.
 

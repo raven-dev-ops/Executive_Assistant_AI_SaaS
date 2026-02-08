@@ -11,9 +11,7 @@ Source PDFs & Traceability
 All engineering expectations here are distilled from:
 
 - `Project_Engineering_Whitepaper.pdf` - RavDevOps engineering culture, testing, and safety.
-- `Bristol_Plumbing_Analysis.pdf` - business context, services, and call patterns.
-- `Bristol_Plumbing_Implementation.pdf` - implementation concept, channels, and owner UX.
-- `Bristol_Plumbing_Project_Plan.pdf` - phased feature plan and target architecture.
+- Bristol Plumbing case-study materials (not stored in this repository).
 
 Before making non-trivial changes, skim these plus the root docs (`README.md`, `OUTLINE.md`,
 `BACKLOG.md`, `WIKI.md`, `SECURITY.md`, `RUNBOOK.md`, `DEV_WORKFLOW.md`, `TOOLS.md`) so your work
@@ -104,14 +102,14 @@ Working in This Repo
   - Use clear error handling and surface failures (calendar, Twilio, auth) in a user-friendly way.
 
 - **Docs**
-  - When adding or modifying significant behavior, update the relevant root docs:
+- When adding or modifying significant behavior, update the relevant root docs:
     - `README.md` for high-level behavior and architecture.
     - `API_REFERENCE.md` / `DATA_MODEL.md` for API and data model updates.
     - `DEV_WORKFLOW.md` / `TOOLS.md` if you add new dev scripts or common workflows.
     - `OUTLINE.md` / `BACKLOG.md` for product scope and phases.
     - `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md` for policy implications.
     - `RUNBOOK.md`, `PILOT_RUNBOOK.md`, `DEPLOYMENT_CHECKLIST.md` for operational changes.
-  - Link new documentation back to the PDFs where appropriate.
+  - Link new documentation back to the design materials where appropriate.
 
 
 Security, Privacy & Safety

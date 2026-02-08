@@ -12,12 +12,7 @@ Source PDFs & Traceability
 
 This policy is derived from:
 
-- `Bristol_Plumbing_Analysis.pdf` – the nature of customer interactions, booking flows, and data
-  that Bristol Plumbing typically handles.
-- `Bristol_Plumbing_Project_Plan.pdf` – requirements for customer history, scheduling, and
-  analytics.
-- `Bristol_Plumbing_Implementation.pdf` – how voice, SMS, and web channels are intended to work in
-  practice.
+- Bristol Plumbing case-study materials (not stored in this repository).
 - `Project_Engineering_Whitepaper.pdf` – expectations for data protection, logging, and safety.
 
 Operators of a real deployment must adapt this policy to local law and their own governance.

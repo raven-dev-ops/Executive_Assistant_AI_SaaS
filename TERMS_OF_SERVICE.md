@@ -13,9 +13,7 @@ Source PDFs & Traceability
 
 These Terms are informed by:
 
-- `Bristol_Plumbing_Analysis.pdf` – the reference business context and customer experience goals.
-- `Bristol_Plumbing_Project_Plan.pdf` – functional and non‑functional requirements for the Service.
-- `Bristol_Plumbing_Implementation.pdf` – planned usage patterns for AI, telephony, SMS, and web.
+- Bristol Plumbing case-study materials (not stored in this repository).
 - `Project_Engineering_Whitepaper.pdf` – the engineering culture and safety expectations that
   underpin reliable operation.
 

@@ -7,24 +7,22 @@ This file tracks high-level release notes for the AI Telephony Service & CRM pro
 Source PDFs & Traceability
 --------------------------
 
-Release summaries here are grounded in the four primary design documents:
+Release summaries here are grounded in:
 
-- `Bristol_Plumbing_Analysis.pdf` - business context and call patterns.
-- `Bristol_Plumbing_Implementation.pdf` - implementation concepts and channel roadmap.
-- `Bristol_Plumbing_Project_Plan.pdf` - phased feature plan and architecture.
 - `Project_Engineering_Whitepaper.pdf` - engineering culture, safety, and operational standards.
+- Bristol Plumbing case-study materials (not stored in this repository).
 
 
 Unreleased
 ----------
 
-- Define initial documentation set derived from Bristol Plumbing and RavDevOps PDFs.
+- Define initial documentation set derived from the case study materials and RavDevOps standards.
 - Establish project vision, architecture outline, and security/privacy baselines.
 - Capture initial product backlog and domain wiki.
 - Expand root documentation to cover Twilio wiring, multi-tenant usage, and SMS opt-out behavior
   (including how reminders and customer-facing SMS honor opt-out keywords).
 - Add initial backend implementation, dashboard prototype, and web chat widget that implement the
-  Phase 1–4 flows described in the PDFs and root docs.
+  Phase 1–4 flows described in the design materials and root docs.
 - Introduce per-tenant metrics and admin/owner dashboards for:
   - SMS volume (owner vs customer) per tenant.
   - Twilio voice/SMS request and error counts (global and per tenant).

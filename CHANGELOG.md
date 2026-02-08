@@ -9,10 +9,8 @@ Source PDFs & Traceability
 
 Release notes here summarize work that implements or documents the design described in:
 
-- `Bristol_Plumbing_Analysis.pdf`
-- `Bristol_Plumbing_Implementation.pdf`
-- `Bristol_Plumbing_Project_Plan.pdf`
 - `Project_Engineering_Whitepaper.pdf`
+- Bristol Plumbing case-study materials (not stored in this repository)
 
 
 [Unreleased]
@@ -93,8 +91,6 @@ Planned scope for a “Load Testing & Ops Docs” release:
 --------------------
 
 - Added comprehensive root-level documentation based on:
-  - `Bristol_Plumbing_Analysis.pdf`
-  - `Bristol_Plumbing_Implementation.pdf`
-  - `Bristol_Plumbing_Project_Plan.pdf`
   - `Project_Engineering_Whitepaper.pdf`
+  - Bristol Plumbing case-study materials (not stored in this repository)
 - Defined initial product backlog, security policy, privacy policy, and terms of service.

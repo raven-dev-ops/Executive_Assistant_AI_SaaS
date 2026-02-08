@@ -2,7 +2,7 @@ Backend Service
 ===============
 
 This directory contains the Python backend for the AI telephony assistant and CRM. It implements
-the Phase 1 design described in `PHASE1_VOICE_ASSISTANT_DESIGN.md` (voice assistant + scheduling).
+the Phase 1 voice assistant + scheduling design described in the root docs (`README.md`, `WIKI.md`).
 
 Status: **partial implementation** ƒ?" endpoints and services are stubbed for STT/TTS and Google
 Calendar, but Twilio webhooks for inbound voice and SMS are wired to the backend.
