@@ -17,7 +17,7 @@ Roles
 Process
 -------
 1) Detect: Alerts from Twilio/webhook/scheduling/auth rules (see `LOGGING_AND_ALERTS.md`), or customer reports.  
-2) Triage: Set severity, assign IC, open incident doc (template in `ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`).  
+2) Triage: Set severity, assign IC, open incident doc (use `INCIDENT_TEMPLATE.md`).  
 3) Mitigate: Stabilize (rate-limit, fail closed on webhooks, switch providers/stubs, reroute owner notifications).  
 4) Communicate: Update status to stakeholders every 30-60 minutes; note customer impact.  
 5) Eradicate/Recover: Root cause fix, validate via smoke/perf suites, confirm owner alerts and scheduling paths recovered.  
@@ -31,5 +31,5 @@ Playbooks
 
 Evidence
 --------
-- Store incident docs and postmortems in the wiki or shared drive; link follow-up GitHub issues and dates closed.
+- Store incident docs and postmortems in the evidence share; link follow-up GitHub issues and dates closed.
 - Track MTTA/MTTR per incident and feed into risk reviews.

@@ -13,12 +13,7 @@ This security policy is derived from:
 
 - `Project_Engineering_Whitepaper.pdf` – core engineering rules (code quality, testing, operations,
   incident response, and safety).
-- `Bristol_Plumbing_Project_Plan.pdf` – non‑functional requirements around reliability, data
-  protection, and cloud architecture.
-- `Bristol_Plumbing_Analysis.pdf` – the nature of customer and job data handled for Bristol
-  Plumbing.
-- `Bristol_Plumbing_Implementation.pdf` – how AI, telephony, and cloud services are combined in a
-  production‑style deployment.
+- Bristol Plumbing case-study materials (not stored in this repository).
 
 The concrete controls below are intended to keep implementations consistent with these documents.
 

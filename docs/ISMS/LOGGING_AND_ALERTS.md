@@ -54,7 +54,7 @@ Dashboards
 
 Runbooks and escalation
 -----------------------
-- Link alerts to playbooks in `INCIDENT_RESPONSE_PLAN.md` and `ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`.
+- Link alerts to playbooks in `INCIDENT_RESPONSE_PLAN.md`.
 - Escalation order: IC -> backup engineer -> product lead -> executive sponsor.
 - Post-alert actions: for each P0 alert, create an incident doc even if auto-recovered.
 

@@ -1,9 +1,9 @@
 AI Telephony Service & CRM for Trades
 =====================================
 
-![Backend CI](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/backend-ci.yml/badge.svg)
-![Perf Smoke](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/perf-smoke.yml/badge.svg)
-[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A585%25-brightgreen)](https://github.com/raven-dev-ops/ai_telephony_service_crm/actions/workflows/backend-ci.yml)
+![Backend CI](https://github.com/raven-dev-ops/Executive_Assistant_AI_SaaS/actions/workflows/backend-ci.yml/badge.svg)
+![Perf Smoke](https://github.com/raven-dev-ops/Executive_Assistant_AI_SaaS/actions/workflows/perf-smoke.yml/badge.svg)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A585%25-brightgreen)](https://github.com/raven-dev-ops/Executive_Assistant_AI_SaaS/actions/workflows/backend-ci.yml)
 
 AI-powered telephony and lightweight CRM for small trades businesses (reference tenant: Bristol Plumbing, Merriam KS). The assistant acts as a 24/7 virtual receptionist that answers calls/chats, triages emergencies, schedules on Google Calendar, and keeps a searchable history of customers and jobs.
 
@@ -85,10 +85,10 @@ Testing & coverage
 
 Docs & references
 -----------------
-- Product and policy: `WIKI.md`, `CHANGELOG.md`, `RELEASES.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, and the Bristol PDFs (`Bristol_Plumbing_*.pdf`, `Project_Engineering_Whitepaper.pdf`).  
+- Product and policy: `WIKI.md`, `CHANGELOG.md`, `RELEASES.md`, `SECURITY.md`, `PRIVACY_POLICY.md`, `TERMS_OF_SERVICE.md`, and `Project_Engineering_Whitepaper.pdf`.  
 - Architecture and deployment: `backend/BACKEND.md`, `dashboard/DASHBOARD.md`, plus platform details in `WIKI.md`.  
 - ISMS and ISO prep: `docs/ISMS/ISMS_README.md` (links to scope, risk method, SoA, access control, secure SDLC, incident/DR, backups, logging/alerts, vendor register, and audit plan).  
-- Incident playbooks: `docs/ISMS/INCIDENT_RESPONSE_PLAN.md` and the wiki playbooks (`ai_telephony_service_crm.wiki.local/IncidentPlaybooks.md`).  
+- Incident playbooks: `docs/ISMS/INCIDENT_RESPONSE_PLAN.md`.  
 - Beta tracking (archived): `docs/archive/beta/BETA_GITHUB_ISSUES_TASKLIST.md` (issue checklist), `docs/archive/beta/BETA_DOD.md` (Definition of Done), and `docs/archive/beta/BETA_KPIS.md` (top metrics).
 
 New in this iteration
